@@ -1,12 +1,11 @@
 use crate::config::{AppConfig, Fhir};
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
-use fhir_model::r4b::resources::{Bundle, BundleEntry, BundleEntryRequest, Encounter, IdentifiableResource, Patient, Resource, ResourceType};
-use fhir_model::r4b::types::{
-    Identifier, Meta
-    , Reference,
+use fhir_model::r4b::resources::{
+    Bundle, BundleEntry, BundleEntryRequest, Encounter, IdentifiableResource, Patient, Resource,
+    ResourceType,
 };
+use fhir_model::r4b::types::{Identifier, Meta, Reference};
 use fhir_model::BuilderError;
-use hl7_parser::datetime::TimeStamp;
 use hl7_parser::Message;
 use std::error::Error;
 
@@ -20,12 +19,11 @@ impl Mapper {
         // deserialize
         // TODO parse hl7 string correctly
         // let v2_msg = Message::parse(msg.as_str()).unwrap();
-        let v2_msg = Message::parse_with_lenient_newlines(msg.as_str(),true).unwrap();
-        let msh = v2_msg.segment("MSH").unwrap();
+        let v2_msg = Message::parse_with_lenient_newlines(msg.as_str(), true).unwrap();
+        // let msh = v2_msg.segment("MSH").unwrap();
 
-
-        let message_time = msh.field(7).unwrap();
-        let time: TimeStamp = message_time.raw_value().parse().unwrap();
+        // let message_time = msh.field(7).unwrap();
+        // let time: TimeStamp = message_time.raw_value().parse().unwrap();
 
         // map hl7 message
         let resources = self.map_resources(v2_msg)?;
@@ -94,7 +92,7 @@ fn conditional_reference(resource_type: ResourceType, system: String, value: Str
     format!("{resource_type}?identifier={system}|{value}")
 }
 
-fn resource_ref(res_type:ResourceType,identifiers: Vec<Option<Identifier>>) -> Option<Reference> {
+fn resource_ref(res_type: ResourceType, identifiers: Vec<Option<Identifier>>) -> Option<Reference> {
     default_identifier(identifiers).map(|id| {
         Reference::builder()
             .reference(format!(
@@ -138,7 +136,7 @@ impl Mapper {
         let p = self.map_patient(v2_msg)?;
         // let e = self.map_encounter()?;
 
-        let res= vec![
+        let res = vec![
             Some(bundle_entry(p)?),
             // Some(bundle_entry(e)?)
         ];
@@ -147,12 +145,15 @@ impl Mapper {
     }
 
     fn map_patient(&self, v2_msg: Message) -> Result<Patient, Box<dyn Error>> {
-
         let pid_seg = v2_msg.segment("PID").ok_or("missing PID segment")?;
         let pid = pid_seg.field(2).ok_or("missing Patient ID field")?;
 
-        let builder= Patient::builder()
-            .meta(Meta::builder().profile(vec![Some(self.config.person.profile.to_owned())]).build()?)
+        let builder = Patient::builder()
+            .meta(
+                Meta::builder()
+                    .profile(vec![Some(self.config.person.profile.to_owned())])
+                    .build()?,
+            )
             .identifier(vec![Some(
                 Identifier::builder()
                     .r#use(IdentifierUse::Usual)
@@ -166,8 +167,8 @@ impl Mapper {
         Ok(builder.build()?)
     }
 
-    fn map_encounter() -> Result<Encounter,BuilderError> {
-        let e= Encounter::builder().build()?;
+    fn map_encounter() -> Result<Encounter, BuilderError> {
+        let e = Encounter::builder().build()?;
         Ok(e)
     }
 }

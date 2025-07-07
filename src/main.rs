@@ -13,7 +13,6 @@ use rdkafka::message::{BorrowedMessage, Headers, Message};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use rdkafka::ClientConfig;
-use std::env;
 use std::error::Error;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -83,7 +82,7 @@ async fn run(config: Kafka, mapper: Mapper) {
                     let produce_future = producer.send(record, Timeout::Never);
                     match produce_future.await {
                         Ok(delivery) => {
-                            debug!("Message sent: key: {key}, partition: {}, offset: {}", delivery.0,delivery.1);
+                            debug!("Message sent: key: {key}, partition: {}, offset: {}", delivery.partition,delivery.offset);
                             // store offset
                             commit_offset(&*consumer, &m);
                         }
@@ -237,9 +236,9 @@ mod tests {
         output_consumer.subscribe(&[OUTPUT_TOPIC]).unwrap();
 
         // input data
-        let hl7_str = r#"MSH|^~\&|SENDING_APPLICATION|SENDING_FACILITY|RECEIVING_APPLICATION|RECEIVING_FACILITY|20110613083617||ADT^A04|934576120110613083617|P|2.3||||
-EVN|A04|20110613083617|||
-PID|1|123456|123456||MOUSE^MICKEY^||19281118|M|||123 Main St.^^Lake Buena Vista^FL^32830||(407)939-1289^^^theMainMouse@disney.com|||||1719|99999999||||||||||||||||||||
+        let hl7_str = r#"MSH|^~\&|SENDING_APPLICATION|SENDING_FACILITY|RECEIVING_APPLICATION|RECEIVING_FACILITY|20110613083617||ADT^A04|934576120110613083617|P|2.3||||\r
+EVN|A04|20110613083617|||\r
+PID|1|123456|123456||MOUSE^MICKEY^||19281118|M|||123 Main St.^^Lake Buena Vista^FL^32830||(407)939-1289^^^theMainMouse@disney.com|||||1719|99999999||||||||||||||||||||\r
 PV1|1|O|||||7^Disney^Walt^^MD^^^^|||||||||||||||||||||||||||||||||||||||||||||"#;
 
         let _res = send_record(test_producer.clone(), INPUT_TOPIC, hl7_str)
@@ -272,11 +271,12 @@ PV1|1|O|||||7^Disney^Walt^^MD^^^^|||||||||||||||||||||||||||||||||||||||||||||"#
 
         // assert resources
         assert_eq!(b.entry.len(), 1);
-        assert!(b
-            .entry
-            .iter()
-            .map(|e| e.clone().unwrap().resource.unwrap().resource_type())
-            .all(|t| t == ResourceType::Patient));
+        assert!(
+            b.entry
+                .iter()
+                .map(|e| e.clone().unwrap().resource.unwrap().resource_type())
+                .all(|t| t == ResourceType::Patient)
+        );
     }
 
     async fn send_record(
