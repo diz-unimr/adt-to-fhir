@@ -1,0 +1,29 @@
+app:
+  log_level: info
+
+kafka:
+  brokers: localhost:9092
+  security_protocol: plaintext
+  ssl:
+    ca_location: /app/cert/kafka_ca.pem
+    certificate_location: /app/cert/app_cert.pem
+    key_location: /app/cert/app_key.pem
+    key_password:
+  consumer_group: adt-to-fhir
+  input_topic: adt-hl7
+  output_topic: adt-fhir
+  offset_reset: earliest
+
+fhir:
+  person:
+    profile: https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0
+    system: https://fhir.diz.uni-marburg.de/sid/patient-id
+  fall:
+    profile: https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0
+    system: https://fhir.diz.uni-marburg.de/sid/encounter-id
+    einrichtungskontakt:
+      system: https://fhir.diz.uni-marburg.de/sid/encounter-admit-id
+    abteilungskontakt:
+      system: https://fhir.diz.uni-marburg.de/sid/encounter-department-id
+    versorgungsstellenkontakt:
+      system: https://fhir.diz.uni-marburg.de/sid/encounter-caresite-id

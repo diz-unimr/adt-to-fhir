@@ -1,0 +1,18 @@
+[package]
+name = "adt-to-fhir"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rdkafka = { version = "0.37.0", features = ["ssl", "cmake-build"] }
+tokio = { version = "1.46.0", features = ["full"] }
+log = "0.4.27"
+env_logger = "0.11.8"
+futures = "0.3.31"
+config = "0.15.11"
+serde_derive = "1.0.219"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+fhir-model = { version = "0.12.0", default-features = false, features = ["builders", "r4b"] }
+farmhash = "1.1.5"
+hl7-parser = "0.3"
