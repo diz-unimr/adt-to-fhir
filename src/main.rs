@@ -2,7 +2,8 @@ mod config;
 mod fhir;
 
 use crate::config::{Kafka, Ssl};
-use crate::fhir::Mapper;
+use crate::fhir::mapper::FhirMapper;
+// use crate::fhir::Mapper;
 use config::AppConfig;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
@@ -14,10 +15,9 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use rdkafka::ClientConfig;
 use std::error::Error;
-use std::ops::Deref;
 use std::sync::Arc;
 
-async fn run(config: Kafka, mapper: Mapper) {
+async fn run(config: Kafka, mapper: FhirMapper) {
     // create consumer
     let consumer: StreamConsumer = create_consumer(config.clone());
     match consumer.subscribe(&[&config.input_topic]) {
@@ -75,7 +75,7 @@ async fn run(config: Kafka, mapper: Mapper) {
 
                     // send to output topic
                     let mut record = FutureRecord::to(&output_topic)
-                        .key(key.deref())
+                        .key(&key)
                         .payload(result.as_str());
                     record.timestamp=m.timestamp().to_millis();
 
@@ -115,7 +115,7 @@ async fn main() {
     env_logger::init_from_env(env);
 
     // mapper
-    let mapper = Mapper::new(config.clone()).expect("failed to create mapper");
+    let mapper = FhirMapper::new(config.clone()).expect("failed to create mapper");
 
     // run
     let num_partitions = 3;
@@ -198,7 +198,7 @@ fn deserialize_message(m: &BorrowedMessage) -> (String, Option<String>) {
 #[cfg(test)]
 mod tests {
     use crate::config::AppConfig;
-    use crate::fhir::Mapper;
+    use crate::fhir::mapper::FhirMapper;
     use crate::{deserialize_message, run};
     use fhir_model::r4b::resources::{Bundle, ResourceType};
     use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -255,7 +255,7 @@ PV1|1|O|||||7^Disney^Walt^^MD^^^^|||||||||||||||||||||||||||||||||||||||||||||"#
         config.kafka.output_topic = OUTPUT_TOPIC.to_owned();
 
         // mapper
-        let mapper = Mapper::new(config.clone()).expect("failed to create mapper");
+        let mapper = FhirMapper::new(config.clone()).expect("failed to create mapper");
 
         // run processor
         tokio::spawn(async move {
