@@ -1,16 +1,29 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::bundle_entry;
+use crate::fhir::mapper::{bundle_entry, MessageType};
 use fhir_model::r4b::codes::IdentifierUse;
 use fhir_model::r4b::resources::BundleEntry;
 use fhir_model::r4b::resources::Patient;
 use fhir_model::r4b::types::{Identifier, Meta};
 use hl7_parser::Message;
 use std::error::Error;
+use std::str::FromStr;
 
 pub(super) fn map_patient(
     v2_msg: Message,
     config: Fhir,
 ) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
+    // todo refactor to fn
+    let message_type: MessageType = MessageType::from_str(
+        v2_msg
+            .segment("EVN")
+            .ok_or("missing ENV segment")?
+            .field(2)
+            .ok_or("missing message type segment")?
+            .raw_value(),
+    )?;
+
+    // todo check message type if necessary for patient mapping
+
     let pid_seg = v2_msg.segment("PID").ok_or("missing PID segment")?;
     let pid = pid_seg.field(2).ok_or("missing Patient ID field")?;
 

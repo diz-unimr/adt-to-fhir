@@ -64,7 +64,8 @@ impl FhirMapper {
     }
 }
 
-enum MessageType {
+#[derive(PartialEq, Debug)]
+pub enum MessageType {
     Admit,
     // todo name
     A02,
@@ -92,6 +93,12 @@ enum MessageType {
     A47,
     A50,
 }
+
+// impl Into<String> for MessageType {
+//     fn into(self) -> String {
+//         self.to_string()
+//     }
+// }
 
 impl FromStr for MessageType {
     type Err = anyhow::Error;
