@@ -17,7 +17,7 @@ pub(super) fn map_patient(
         v2_msg
             .segment("EVN")
             .ok_or("missing ENV segment")?
-            .field(2)
+            .field(1)
             .ok_or("missing message type segment")?
             .raw_value(),
     )?;
@@ -41,11 +41,12 @@ pub(super) fn map_patient(
                 .build()
                 .unwrap(),
         )]);
+    // .birth_date();
 
     // TODO
-    let p = builder.build()?;
+    let p = builder.build();
 
-    Ok(vec![bundle_entry(p)?])
+    Ok(vec![bundle_entry(p?)?])
 }
 
 pub(super) fn map_a01(v2_msg: Message, config: Fhir) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
