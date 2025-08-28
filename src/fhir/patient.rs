@@ -1,32 +1,132 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::{bundle_entry, MessageType};
+use crate::fhir::mapper::{MessageType, bundle_entry};
+use fhir_model::Date;
+use fhir_model::r4b::codes::AddressType::Both;
 use fhir_model::r4b::codes::IdentifierUse;
-use fhir_model::r4b::resources::BundleEntry;
+use fhir_model::r4b::codes::NarrativeStatus::Extensions;
+use fhir_model::r4b::codes::SpecialValues::False;
 use fhir_model::r4b::resources::Patient;
-use fhir_model::r4b::types::{Identifier, Meta};
+use fhir_model::r4b::resources::{BundleEntry, PatientDeceased};
+use fhir_model::r4b::types::Extension;
+use fhir_model::r4b::types::{Address, HumanNameInner};
+use fhir_model::r4b::types::{
+    AddressBuilder, AddressInner, ExtensionBuilder, ExtensionValue, ExtensionValueExtension,
+    FieldExtension, FieldExtensionBuilder, HumanNameBuilder, Identifier, Meta,
+};
+use fhir_model::r4b::types::{ExtensionInner, HumanName};
 use hl7_parser::Message;
+use hl7_parser::message::{Field, Repeat};
+use log::info;
+use serde::de::Unexpected::Str;
 use std::error::Error;
 use std::str::FromStr;
+use std::vec;
 
 pub(super) fn map_patient(
     v2_msg: Message,
     config: Fhir,
 ) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
     // todo refactor to fn
-    let message_type: MessageType = MessageType::from_str(
-        v2_msg
-            .segment("EVN")
-            .ok_or("missing ENV segment")?
-            .field(2)
-            .ok_or("missing message type segment")?
-            .raw_value(),
-    )?;
+    // let message_type: MessageType = MessageType::from_str(
+    //     v2_msg
+    //         .segment("EVN")
+    //         .ok_or("missing ENV segment")?
+    //         .field(2)
+    //         .ok_or("missing message type segment")?
+    //         .raw_value(),
+    // )?;
 
     // todo check message type if necessary for patient mapping
-
+    let addr_builder = AddressBuilder::default();
     let pid_seg = v2_msg.segment("PID").ok_or("missing PID segment")?;
     let pid = pid_seg.field(2).ok_or("missing Patient ID field")?;
+    let date_of_birth_date = pid_seg.field(7).ok_or("missing Patient date field")?;
+    let gender = pid_seg.field(8).ok_or("missing Patient Gender field")?;
+    let address = pid_seg.field(11).ok_or("missing Patient Gender field")?;
+    let name = pid_seg
+        .field(5)
+        .ok_or("missing Patient MartialStaus field")?;
 
+    //let martial_staus = pid_seg.field(16).ok_or("missing Patient MartialStaus field")?;
+    let address: Address = AddressInner {
+        id: None,
+        extension: vec![],
+        r#use: None,
+        use_ext: None,
+        r#type: None,
+        type_ext: None,
+        text: None,
+        text_ext: None,
+        line: vec![extract_repeat(address.raw_value(), 1)?],
+        line_ext: vec![],
+        city: extract_repeat(address.raw_value(), 3)?,
+        city_ext: None,
+        district: None,
+        district_ext: None,
+        state: None,
+        state_ext: None,
+        postal_code: extract_repeat(address.raw_value(), 5)?,
+        postal_code_ext: None,
+        country: extract_repeat(address.raw_value(), 4)?,
+        country_ext: None,
+        period: None,
+        period_ext: None,
+    }
+    .into();
+
+    let extension: Extension = ExtensionInner {
+        id: None,
+        extension: vec![],
+        url: "http://hl7.org/fhir/StructureDefinition/humanname-own-name".to_string(),
+        value: Some(ExtensionValue::String(
+            extract_repeat(name.raw_value(), 1)?.unwrap().to_string(),
+        )),
+        value_ext: None,
+    }
+    .into();
+
+    let fieldExtension = FieldExtensionBuilder::default()
+        .extension(vec![Some(extension).unwrap()])
+        .build();
+
+    let mut humanname: HumanName = HumanNameInner {
+        id: None,
+        extension: vec![],
+        r#use: None,
+        use_ext: None,
+        text: None,
+        text_ext: None,
+        family: extract_repeat(name.raw_value(), 1)?,
+        family_ext: Some(fieldExtension?),
+        given: vec![extract_repeat(name.raw_value(), 2)?],
+        given_ext: vec![],
+        prefix: vec![extract_repeat(name.raw_value(), 6)?],
+        prefix_ext: vec![],
+        suffix: vec![],
+        suffix_ext: vec![],
+        period: None,
+        period_ext: None,
+    }
+    .into();
+
+    // patient vital status
+    let death_date_time = pid_seg.field(29).ok_or("missing Patient deathTime field")?;
+    let death_confirm = pid_seg
+        .field(30)
+        .ok_or("missing Patient deathConfirm field")?;
+    let deceased_confirm =
+        if death_confirm.raw_value().to_owned() == "Y" && !death_date_time.is_empty() {
+            // Replace `is_deceased` with your condition
+            Some(PatientDeceased::DateTime(
+                death_date_time.raw_value().to_owned().parse()?,
+            )) // or Some(false) depending on your logic
+        } else if death_confirm.raw_value().to_owned() == "Y" && death_date_time.is_empty() {
+            Some(PatientDeceased::Boolean(true)) // or Some(false) if you want to explicitly set it to alive
+        } else {
+            None
+        };
+
+    // Create Address
     let builder = Patient::builder()
         .meta(
             Meta::builder()
@@ -40,12 +140,27 @@ pub(super) fn map_patient(
                 .value(pid.raw_value().to_owned())
                 .build()
                 .unwrap(),
-        )]);
-
+        )])
+        .birth_date(date_of_birth_date.raw_value().to_owned().parse()?)
+        .gender(gender.raw_value().to_owned().parse()?)
+        .address(vec![Some(address)])
+        .deceased(deceased_confirm.unwrap())
+        .name(vec![Some(humanname)]);
     // TODO
     let p = builder.build()?;
-
     Ok(vec![bundle_entry(p)?])
+}
+
+fn extract_repeat(field_value: &str, component: usize) -> Result<Option<String>, Box<dyn Error>> {
+    let repeat = hl7_parser::parser::parse_repeat(field_value)?;
+    if !repeat.is_empty() {
+        Ok(repeat
+            .component(component)
+            .map(|c| c.raw_value().to_string().parse().ok())
+            .flatten())
+    } else {
+        Ok(None)
+    }
 }
 
 pub(super) fn map_a01(v2_msg: Message, config: Fhir) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
