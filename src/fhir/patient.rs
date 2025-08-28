@@ -27,14 +27,14 @@ pub(super) fn map_patient(
     config: Fhir,
 ) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
     // todo refactor to fn
-    // let message_type: MessageType = MessageType::from_str(
-    //     v2_msg
-    //         .segment("EVN")
-    //         .ok_or("missing ENV segment")?
-    //         .field(2)
-    //         .ok_or("missing message type segment")?
-    //         .raw_value(),
-    // )?;
+    let message_type: MessageType = MessageType::from_str(
+        v2_msg
+            .segment("EVN")
+            .ok_or("missing ENV segment")?
+            .field(1)
+            .ok_or("missing message type segment")?
+            .raw_value(),
+    )?;
 
     // todo check message type if necessary for patient mapping
     let addr_builder = AddressBuilder::default();

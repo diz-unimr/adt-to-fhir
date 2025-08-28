@@ -65,11 +65,14 @@ async fn run(config: Kafka, mapper: FhirMapper) {
                         return Ok(());
                     }
 
-                    // mapper
-                    let Some(result) = mapper.map(payload.unwrap())
-                        .expect(&format!("Failed to map payload with [key={key}]"))
-                    else {
-                        commit_offset(&*consumer,&m);
+
+                    let Some(result) = (match mapper.map(payload.unwrap()) {
+                        Ok(ok) => { ok }
+                        Err(err) => {
+                            panic!("Failed to map payload with [key={key}]: {}", err)
+                        }
+                    }) else {
+                        commit_offset(&*consumer, &m);
                         return Ok(());
                     };
 
@@ -77,7 +80,7 @@ async fn run(config: Kafka, mapper: FhirMapper) {
                     let mut record = FutureRecord::to(&output_topic)
                         .key(&key)
                         .payload(result.as_str());
-                    record.timestamp=m.timestamp().to_millis();
+                    record.timestamp = m.timestamp().to_millis();
 
                     let produce_future = producer.send(record, Timeout::Never);
                     match produce_future.await {
