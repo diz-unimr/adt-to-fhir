@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 rdkafka = { version = "0.38.0", features = ["ssl", "cmake-build"] }
-tokio = { version = "1.46.0" , features = ["full"] }
+tokio = { version = "1.46.0", features = ["full"] }
 log = "0.4.27"
 env_logger = "0.11.8"
 futures = "0.3.31"
@@ -16,3 +16,4 @@ serde_json = "1.0.140"
 fhir-model = { version = "0.12.0", default-features = false, features = ["builders", "r4b"] }
 hl7-parser = "0.3"
 anyhow = "1.0.98"
+chrono = "0.4"

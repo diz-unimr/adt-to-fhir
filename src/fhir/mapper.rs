@@ -57,7 +57,6 @@ impl FhirMapper {
         // TODO replace example
         let p = map_patient(v2_msg.clone(), self.config.clone())?;
         let e = map_encounter(v2_msg, self.config.clone())?;
-
         let res = p.into_iter().chain(e).map(|p| Some(p)).collect();
 
         Ok(res)

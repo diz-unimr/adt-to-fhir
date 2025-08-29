@@ -1,12 +1,15 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::{MessageType, bundle_entry};
-use fhir_model::Date;
+use anyhow::Context;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+//use fhir_model::Date;
+use chrono::format::{DelayedFormat, StrftimeItems};
 use fhir_model::r4b::codes::AddressType::Both;
-use fhir_model::r4b::codes::IdentifierUse;
 use fhir_model::r4b::codes::NarrativeStatus::Extensions;
 use fhir_model::r4b::codes::SpecialValues::False;
-use fhir_model::r4b::resources::Patient;
+use fhir_model::r4b::codes::{AddressType, AddressUse, AdministrativeGender, IdentifierUse};
 use fhir_model::r4b::resources::{BundleEntry, PatientDeceased};
+use fhir_model::r4b::resources::{Patient, PatientInner};
 use fhir_model::r4b::types::Extension;
 use fhir_model::r4b::types::{Address, HumanNameInner};
 use fhir_model::r4b::types::{
@@ -22,6 +25,7 @@ use std::error::Error;
 use std::str::FromStr;
 use std::vec;
 
+//noinspection ALL
 pub(super) fn map_patient(
     v2_msg: Message,
     config: Fhir,
@@ -53,7 +57,7 @@ pub(super) fn map_patient(
         extension: vec![],
         r#use: None,
         use_ext: None,
-        r#type: None,
+        r#type: Some(Both),
         type_ext: None,
         text: None,
         text_ext: None,
@@ -73,7 +77,7 @@ pub(super) fn map_patient(
         period_ext: None,
     }
     .into();
-
+    // Create Extension for Family
     let extension: Extension = ExtensionInner {
         id: None,
         extension: vec![],
@@ -89,7 +93,7 @@ pub(super) fn map_patient(
         .extension(vec![Some(extension).unwrap()])
         .build();
 
-    let mut humanname: HumanName = HumanNameInner {
+    let humanname: HumanName = HumanNameInner {
         id: None,
         extension: vec![],
         r#use: None,
@@ -109,22 +113,49 @@ pub(super) fn map_patient(
     }
     .into();
 
+    //let input = "19920220";
+
     // patient vital status
     let death_date_time = pid_seg.field(29).ok_or("missing Patient deathTime field")?;
     let death_confirm = pid_seg
         .field(30)
         .ok_or("missing Patient deathConfirm field")?;
-    let deceased_confirm =
-        if death_confirm.raw_value().to_owned() == "Y" && !death_date_time.is_empty() {
-            // Replace `is_deceased` with your condition
-            Some(PatientDeceased::DateTime(
-                death_date_time.raw_value().to_owned().parse()?,
-            )) // or Some(false) depending on your logic
-        } else if death_confirm.raw_value().to_owned() == "Y" && death_date_time.is_empty() {
-            Some(PatientDeceased::Boolean(true)) // or Some(false) if you want to explicitly set it to alive
+
+    let deceased_confirm = if death_confirm.raw_value().to_owned() == "Y" {
+        if !death_date_time.is_empty() {
+            PatientDeceased::DateTime(
+                parse_date_string_to_datetime(death_date_time.raw_value())?
+                    .to_string()
+                    .parse()
+                    .unwrap(),
+            )
+        } else if death_date_time.is_empty() {
+            PatientDeceased::Boolean(true) //
         } else {
-            None
-        };
+            PatientDeceased::Boolean(false)
+        }
+    } else {
+        PatientDeceased::Boolean(false)
+    };
+
+    // Replace `is_deceased` with your condition
+    // Replace `is_deceased` with your condition
+
+    // let deceased_confirm = match (
+    //     death_confirm.raw_value().to_owned().as_str(),
+    //     death_date_time.is_empty(),
+    // ) {
+    //     ("Y", false) => PatientDeceased::DateTime(death_date_time.raw_value().to_owned().parse()?),
+    //     ("Y", true) => PatientDeceased::Boolean(true),
+    //     _ => PatientDeceased::Boolean(false),
+    // };
+
+    let admin_gender: AdministrativeGender = match (gender.raw_value()) {
+        "F" => AdministrativeGender::Female,
+        "M" => AdministrativeGender::Male,
+        "U" => AdministrativeGender::Other,
+        _ => AdministrativeGender::Unknown,
+    };
 
     // Create Address
     let builder = Patient::builder()
@@ -141,16 +172,22 @@ pub(super) fn map_patient(
                 .build()
                 .unwrap(),
         )])
-        .birth_date(date_of_birth_date.raw_value().to_owned().parse()?)
-        .gender(gender.raw_value().to_owned().parse()?)
+        //.birth_date(birth_date.to_string().parse().unwrap())
+        .birth_date(
+            parse_date_string_to_date(date_of_birth_date.raw_value())?
+                .to_string()
+                .parse()
+                .unwrap(),
+        )
+        .gender(admin_gender)
         .address(vec![Some(address)])
-        .deceased(deceased_confirm.unwrap())
-        .name(vec![Some(humanname)]);
-    // TODO
+        .name(vec![Some(humanname)])
+        .deceased(deceased_confirm);
     let p = builder.build()?;
     Ok(vec![bundle_entry(p)?])
 }
 
+// Utils
 fn extract_repeat(field_value: &str, component: usize) -> Result<Option<String>, Box<dyn Error>> {
     let repeat = hl7_parser::parser::parse_repeat(field_value)?;
     if !repeat.is_empty() {
@@ -161,6 +198,35 @@ fn extract_repeat(field_value: &str, component: usize) -> Result<Option<String>,
     } else {
         Ok(None)
     }
+}
+
+fn parse_date_string_to_date(input: &str) -> Result<DelayedFormat<StrftimeItems>, Box<dyn Error>> {
+    // Step 1: Parse the string into a NaiveDate
+    let naive_date = NaiveDate::parse_from_str(input, "%Y%m%d")?;
+
+    // Step 2: Create a NaiveDateTime (at midnight)
+    let naive_datetime = naive_date
+        .and_hms_opt(0, 0, 0)
+        .ok_or("Invalid time when constructing datetime")?;
+
+    // Step 3: Convert to DateTime<Utc>
+    let datetime_utc: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive_datetime, Utc);
+    let date = datetime_utc.format("%Y-%m-%d");
+
+    // Step 4: Extract just the date portion
+    Ok(date)
+}
+
+fn parse_date_string_to_datetime(
+    input: &str,
+) -> Result<DelayedFormat<StrftimeItems>, Box<dyn Error>> {
+    // Parse to NaiveDateTime using the correct format
+    let naive_datetime = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
+
+    // Convert to DateTime<Utc>
+    let datetime_utc: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive_datetime, Utc);
+    let date = datetime_utc.format("%Y-%m-%dT%H:%M:%SZ");
+    Ok(date)
 }
 
 pub(super) fn map_a01(v2_msg: Message, config: Fhir) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
@@ -178,7 +244,7 @@ mod tests {
     fn map_test() {
         let hl7 = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
-PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE||||N
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||2011032408000|Y
 PV1|1|I|KJMST042^BSP-2-2^^KJM^KLINIKUM^961640|R^^HL7~01^Normalfall^11||KJMST042^BSP-1-1^^KJM^KLINIKUM^961640||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||1000|9||||202511022120|202511022120||||||A
 PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000||||||||||N||I||||||||||||Y
 DG1|1||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA En|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340005|U
