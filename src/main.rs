@@ -212,6 +212,8 @@ mod tests {
     use rdkafka::producer::future_producer::OwnedDeliveryResult;
     use rdkafka::producer::{FutureProducer, FutureRecord};
     use serde_json::Value;
+    use std::fs;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::sync::oneshot;
 
@@ -243,21 +245,9 @@ mod tests {
         output_consumer.subscribe(&[OUTPUT_TOPIC]).unwrap();
 
         // input data
-        let hl7_str = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
-EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
-PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
-PV1|1|I|KJMST042^BSP-2-2^^KJM^KLINIKUM^961640|R^^HL7~01^Normalfall^11||KJMST042^BSP-1-1^^KJM^KLINIKUM^961640||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||1000|9||||202511022120|202511022120||||||A
-PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000||||||||||N||I||||||||||||Y
-DG1|1||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA En|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340005|U
-DG1|2||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||2|BBBBBB^^^^^^^^^^^^^^^^^^^^^^KJM||||12340007|U
-DG1|3||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|Aufn.|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340009|U
-DG1|4||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340001|U
-IN1|1||000000000^^^^NII~Krankenkasse^^^^XX|Krankenkasse|Strasse 1&Strasse&1^^Stadt^^1000^DE^L||000000000000^PRN^PH^^^00000^0000000^^^^^000000000000||Krankenkasse^1^^^1&gesetzliche Krankenkasse^^NII~Krankenkasse^1^^^^^U|||||||Nachname^Vorname||19340101|Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L|||H|||||||||F||||||||||||F|||||||||AndereStadt
-IN2|1||||||||||||||||||||||||||||^PC^100.0||||DE|||N|||ev||||||||||||||||||||||||00000 0000000
-ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
-ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes"#;
+        let hl7_str = read_test_resource("a01_test.hl7");
 
-        let _res = send_record(test_producer.clone(), INPUT_TOPIC, hl7_str)
+        let _res = send_record(test_producer.clone(), INPUT_TOPIC, hl7_str.as_str())
             .await
             .unwrap();
 
@@ -329,5 +319,16 @@ ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes"#;
             .unwrap()
             .await
             .unwrap()
+    }
+
+    pub fn read_test_resource(file_name: &str) -> String {
+        let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        file_path.push("resources/test");
+        file_path.push(file_name);
+
+        let contents = fs::read_to_string(file_path.display().to_string())
+            .expect(format!("Test resource not found: {}", file_path.display()).as_str());
+
+        contents
     }
 }
