@@ -1,55 +1,58 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::{MessageType, bundle_entry};
-use anyhow::Context;
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
-//use fhir_model::Date;
-use chrono::format::{DelayedFormat, StrftimeItems};
+use crate::fhir::mapper::{
+    bundle_entry, extract_repeat, parse_date_string_to_date, parse_date_string_to_datetime,
+    MessageType,
+};
+use anyhow::{anyhow, Context};
 use fhir_model::r4b::codes::AddressType::Both;
-use fhir_model::r4b::codes::NarrativeStatus::Extensions;
-use fhir_model::r4b::codes::SpecialValues::False;
-use fhir_model::r4b::codes::{AddressType, AddressUse, AdministrativeGender, IdentifierUse};
+use fhir_model::r4b::codes::{AdministrativeGender, IdentifierUse};
+use fhir_model::r4b::resources::Patient;
 use fhir_model::r4b::resources::{BundleEntry, PatientDeceased};
-use fhir_model::r4b::resources::{Patient, PatientInner};
 use fhir_model::r4b::types::Extension;
 use fhir_model::r4b::types::{Address, HumanNameInner};
 use fhir_model::r4b::types::{
-    AddressBuilder, AddressInner, ExtensionBuilder, ExtensionValue, ExtensionValueExtension,
-    FieldExtension, FieldExtensionBuilder, HumanNameBuilder, Identifier, Meta,
+    AddressBuilder, AddressInner, ExtensionValue, FieldExtensionBuilder, Identifier, Meta,
 };
 use fhir_model::r4b::types::{ExtensionInner, HumanName};
 use hl7_parser::Message;
-use hl7_parser::message::{Field, Repeat};
-use log::info;
-use serde::de::Unexpected::Str;
 use std::error::Error;
 use std::str::FromStr;
 use std::vec;
 
-//noinspection ALL
 pub(super) fn map_patient(
-    v2_msg: Message,
+    v2_msg: &Message,
     config: Fhir,
-) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
+) -> Result<Vec<BundleEntry>, anyhow::Error> {
     // todo refactor to fn
     let message_type: MessageType = MessageType::from_str(
         v2_msg
             .segment("EVN")
-            .ok_or("missing ENV segment")?
+            .ok_or(anyhow!("missing ENV segment"))?
             .field(1)
-            .ok_or("missing message type segment")?
+            .ok_or(anyhow!("missing message type segment"))?
             .raw_value(),
     )?;
 
     // todo check message type if necessary for patient mapping
     let addr_builder = AddressBuilder::default();
-    let pid_seg = v2_msg.segment("PID").ok_or("missing PID segment")?;
-    let pid = pid_seg.field(2).ok_or("missing Patient ID field")?;
-    let date_of_birth_date = pid_seg.field(7).ok_or("missing Patient date field")?;
-    let gender = pid_seg.field(8).ok_or("missing Patient Gender field")?;
-    let address = pid_seg.field(11).ok_or("missing Patient Gender field")?;
+    let pid_seg = v2_msg
+        .segment("PID")
+        .ok_or(anyhow!("missing PID segment"))?;
+    let pid = pid_seg
+        .field(2)
+        .ok_or(anyhow!("missing Patient ID field"))?;
+    let date_of_birth_date = pid_seg
+        .field(7)
+        .ok_or(anyhow!("missing Patient date field"))?;
+    let gender = pid_seg
+        .field(8)
+        .ok_or(anyhow!("missing Patient Gender field"))?;
+    let address = pid_seg
+        .field(11)
+        .ok_or(anyhow!("missing Patient Gender field"))?;
     let name = pid_seg
         .field(5)
-        .ok_or("missing Patient MartialStaus field")?;
+        .ok_or(anyhow!("missing Patient MartialStaus field"))?;
 
     //let martial_staus = pid_seg.field(16).ok_or("missing Patient MartialStaus field")?;
     let address: Address = AddressInner {
@@ -116,19 +119,20 @@ pub(super) fn map_patient(
     //let input = "19920220";
 
     // patient vital status
-    let death_date_time = pid_seg.field(29).ok_or("missing Patient deathTime field")?;
+    let death_date_time = pid_seg
+        .field(29)
+        .ok_or(anyhow!("missing Patient deathTime field"))?;
     let death_confirm = pid_seg
         .field(30)
-        .ok_or("missing Patient deathConfirm field")?;
+        .ok_or(anyhow!("missing Patient deathConfirm field"))?;
 
     let deceased_confirm = if death_confirm.raw_value().to_owned() == "Y" {
         if !death_date_time.is_empty() {
             PatientDeceased::DateTime(
                 parse_date_string_to_datetime(death_date_time.raw_value())?
                     .to_string()
-                    .parse()
-                    .unwrap(),
-            )
+                    .parse()?,
+            ) // period
         } else if death_date_time.is_empty() {
             PatientDeceased::Boolean(true) //
         } else {
@@ -176,8 +180,7 @@ pub(super) fn map_patient(
         .birth_date(
             parse_date_string_to_date(date_of_birth_date.raw_value())?
                 .to_string()
-                .parse()
-                .unwrap(),
+                .parse()?,
         )
         .gender(admin_gender)
         .address(vec![Some(address)])
@@ -185,48 +188,6 @@ pub(super) fn map_patient(
         .deceased(deceased_confirm);
     let p = builder.build()?;
     Ok(vec![bundle_entry(p)?])
-}
-
-// Utils
-fn extract_repeat(field_value: &str, component: usize) -> Result<Option<String>, Box<dyn Error>> {
-    let repeat = hl7_parser::parser::parse_repeat(field_value)?;
-    if !repeat.is_empty() {
-        Ok(repeat
-            .component(component)
-            .map(|c| c.raw_value().to_string().parse().ok())
-            .flatten())
-    } else {
-        Ok(None)
-    }
-}
-
-fn parse_date_string_to_date(input: &str) -> Result<DelayedFormat<StrftimeItems>, Box<dyn Error>> {
-    // Step 1: Parse the string into a NaiveDate
-    let naive_date = NaiveDate::parse_from_str(input, "%Y%m%d")?;
-
-    // Step 2: Create a NaiveDateTime (at midnight)
-    let naive_datetime = naive_date
-        .and_hms_opt(0, 0, 0)
-        .ok_or("Invalid time when constructing datetime")?;
-
-    // Step 3: Convert to DateTime<Utc>
-    let datetime_utc: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive_datetime, Utc);
-    let date = datetime_utc.format("%Y-%m-%d");
-
-    // Step 4: Extract just the date portion
-    Ok(date)
-}
-
-fn parse_date_string_to_datetime(
-    input: &str,
-) -> Result<DelayedFormat<StrftimeItems>, Box<dyn Error>> {
-    // Parse to NaiveDateTime using the correct format
-    let naive_datetime = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
-
-    // Convert to DateTime<Utc>
-    let datetime_utc: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive_datetime, Utc);
-    let date = datetime_utc.format("%Y-%m-%dT%H:%M:%SZ");
-    Ok(date)
 }
 
 pub(super) fn map_a01(v2_msg: Message, config: Fhir) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
@@ -244,7 +205,7 @@ mod tests {
     fn map_test() {
         let hl7 = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
-PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||2011032408000|Y
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
 PV1|1|I|KJMST042^BSP-2-2^^KJM^KLINIKUM^961640|R^^HL7~01^Normalfall^11||KJMST042^BSP-1-1^^KJM^KLINIKUM^961640||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||1000|9||||202511022120|202511022120||||||A
 PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000||||||||||N||I||||||||||||Y
 DG1|1||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA En|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340005|U
@@ -266,7 +227,7 @@ ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes"#;
 
         // act
         let res = map_patient(
-            Message::parse_with_lenient_newlines(hl7, true).unwrap(),
+            &Message::parse_with_lenient_newlines(hl7, true).unwrap(),
             config.clone(),
         );
 

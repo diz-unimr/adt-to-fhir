@@ -14,10 +14,9 @@ use rdkafka::message::{BorrowedMessage, Headers, Message};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use rdkafka::ClientConfig;
-use std::error::Error;
 use std::sync::Arc;
 
-async fn run(config: Kafka, mapper: FhirMapper) {
+async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
     // create consumer
     let consumer: StreamConsumer = create_consumer(config.clone());
     match consumer.subscribe(&[&config.input_topic]) {
@@ -34,7 +33,7 @@ async fn run(config: Kafka, mapper: FhirMapper) {
 
     let stream = consumer
         .stream()
-        .map_err(|e| Box::new(e) as Box<dyn Error>)
+        .map_err(|e| e.into())
         .try_for_each(|m| {
             let consumer = consumer.clone();
             let producer = producer.clone();
@@ -65,15 +64,18 @@ async fn run(config: Kafka, mapper: FhirMapper) {
                         return Ok(());
                     }
 
-
-                    let Some(result) = (match mapper.map(payload.unwrap()) {
-                        Ok(ok) => { ok }
-                        Err(err) => {
-                            panic!("Failed to map payload with [key={key}]: {}", err)
+                    let result = match mapper.map(payload.unwrap()) {
+                        Ok(mapped) => match mapped {
+                            None => {
+                                commit_offset(&*consumer, &m);
+                                return Ok(());
+                            }
+                            Some(r) => { r }
                         }
-                    }) else {
-                        commit_offset(&*consumer, &m);
-                        return Ok(());
+                        Err(err) => {
+                            error!("Failed to map payload with [key={key}]: {}", err);
+                            return Err(err);
+                        }
                     };
 
                     // send to output topic
@@ -100,6 +102,7 @@ async fn run(config: Kafka, mapper: FhirMapper) {
     info!("Starting consumer");
     let error = stream.await;
     info!("Consumers terminated: {:?}", error);
+    error
 }
 
 fn commit_offset(consumer: &StreamConsumer, message: &BorrowedMessage) {
@@ -210,6 +213,7 @@ mod tests {
     use rdkafka::producer::{FutureProducer, FutureRecord};
     use serde_json::Value;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::sync::oneshot;
 
     #[tokio::test]
     async fn test_run() {
@@ -239,10 +243,19 @@ mod tests {
         output_consumer.subscribe(&[OUTPUT_TOPIC]).unwrap();
 
         // input data
-        let hl7_str = r#"MSH|^~\&|SENDING_APPLICATION|SENDING_FACILITY|RECEIVING_APPLICATION|RECEIVING_FACILITY|20110613083617||ADT^A04|934576120110613083617|P|2.3||||\r
-EVN|A04|20110613083617|||\r
-PID|1|123456|123456||MOUSE^MICKEY^||19281118|M|||123 Main St.^^Lake Buena Vista^FL^32830||(407)939-1289^^^theMainMouse@disney.com|||||1719|99999999||||||||||||||||||||\r
-PV1|1|O|||||7^Disney^Walt^^MD^^^^|||||||||||||||||||||||||||||||||||||||||||||"#;
+        let hl7_str = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|I|KJMST042^BSP-2-2^^KJM^KLINIKUM^961640|R^^HL7~01^Normalfall^11||KJMST042^BSP-1-1^^KJM^KLINIKUM^961640||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||1000|9||||202511022120|202511022120||||||A
+PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000||||||||||N||I||||||||||||Y
+DG1|1||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA En|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340005|U
+DG1|2||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||2|BBBBBB^^^^^^^^^^^^^^^^^^^^^^KJM||||12340007|U
+DG1|3||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|Aufn.|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340009|U
+DG1|4||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340001|U
+IN1|1||000000000^^^^NII~Krankenkasse^^^^XX|Krankenkasse|Strasse 1&Strasse&1^^Stadt^^1000^DE^L||000000000000^PRN^PH^^^00000^0000000^^^^^000000000000||Krankenkasse^1^^^1&gesetzliche Krankenkasse^^NII~Krankenkasse^1^^^^^U|||||||Nachname^Vorname||19340101|Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L|||H|||||||||F||||||||||||F|||||||||AndereStadt
+IN2|1||||||||||||||||||||||||||||^PC^100.0||||DE|||N|||ev||||||||||||||||||||||||00000 0000000
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes"#;
 
         let _res = send_record(test_producer.clone(), INPUT_TOPIC, hl7_str)
             .await
@@ -261,25 +274,37 @@ PV1|1|O|||||7^Disney^Walt^^MD^^^^|||||||||||||||||||||||||||||||||||||||||||||"#
         let mapper = FhirMapper::new(config.clone()).expect("failed to create mapper");
 
         // run processor
-        tokio::spawn(async move {
-            run(config.kafka, mapper).await;
+        let (tx, rx) = oneshot::channel();
+        let _ = tokio::spawn(async move {
+            if let Err(e) = run(config.kafka, mapper).await {
+                tx.send(e).unwrap();
+            }
         });
 
-        // get message from output topic
-        let m = output_consumer.recv().await.unwrap();
-        let (_, payload) = deserialize_message(&m);
-        let raw: Value =
-            serde_json::from_str(&*payload.expect("failed to read output message")).unwrap();
-        let b: Bundle = serde_json::from_value(raw).unwrap();
+        tokio::select! {
+            e = rx =>  {
+                match e {  Ok(e) => {panic!("processing message failed: {e}")}
+                    Err(_) => {}
+                }
+            }
+            m = output_consumer.recv() => {
+            // get message from output topic
+            let (_, payload) = deserialize_message(&m.unwrap());
+            let raw: Value =
+                serde_json::from_str(&*payload.expect("failed to read output message")).unwrap();
+            let b: Bundle = serde_json::from_value(raw).unwrap();
 
-        // assert resources
-        assert_eq!(b.entry.len(), 1);
-        assert!(
-            b.entry
-                .iter()
-                .map(|e| e.clone().unwrap().resource.unwrap().resource_type())
-                .all(|t| t == ResourceType::Patient)
-        );
+            // assert resources
+            assert_eq!(b.entry.len(), 1);
+            assert!(
+                b.entry
+                    .iter()
+                    .map(|e| e.clone().unwrap().resource.unwrap().resource_type())
+                    .all(|t| t == ResourceType::Patient)
+            );
+            }
+
+        }
     }
 
     async fn send_record(

@@ -16,4 +16,5 @@ serde_json = "1.0.140"
 fhir-model = { version = "0.12.0", default-features = false, features = ["builders", "r4b"] }
 hl7-parser = "0.3"
 anyhow = "1.0.98"
+thiserror = "2.0.12"
 chrono = "0.4"
