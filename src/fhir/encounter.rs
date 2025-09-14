@@ -1,31 +1,24 @@
 use crate::config::Fhir;
+use crate::fhir::mapper::FormattingError::DateFormatError;
 use crate::fhir::mapper::{
-    bundle_entry, extract_repeat, hl7_field, message_type, parse_date_string_to_datetime, subject_ref,
-    MessageType, MessageTypeError,
+    bundle_entry, hl7_field, message_type, parse_date_string_to_datetime, subject_ref,
+    MappingError, MessageTypeError,
 };
+use crate::fhir::mapper::{MessageAccessError, MessageType};
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
-use fhir_model::r4b::resources::{BundleEntry, Encounter};
+use fhir_model::r4b::resources::{BundleEntry, Encounter, EncounterHospitalization};
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period};
 use fhir_model::DateTime;
 use hl7_parser::Message;
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub(crate) enum EncounterError {
-    #[error(transparent)]
-    MessageTypeError(#[from] MessageTypeError),
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
-}
 
 pub(super) fn map_encounter(
     v2_msg: &Message,
     config: Fhir,
-) -> Result<Vec<BundleEntry>, EncounterError> {
+) -> Result<Vec<BundleEntry>, MappingError> {
     let r: Vec<BundleEntry> = vec![];
 
-    match message_type(&v2_msg)? {
+    match message_type(&v2_msg).map_err(MessageAccessError::MessageTypeError)? {
         MessageType::Admit
         | MessageType::Transfer
         | MessageType::Discharge
@@ -45,7 +38,7 @@ pub(super) fn map_encounter(
     }
 }
 
-fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, anyhow::Error> {
+fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, MappingError> {
     let admit = Encounter::builder()
         .meta(map_meta(config)?)
         .identifier(vec![
@@ -77,19 +70,9 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, an
                     .build()?,
             ),
         ])
-        .status(map_encounter_status(msg)?)
-        .class(
-            Coding::builder()
-                .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
-                .code(
-                    extract_repeat(hl7_field(msg, "PV1", 2)?.as_str(), 1)?
-                        .ok_or(anyhow!("failed to parse repeating field"))?,
-                )
-                // todo display value
-                .display("todo".to_string())
-                .build()?,
-        )
-        // kontaktebene
+        .status(map_encounter_status(msg).map_err(MessageAccessError::MessageTypeError)?)
+        .class(map_encounter_class(msg)?)
+        // Kontaktebene
         .r#type(vec![Some(
             CodeableConcept::builder()
                 .coding(vec![Some(
@@ -101,19 +84,25 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, an
                 )])
                 .build()?,
         )])
+        // Aufnahmeanlass
+        .hospitalization(map_admit_source(msg)?)
         .subject(subject_ref(msg, config.person.system.clone())?)
         // todo .service_provider()
-        .period(period(msg)?)
-        .class(map_encounter_class(msg)?)
+        .period(map_period(msg)?)
         .build()?;
 
     Ok(admit)
 }
 
-fn period(msg: &Message) -> Result<Period, anyhow::Error> {
+fn map_admit_source(msg: &Message) -> Result<EncounterHospitalization, MappingError> {
+    todo!()
+}
+
+fn map_period(msg: &Message) -> Result<Period, MappingError> {
     let start: DateTime = parse_date_string_to_datetime(hl7_field(msg, "PV1", 44)?.as_str())?
         .to_string()
-        .parse()?;
+        .parse()
+        .map_err(DateFormatError)?;
 
     let period = Period::builder().start(start.clone());
 
@@ -121,10 +110,11 @@ fn period(msg: &Message) -> Result<Period, anyhow::Error> {
         Ok(end) => period.end(
             parse_date_string_to_datetime(end.as_str())?
                 .to_string()
-                .parse()?,
+                .parse()
+                .map_err(DateFormatError)?,
         ),
         Err(_) => {
-            match message_type(msg)? {
+            match message_type(msg).map_err(MessageAccessError::MessageTypeError)? {
                 // A04 has no end date is assigned start date instead
                 MessageType::Registration => period.end(start),
                 _ => period,
@@ -135,7 +125,7 @@ fn period(msg: &Message) -> Result<Period, anyhow::Error> {
     Ok(p.build()?)
 }
 
-fn map_encounter_status(msg: &Message) -> Result<EncounterStatus, anyhow::Error> {
+fn map_encounter_status(msg: &Message) -> Result<EncounterStatus, MessageTypeError> {
     match message_type(msg)? {
         MessageType::Discharge => Ok(EncounterStatus::Finished),
         _ => Ok(EncounterStatus::InProgress),

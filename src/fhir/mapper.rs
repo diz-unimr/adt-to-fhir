@@ -1,11 +1,11 @@
 use crate::config::{AppConfig, Fhir};
 use crate::fhir;
-use crate::fhir::encounter::EncounterError;
+use crate::fhir::mapper::MessageAccessError::{MissingMessageField, MissingMessageSegment};
 use crate::fhir::mapper::MessageType::*;
 use crate::fhir::mapper::MessageTypeError::MissingMessageType;
 use anyhow::anyhow;
 use chrono::format::{DelayedFormat, StrftimeItems};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, ParseError, Utc};
 use fhir::encounter::map_encounter;
 use fhir::patient::map_patient;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
@@ -13,17 +13,42 @@ use fhir_model::r4b::resources::{
     Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Resource, ResourceType,
 };
 use fhir_model::r4b::types::{Identifier, Reference};
+use fhir_model::{BuilderError, DateFormatError};
 use hl7_parser::Message;
 use std::error::Error;
 use std::str::FromStr;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-enum MappingError {
+pub(crate) enum MappingError {
+    #[error(transparent)]
+    MessageAccessError(#[from] MessageAccessError),
+    #[error(transparent)]
+    BuilderError(#[from] BuilderError),
+    #[error(transparent)]
+    FormattingError(#[from] FormattingError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum FormattingError {
     #[error(transparent)]
-    Encounter(#[from] EncounterError),
+    DateFormatError(#[from] DateFormatError),
+    #[error(transparent)]
+    ParseError(#[from] ParseError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum MessageAccessError {
+    #[error("Missing message segment {0}")]
+    MissingMessageSegment(String),
+    #[error("Missing message field {0} in segment {1}")]
+    MissingMessageField(String, String),
+    #[error(transparent)]
+    MessageTypeError(#[from] MessageTypeError),
 }
 
 #[derive(Clone)]
@@ -244,10 +269,11 @@ pub(crate) fn extract_repeat(
 
 pub(crate) fn parse_date_string_to_date(
     input: &str,
-) -> Result<DelayedFormat<StrftimeItems>, anyhow::Error> {
+) -> Result<DelayedFormat<StrftimeItems>, FormattingError> {
     // Step 1: Parse the string into a NaiveDate
     let naive_date = NaiveDate::parse_from_str(input, "%Y%m%d")?;
 
+    // todo: this doesn't make sense
     // Step 2: Create a NaiveDateTime (at midnight)
     let naive_datetime = naive_date
         .and_hms_opt(0, 0, 0)
@@ -263,7 +289,7 @@ pub(crate) fn parse_date_string_to_date(
 
 pub(crate) fn parse_date_string_to_datetime(
     input: &str,
-) -> Result<DelayedFormat<StrftimeItems>, anyhow::Error> {
+) -> Result<DelayedFormat<StrftimeItems>, FormattingError> {
     // Parse to NaiveDateTime using the correct format
     let naive_datetime = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
 
@@ -273,7 +299,7 @@ pub(crate) fn parse_date_string_to_datetime(
     Ok(date)
 }
 
-pub(crate) fn subject_ref(msg: &Message, sid: String) -> Result<Reference, anyhow::Error> {
+pub(crate) fn subject_ref(msg: &Message, sid: String) -> Result<Reference, MappingError> {
     let pid = hl7_field(msg, "PID", 2)?;
 
     Ok(Reference::builder()
@@ -289,12 +315,13 @@ pub(crate) fn hl7_field(
     msg: &Message,
     segment: &str,
     field: usize,
-) -> Result<String, anyhow::Error> {
+) -> Result<String, MessageAccessError> {
     Ok(msg
         .segment(segment)
-        .ok_or(anyhow!("missing {segment} segment"))?
+        // .ok_or(anyhow!("missing {segment} segment"))?
+        .ok_or(MissingMessageSegment(segment.to_string()))?
         .field(field)
-        .ok_or(anyhow!("missing field {field}"))?
+        .ok_or(MissingMessageField(field.to_string(), segment.to_string()))?
         .raw_value()
         .to_string())
 }
