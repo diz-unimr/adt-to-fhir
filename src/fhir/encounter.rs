@@ -1,20 +1,22 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::FormattingError::DateFormatError;
 use crate::fhir::mapper::{
-    bundle_entry, hl7_field, message_type, parse_date_string_to_datetime, subject_ref,
+    bundle_entry, hl7_field, message_type, parse_date_string_to_datetime, resource_ref,
     MappingError, MessageTypeError,
 };
 use crate::fhir::mapper::{MessageAccessError, MessageType};
+use crate::fhir::resources::ResourceMap;
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
-use fhir_model::r4b::resources::{BundleEntry, Encounter, EncounterHospitalization};
-use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period};
+use fhir_model::r4b::resources::{BundleEntry, Encounter, EncounterHospitalization, ResourceType};
+use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period, Reference};
 use fhir_model::DateTime;
 use hl7_parser::Message;
 
 pub(super) fn map_encounter(
     v2_msg: &Message,
     config: Fhir,
+    resources: &ResourceMap,
 ) -> Result<Vec<BundleEntry>, MappingError> {
     let r: Vec<BundleEntry> = vec![];
 
@@ -24,7 +26,7 @@ pub(super) fn map_encounter(
         | MessageType::Discharge
         | MessageType::Registration
         | MessageType::PreAdmit => {
-            let enc_admit = map_einrichtungskontakt(v2_msg, &config)?;
+            let enc_admit = map_einrichtungskontakt(v2_msg, &config, resources)?;
             // todo
             // ...
 
@@ -38,7 +40,11 @@ pub(super) fn map_encounter(
     }
 }
 
-fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, MappingError> {
+fn map_einrichtungskontakt(
+    msg: &Message,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Encounter, MappingError> {
     let admit = Encounter::builder()
         .meta(map_meta(config)?)
         .identifier(vec![
@@ -72,9 +78,9 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
         ])
         .status(map_encounter_status(msg).map_err(MessageAccessError::MessageTypeError)?)
         .class(map_encounter_class(msg)?)
-        // Kontaktebene
         .r#type(vec![Some(
             CodeableConcept::builder()
+                // Kontaktebene
                 .coding(vec![Some(
                     Coding::builder()
                         .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
@@ -82,19 +88,40 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
                         .display("Einrichtungskontakt".to_string())
                         .build()?,
                 )])
+                // Kontaktart
+                .coding(vec![Some(map_kontaktart(msg)?)])
                 .build()?,
         )])
-        // Aufnahmeanlass
+        // todo Aufnahmeanlass
         .hospitalization(map_admit_source(msg)?)
-        .subject(subject_ref(msg, config.person.system.clone())?)
-        // todo .service_provider()
+        .subject(subject_ref(msg, &config.person.system)?)
+        // fab schluessel
+        .service_type(resources.map_fab_schluessel(&parse_fab(msg)?)?)
+        .service_provider(fab_ref(msg)?)
         .period(map_period(msg)?)
         .build()?;
 
     Ok(admit)
 }
+fn fab_ref(msg: &Message) -> Result<Reference, MappingError> {
+    Ok(resource_ref(
+        &ResourceType::Organization,
+        &parse_fab(msg)?,
+        "https://fhir.diz.uni-marburg.de/sid/department",
+    )?)
+}
 
-fn map_admit_source(msg: &Message) -> Result<EncounterHospitalization, MappingError> {
+fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
+    let pid = hl7_field(msg, "PID", 2)?;
+
+    resource_ref(&ResourceType::Patient, &pid, sid)
+}
+
+fn parse_fab(msg: &Message) -> Result<String, MessageAccessError> {
+    hl7_field(msg, "PV1", 39)
+}
+
+fn map_admit_source(_: &Message) -> Result<EncounterHospitalization, MappingError> {
     todo!()
 }
 
@@ -151,21 +178,46 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
     let code = hl7_field(msg, "PV1", 2)?;
     match code.as_str() {
         "I" => Ok(Coding::builder()
-            .code("IMP".to_string())
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
+            .code("IMP".to_string())
             .display("inpatient encounter".to_string())
             .build()?),
         "O" => Ok(Coding::builder()
-            .code("AMB".to_string())
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
+            .code("AMB".to_string())
             .display("ambulatory".to_string())
             .build()?),
         "P" => Ok(Coding::builder()
-            .code("PRENC".to_string())
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
+            .code("PRENC".to_string())
             .display("pre-admission".to_string())
             .build()?),
         // todo ...
-        _ => Err(anyhow!("Invalid encounter_class code: {}", code)),
+        _ => Err(anyhow!("Invalid encounter_class code (PV1.2): {}", code)),
+    }
+}
+
+fn map_kontaktart(msg: &Message) -> Result<Coding, MappingError> {
+    let code = hl7_field(msg, "PV1", 2)?;
+
+    match code.as_str() {
+        // todo inpatient, ambulatory?
+        "TS" => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+            .code("teilstationaer".to_string())
+            .display("Teilstationäre Behandlung".to_string())
+            .build()?),
+        "NS" => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+            .code("nachstationaer".to_string())
+            .display("Nachstationär".to_string())
+            .build()?),
+        "UB" => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+            .code("ub".to_string())
+            .display("Untersuchung und Behandlung".to_string())
+            .build()?),
+        _ => Err(anyhow!("Invalid kontakt_art code (PV1.2): {}", code))
+            .map_err(MappingError::Other)?,
     }
 }

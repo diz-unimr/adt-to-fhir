@@ -3,6 +3,7 @@ use crate::fhir;
 use crate::fhir::mapper::MessageAccessError::{MissingMessageField, MissingMessageSegment};
 use crate::fhir::mapper::MessageType::*;
 use crate::fhir::mapper::MessageTypeError::MissingMessageType;
+use crate::fhir::resources::ResourceMap;
 use anyhow::anyhow;
 use chrono::format::{DelayedFormat, StrftimeItems};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, ParseError, Utc};
@@ -15,7 +16,6 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::{BuilderError, DateFormatError};
 use hl7_parser::Message;
-use std::error::Error;
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -54,12 +54,14 @@ pub enum MessageAccessError {
 #[derive(Clone)]
 pub(crate) struct FhirMapper {
     pub(crate) config: Fhir,
+    pub(crate) resources: ResourceMap,
 }
 
 impl FhirMapper {
-    pub(crate) fn new(config: AppConfig) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn new(config: AppConfig) -> Result<Self, anyhow::Error> {
         Ok(FhirMapper {
             config: config.fhir,
+            resources: ResourceMap::new()?,
         })
     }
 
@@ -93,7 +95,7 @@ impl FhirMapper {
 
     fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>, MappingError> {
         let p = map_patient(v2_msg, self.config.clone())?;
-        let e = map_encounter(v2_msg, self.config.clone())?;
+        let e = map_encounter(v2_msg, self.config.clone(), &self.resources)?;
         // TODO map observation
         let res = p.into_iter().chain(e).map(|p| Some(p)).collect();
 
@@ -201,17 +203,15 @@ where
             BundleEntryRequest::builder()
                 .method(HTTPVerb::Put)
                 .url(conditional_reference(
-                    resource_type,
+                    &resource_type,
                     identifier
                         .system
-                        .clone()
-                        .ok_or(anyhow!("identifier.system missing"))?
-                        .to_owned(),
-                    identifier
+                        .as_deref()
+                        .ok_or(anyhow!("identifier.system missing"))?,
+                    &identifier
                         .value
-                        .clone()
-                        .ok_or(anyhow!("identifier.value missing"))?
-                        .to_owned(),
+                        .as_ref()
+                        .ok_or(anyhow!("identifier.value missing"))?,
                 ))
                 .build()?,
         )
@@ -220,22 +220,8 @@ where
         .into()
 }
 
-fn conditional_reference(resource_type: ResourceType, system: String, value: String) -> String {
+fn conditional_reference(resource_type: &ResourceType, system: &str, value: &str) -> String {
     format!("{resource_type}?identifier={system}|{value}")
-}
-
-fn resource_ref(res_type: ResourceType, identifiers: Vec<Option<Identifier>>) -> Option<Reference> {
-    default_identifier(identifiers).map(|id| {
-        Reference::builder()
-            .reference(format!(
-                "{}?identifier={}|{}",
-                res_type,
-                id.system.clone().unwrap(),
-                id.value.clone().unwrap()
-            ))
-            .build()
-            .unwrap()
-    })
 }
 
 fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier> {
@@ -299,15 +285,13 @@ pub(crate) fn parse_date_string_to_datetime(
     Ok(date)
 }
 
-pub(crate) fn subject_ref(msg: &Message, sid: String) -> Result<Reference, MappingError> {
-    let pid = hl7_field(msg, "PID", 2)?;
-
+pub(crate) fn resource_ref(
+    res_type: &ResourceType,
+    id: &str,
+    system: &str,
+) -> Result<Reference, MappingError> {
     Ok(Reference::builder()
-        .reference(conditional_reference(
-            ResourceType::Patient,
-            sid,
-            pid.to_string(),
-        ))
+        .reference(conditional_reference(res_type, system, id))
         .build()?)
 }
 
@@ -318,7 +302,6 @@ pub(crate) fn hl7_field(
 ) -> Result<String, MessageAccessError> {
     Ok(msg
         .segment(segment)
-        // .ok_or(anyhow!("missing {segment} segment"))?
         .ok_or(MissingMessageSegment(segment.to_string()))?
         .field(field)
         .ok_or(MissingMessageField(field.to_string(), segment.to_string()))?
