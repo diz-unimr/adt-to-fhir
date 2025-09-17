@@ -10,7 +10,7 @@ use std::path::PathBuf;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone)]
-struct Location {
+pub(crate) struct Location {
     desc: String,
     fachabteilungs_kuerzel: String,
     abteilungs_bezeichnung: String,
@@ -23,15 +23,15 @@ struct Location {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone)]
-struct Department {
-    fachabteilungs_schluessel: String,
-    abteilungs_bezeichnung: String,
+pub(crate) struct Department {
+    pub(crate) fachabteilungs_schluessel: String,
+    pub(crate) abteilungs_bezeichnung: String,
 }
 
 #[derive(Clone)]
 pub(crate) struct ResourceMap {
-    department_map: HashMap<String, Department>,
-    location_map: HashMap<String, Location>,
+    pub(crate) department_map: HashMap<String, Department>,
+    pub(crate) location_map: HashMap<String, Location>,
 }
 
 impl ResourceMap {
@@ -42,7 +42,10 @@ impl ResourceMap {
         })
     }
 
-    pub(crate) fn map_fab_schluessel(&self, code: &str) -> Result<CodeableConcept, MappingError> {
+    pub(crate) fn map_fab_schluessel(
+        &self,
+        code: &str,
+    ) -> Result<Option<CodeableConcept>, MappingError> {
         let dep = self
             .department_map
             .get(code)
@@ -51,18 +54,20 @@ impl ResourceMap {
                 code
             )))?;
 
-        Ok(CodeableConcept::builder()
-            .coding(vec![Some(
-                Coding::builder()
-                    .system(
-                        "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
-                            .to_string(),
-                    )
-                    .code(dep.fachabteilungs_schluessel.to_string())
-                    .display(dep.abteilungs_bezeichnung.to_string())
-                    .build()?,
-            )])
-            .build()?)
+        Ok(Some(
+            CodeableConcept::builder()
+                .coding(vec![Some(
+                    Coding::builder()
+                        .system(
+                            "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
+                                .to_string(),
+                        )
+                        .code(dep.fachabteilungs_schluessel.to_string())
+                        .display(dep.abteilungs_bezeichnung.to_string())
+                        .build()?,
+                )])
+                .build()?,
+        ))
     }
 }
 

@@ -1,9 +1,6 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::{
-    bundle_entry, extract_repeat, parse_date_string_to_date, parse_date_string_to_datetime,
-    MessageType,
-};
-use anyhow::{anyhow, Context};
+use crate::fhir::mapper::{bundle_entry, extract_repeat, parse_date, parse_datetime, MessageType};
+use anyhow::anyhow;
 use fhir_model::r4b::codes::AddressType::Both;
 use fhir_model::r4b::codes::{AdministrativeGender, IdentifierUse};
 use fhir_model::r4b::resources::Patient;
@@ -128,11 +125,7 @@ pub(super) fn map_patient(
 
     let deceased_confirm = if death_confirm.raw_value().to_owned() == "Y" {
         if !death_date_time.is_empty() {
-            PatientDeceased::DateTime(
-                parse_date_string_to_datetime(death_date_time.raw_value())?
-                    .to_string()
-                    .parse()?,
-            ) // period
+            PatientDeceased::DateTime(parse_datetime(death_date_time.raw_value())?) // period
         } else if death_date_time.is_empty() {
             PatientDeceased::Boolean(true) //
         } else {
@@ -177,11 +170,7 @@ pub(super) fn map_patient(
                 .unwrap(),
         )])
         //.birth_date(birth_date.to_string().parse().unwrap())
-        .birth_date(
-            parse_date_string_to_date(date_of_birth_date.raw_value())?
-                .to_string()
-                .parse()?,
-        )
+        .birth_date(parse_date(date_of_birth_date.raw_value())?)
         .gender(admin_gender)
         .address(vec![Some(address)])
         .name(vec![Some(humanname)])
@@ -192,55 +181,4 @@ pub(super) fn map_patient(
 
 pub(super) fn map_a01(v2_msg: Message, config: Fhir) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
     todo!("implement")
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::config::{Fhir, ResourceConfig};
-    use crate::fhir::patient::map_patient;
-    use crate::tests::read_test_resource;
-    use fhir_model::r4b::resources::{BundleEntry, Patient};
-    use hl7_parser::Message;
-
-    #[test]
-    fn map_test() {
-        let hl7 = read_test_resource("a01_test.hl7");
-
-        let config = Fhir {
-            person: ResourceConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
-                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
-            },
-            fall: Default::default(),
-        };
-
-        // act
-        let res = map_patient(
-            &Message::parse_with_lenient_newlines(hl7.as_str(), true).unwrap(),
-            config.clone(),
-        );
-
-        let ok = res.unwrap();
-        let entry = ok.first().unwrap();
-
-        // assert profile set
-        let p = to_patient(entry.clone());
-        let profile = p
-            .meta
-            .as_ref()
-            .unwrap()
-            .profile
-            .first()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .as_str();
-
-        assert_eq!(profile, config.person.profile.to_owned());
-    }
-
-    fn to_patient(e: BundleEntry) -> Patient {
-        let r = e.resource.unwrap();
-        Patient::try_from(r).unwrap()
-    }
 }

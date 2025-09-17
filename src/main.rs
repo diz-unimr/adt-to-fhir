@@ -1,3 +1,5 @@
+extern crate core;
+
 mod config;
 mod fhir;
 
@@ -121,7 +123,7 @@ async fn main() {
     env_logger::init_from_env(env);
 
     // mapper
-    let mapper = FhirMapper::new(config.clone()).expect("failed to create mapper");
+    let mapper = FhirMapper::new(config.fhir).expect("failed to create mapper");
 
     // run
     let num_partitions = 3;
@@ -261,7 +263,7 @@ mod tests {
         config.kafka.output_topic = OUTPUT_TOPIC.to_owned();
 
         // mapper
-        let mapper = FhirMapper::new(config.clone()).expect("failed to create mapper");
+        let mapper = FhirMapper::new(config.fhir).expect("failed to create mapper");
 
         // run processor
         let (tx, rx) = oneshot::channel();

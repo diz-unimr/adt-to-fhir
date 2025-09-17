@@ -1,12 +1,12 @@
-use crate::config::{AppConfig, Fhir};
+use crate::config::Fhir;
 use crate::fhir;
 use crate::fhir::mapper::MessageAccessError::{MissingMessageField, MissingMessageSegment};
 use crate::fhir::mapper::MessageType::*;
 use crate::fhir::mapper::MessageTypeError::MissingMessageType;
 use crate::fhir::resources::ResourceMap;
 use anyhow::anyhow;
-use chrono::format::{DelayedFormat, StrftimeItems};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, ParseError, Utc};
+use chrono::{Datelike, NaiveDateTime, ParseError, TimeZone};
+use chrono_tz::Europe::Berlin;
 use fhir::encounter::map_encounter;
 use fhir::patient::map_patient;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
@@ -14,7 +14,11 @@ use fhir_model::r4b::resources::{
     Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Resource, ResourceType,
 };
 use fhir_model::r4b::types::{Identifier, Reference};
-use fhir_model::{BuilderError, DateFormatError};
+use fhir_model::time::error::InvalidFormatDescription;
+use fhir_model::time::{Month, OffsetDateTime};
+use fhir_model::DateFormatError::InvalidDate;
+use fhir_model::{time, Date, DateTime};
+use fhir_model::{BuilderError, DateFormatError, Instant};
 use hl7_parser::Message;
 use std::str::FromStr;
 use thiserror::Error;
@@ -38,6 +42,12 @@ pub enum FormattingError {
     #[error(transparent)]
     ParseError(#[from] ParseError),
     #[error(transparent)]
+    ParseDateError(#[from] time::error::Parse),
+    #[error(transparent)]
+    InvalidFormatError(#[from] InvalidFormatDescription),
+    #[error(transparent)]
+    ComponentRangeError(#[from] time::error::ComponentRange),
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
@@ -49,6 +59,8 @@ pub enum MessageAccessError {
     MissingMessageField(String, String),
     #[error(transparent)]
     MessageTypeError(#[from] MessageTypeError),
+    #[error(transparent)]
+    ParseError(#[from] hl7_parser::parser::ParseError),
 }
 
 #[derive(Clone)]
@@ -58,9 +70,9 @@ pub(crate) struct FhirMapper {
 }
 
 impl FhirMapper {
-    pub(crate) fn new(config: AppConfig) -> Result<Self, anyhow::Error> {
+    pub(crate) fn new(config: Fhir) -> Result<Self, anyhow::Error> {
         Ok(FhirMapper {
-            config: config.fhir,
+            config,
             resources: ResourceMap::new()?,
         })
     }
@@ -245,7 +257,7 @@ fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier
 pub(crate) fn extract_repeat(
     field_value: &str,
     component: usize,
-) -> Result<Option<String>, anyhow::Error> {
+) -> Result<Option<String>, hl7_parser::parser::ParseError> {
     let repeat = hl7_parser::parser::parse_repeat(field_value)?;
     match repeat.component(component) {
         Some(c) => Ok(c.raw_value().to_string().parse().ok()),
@@ -253,36 +265,26 @@ pub(crate) fn extract_repeat(
     }
 }
 
-pub(crate) fn parse_date_string_to_date(
-    input: &str,
-) -> Result<DelayedFormat<StrftimeItems>, FormattingError> {
-    // Step 1: Parse the string into a NaiveDate
-    let naive_date = NaiveDate::parse_from_str(input, "%Y%m%d")?;
-
-    // todo: this doesn't make sense
-    // Step 2: Create a NaiveDateTime (at midnight)
-    let naive_datetime = naive_date
-        .and_hms_opt(0, 0, 0)
-        .ok_or(anyhow!("Invalid time when constructing datetime"))?;
-
-    // Step 3: Convert to DateTime<Utc>
-    let datetime_utc: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive_datetime, Utc);
-    let date = datetime_utc.format("%Y-%m-%d");
-
-    // Step 4: Extract just the date portion
-    Ok(date)
+pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
+    let dt = NaiveDateTime::parse_and_remainder(input, "%Y%m%d%H%M")?.0;
+    let date = time::Date::from_calendar_date(
+        dt.year(),
+        Month::try_from(dt.month() as u8)?,
+        dt.day() as u8,
+    )?;
+    Ok(Date::Date(date))
 }
 
-pub(crate) fn parse_date_string_to_datetime(
-    input: &str,
-) -> Result<DelayedFormat<StrftimeItems>, FormattingError> {
-    // Parse to NaiveDateTime using the correct format
-    let naive_datetime = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
+pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, FormattingError> {
+    let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
+    let dt_with_tz = Berlin
+        .from_local_datetime(&dt)
+        .earliest()
+        .ok_or(InvalidDate)?;
 
-    // Convert to DateTime<Utc>
-    let datetime_utc: DateTime<Utc> = DateTime::from_naive_utc_and_offset(naive_datetime, Utc);
-    let date = datetime_utc.format("%Y-%m-%dT%H:%M:%SZ");
-    Ok(date)
+    Ok(DateTime::DateTime(Instant(
+        OffsetDateTime::from_unix_timestamp(dt_with_tz.timestamp())?,
+    )))
 }
 
 pub(crate) fn resource_ref(
@@ -307,4 +309,126 @@ pub(crate) fn hl7_field(
         .ok_or(MissingMessageField(field.to_string(), segment.to_string()))?
         .raw_value()
         .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{FallConfig, Fhir, ResourceConfig};
+    use crate::fhir::mapper::{parse_datetime, FhirMapper};
+    use crate::fhir::resources::{Department, ResourceMap};
+    use crate::tests::read_test_resource;
+    use fhir_model::r4b::resources::{Bundle, BundleEntry, Encounter, Patient};
+    use fhir_model::time::{Month, OffsetDateTime, Time};
+    use fhir_model::DateTime::DateTime;
+    use fhir_model::{time, WrongResourceType};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_parse_datetime() {
+        // 2009-03-30 19:36
+        let s = "200903301036";
+
+        let parsed = parse_datetime(s).unwrap();
+
+        let expected = DateTime(
+            OffsetDateTime::new_utc(
+                time::Date::from_calendar_date(2009, Month::March, 30).unwrap(),
+                // local time is +2 (CEST) in this case
+                Time::from_hms(8, 36, 0).unwrap(),
+            )
+            .into(),
+        );
+
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn map_test() {
+        let hl7 = read_test_resource("a01_test.hl7");
+
+        let config = Fhir {
+            person: ResourceConfig {
+                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
+                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
+            },
+            fall: FallConfig {
+                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0".to_string(),
+                system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
+                einrichtungskontakt: Default::default(),
+                abteilungskontakt: Default::default(),
+                versorgungsstellenkontakt: Default::default(),
+            },
+        };
+        let mapper = FhirMapper {
+            config: config.clone(),
+            resources: ResourceMap {
+                department_map: HashMap::from([(
+                    "POL".to_string(),
+                    Department {
+                        abteilungs_bezeichnung: "Pneumologie".to_string(),
+                        fachabteilungs_schluessel: "0800".to_string(),
+                    },
+                )]),
+                location_map: Default::default(),
+            },
+        };
+
+        // act
+        let mapped = mapper.map(hl7).unwrap();
+
+        // map back to assert
+        let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
+
+        assert_eq!(bundle.entry.len(), 2);
+
+        let patient: Vec<Patient> = bundle
+            .entry
+            .iter()
+            .flatten()
+            .filter_map(|e| to_patient(e).ok())
+            .collect();
+        let encounter: Vec<Encounter> = bundle
+            .entry
+            .iter()
+            .flatten()
+            .filter_map(|e| to_encounter(e).ok())
+            .collect();
+
+        // assert profiles set
+        let p = patient.first().unwrap();
+        let patient_profile = p
+            .meta
+            .as_ref()
+            .unwrap()
+            .profile
+            .first()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .as_str();
+        let e = encounter.first().unwrap();
+        let encounter_profile = e
+            .meta
+            .as_ref()
+            .unwrap()
+            .profile
+            .first()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .as_str();
+
+        assert_eq!(patient_profile, config.person.profile.to_owned());
+        assert_eq!(encounter_profile, config.fall.profile.to_owned());
+    }
+
+    fn to_patient(e: &BundleEntry) -> Result<Patient, WrongResourceType> {
+        let r = e.resource.clone().unwrap();
+        Patient::try_from(r)
+    }
+
+    fn to_encounter(e: &BundleEntry) -> Result<Encounter, WrongResourceType> {
+        let r = e.resource.clone().unwrap();
+        Encounter::try_from(r)
+    }
 }

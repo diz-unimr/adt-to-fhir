@@ -1,8 +1,7 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::FormattingError::DateFormatError;
 use crate::fhir::mapper::{
-    bundle_entry, hl7_field, message_type, parse_date_string_to_datetime, resource_ref,
-    MappingError, MessageTypeError,
+    bundle_entry, extract_repeat, hl7_field, message_type, parse_datetime, resource_ref,
+    MappingError,
 };
 use crate::fhir::mapper::{MessageAccessError, MessageType};
 use crate::fhir::resources::ResourceMap;
@@ -10,6 +9,7 @@ use anyhow::anyhow;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{BundleEntry, Encounter, EncounterHospitalization, ResourceType};
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period, Reference};
+use fhir_model::time::OffsetDateTime;
 use fhir_model::DateTime;
 use hl7_parser::Message;
 
@@ -20,7 +20,12 @@ pub(super) fn map_encounter(
 ) -> Result<Vec<BundleEntry>, MappingError> {
     let r: Vec<BundleEntry> = vec![];
 
-    match message_type(&v2_msg).map_err(MessageAccessError::MessageTypeError)? {
+    if is_begleitperson(v2_msg).is_ok_and(|v| v) {
+        return Ok(r);
+    }
+
+    let msg_type = message_type(v2_msg);
+    match msg_type.map_err(MessageAccessError::MessageTypeError)? {
         MessageType::Admit
         | MessageType::Transfer
         | MessageType::Discharge
@@ -40,19 +45,25 @@ pub(super) fn map_encounter(
     }
 }
 
+fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
+    Ok(hl7_field(msg, "PV1", 2)? == "H")
+}
+
 fn map_einrichtungskontakt(
     msg: &Message,
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Encounter, MappingError> {
-    let admit = Encounter::builder()
+    let fab = parse_fab(msg)?;
+
+    let mut admit = Encounter::builder()
         .meta(map_meta(config)?)
         .identifier(vec![
             Some(
                 Identifier::builder()
                     .system(config.fall.einrichtungskontakt.system.clone())
                     .value(map_visit_number(msg)?)
-                    .r#use(IdentifierUse::Secondary)
+                    .r#use(IdentifierUse::Usual)
                     .build()?,
             ),
             // common identifier is last
@@ -76,37 +87,51 @@ fn map_einrichtungskontakt(
                     .build()?,
             ),
         ])
-        .status(map_encounter_status(msg).map_err(MessageAccessError::MessageTypeError)?)
         .class(map_encounter_class(msg)?)
-        .r#type(vec![Some(
-            CodeableConcept::builder()
-                // Kontaktebene
-                .coding(vec![Some(
-                    Coding::builder()
-                        .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
-                        .code("einrichtungskontakt".to_string())
-                        .display("Einrichtungskontakt".to_string())
-                        .build()?,
-                )])
-                // Kontaktart
-                .coding(vec![Some(map_kontaktart(msg)?)])
-                .build()?,
-        )])
+        .r#type(map_encounter_type(msg)?)
         // todo Aufnahmeanlass
-        .hospitalization(map_admit_source(msg)?)
+        // .hospitalization(map_admit_source(msg)?)
         .subject(subject_ref(msg, &config.person.system)?)
-        // fab schluessel
-        .service_type(resources.map_fab_schluessel(&parse_fab(msg)?)?)
-        .service_provider(fab_ref(msg)?)
         .period(map_period(msg)?)
+        // set status depends on period.start / period.end
+        .status(map_encounter_status(&map_period(msg)?))
         .build()?;
+
+    // fab related
+    if let Some(f) = fab {
+        // fab schluessel
+        admit.service_type = resources.map_fab_schluessel(&f)?;
+        // service provider
+        admit.service_provider = Some(fab_ref(&f)?);
+    }
 
     Ok(admit)
 }
-fn fab_ref(msg: &Message) -> Result<Reference, MappingError> {
+
+fn map_encounter_type(msg: &Message) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
+    let mut coding = vec![Some(
+        // Kontaktebene
+        Coding::builder()
+            .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
+            .code("einrichtungskontakt".to_string())
+            .display("Einrichtungskontakt".to_string())
+            .build()?,
+    )];
+
+    if let Some(c) = map_kontaktart(msg)? {
+        // Kontaktart
+        coding.push(Some(c));
+    }
+
+    Ok(vec![Some(
+        CodeableConcept::builder().coding(coding).build()?,
+    )])
+}
+
+fn fab_ref(fab: &str) -> Result<Reference, MappingError> {
     Ok(resource_ref(
         &ResourceType::Organization,
-        &parse_fab(msg)?,
+        fab,
         "https://fhir.diz.uni-marburg.de/sid/department",
     )?)
 }
@@ -117,8 +142,24 @@ fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
     resource_ref(&ResourceType::Patient, &pid, sid)
 }
 
-fn parse_fab(msg: &Message) -> Result<String, MessageAccessError> {
-    hl7_field(msg, "PV1", 39)
+fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
+    let assigned_loc = &hl7_field(msg, "PV1", 3)?;
+
+    let facility = extract_repeat(assigned_loc, 4)?;
+    let location = extract_repeat(assigned_loc, 1)?;
+    let loc_status = extract_repeat(assigned_loc, 5)?;
+    // let kostenstelle = extract_repeat(assigned_loc, 6)?;
+
+    // todo: kostenstelle lookup etc.
+    match (facility, location, loc_status) {
+        // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
+        (Some(f), Some(_), _) => Ok(Some(f)),
+        // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
+        (None, Some(l), _) => Ok(Some(l)),
+        // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
+        (Some(_), None, Some(st)) => Ok(Some(st)),
+        _ => Ok(None),
+    }
 }
 
 fn map_admit_source(_: &Message) -> Result<EncounterHospitalization, MappingError> {
@@ -126,20 +167,11 @@ fn map_admit_source(_: &Message) -> Result<EncounterHospitalization, MappingErro
 }
 
 fn map_period(msg: &Message) -> Result<Period, MappingError> {
-    let start: DateTime = parse_date_string_to_datetime(hl7_field(msg, "PV1", 44)?.as_str())?
-        .to_string()
-        .parse()
-        .map_err(DateFormatError)?;
-
+    let start: DateTime = parse_datetime(hl7_field(msg, "PV1", 44)?.as_str())?;
     let period = Period::builder().start(start.clone());
 
     let p = match hl7_field(msg, "PV1", 45) {
-        Ok(end) => period.end(
-            parse_date_string_to_datetime(end.as_str())?
-                .to_string()
-                .parse()
-                .map_err(DateFormatError)?,
-        ),
+        Ok(end) => period.end(parse_datetime(end.as_str())?),
         Err(_) => {
             match message_type(msg).map_err(MessageAccessError::MessageTypeError)? {
                 // A04 has no end date is assigned start date instead
@@ -152,10 +184,17 @@ fn map_period(msg: &Message) -> Result<Period, MappingError> {
     Ok(p.build()?)
 }
 
-fn map_encounter_status(msg: &Message) -> Result<EncounterStatus, MessageTypeError> {
-    match message_type(msg)? {
-        MessageType::Discharge => Ok(EncounterStatus::Finished),
-        _ => Ok(EncounterStatus::InProgress),
+fn map_encounter_status(period: &Period) -> EncounterStatus {
+    match (period.start.clone(), period.end.clone()) {
+        (None, None) => EncounterStatus::Unknown,
+        (_, Some(_)) => EncounterStatus::Finished,
+        (Some(start), _) => {
+            if start.lt(&DateTime::DateTime(OffsetDateTime::now_utc().into())) {
+                EncounterStatus::InProgress
+            } else {
+                EncounterStatus::Planned
+            }
+        }
     }
 }
 
@@ -192,31 +231,49 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
             .code("PRENC".to_string())
             .display("pre-admission".to_string())
             .build()?),
-        // todo ...
+        // todo ... VR / SS / HH
         _ => Err(anyhow!("Invalid encounter_class code (PV1.2): {}", code)),
     }
 }
 
-fn map_kontaktart(msg: &Message) -> Result<Coding, MappingError> {
+fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
     let code = hl7_field(msg, "PV1", 2)?;
 
     match code.as_str() {
-        // todo inpatient, ambulatory?
-        "TS" => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-            .code("teilstationaer".to_string())
-            .display("Teilstationäre Behandlung".to_string())
-            .build()?),
-        "NS" => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-            .code("nachstationaer".to_string())
-            .display("Nachstationär".to_string())
-            .build()?),
-        "UB" => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-            .code("ub".to_string())
-            .display("Untersuchung und Behandlung".to_string())
-            .build()?),
+        // todo: the following are missing
+        // O ("Ambulantes Operieren") => operation
+        // I ("Normalstationär") => normalstationaer
+        // I ("Intensivstationär") => intensivstationaer
+        "I" => Ok(None),
+        "O" => Ok(None),
+        "H" => Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                .code("begleitperson".to_string())
+                .display("Begleitperson".to_string())
+                .build()?,
+        )),
+        "TS" => Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                .code("teilstationaer".to_string())
+                .display("Teilstationäre Behandlung".to_string())
+                .build()?,
+        )),
+        "NS" => Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                .code("nachstationaer".to_string())
+                .display("Nachstationär".to_string())
+                .build()?,
+        )),
+        "UB" => Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                .code("ub".to_string())
+                .display("Untersuchung und Behandlung".to_string())
+                .build()?,
+        )),
         _ => Err(anyhow!("Invalid kontakt_art code (PV1.2): {}", code))
             .map_err(MappingError::Other)?,
     }
