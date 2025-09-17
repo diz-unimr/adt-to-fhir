@@ -9,6 +9,7 @@ use chrono::{Datelike, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
 use fhir::encounter::map_encounter;
 use fhir::patient::map_patient;
+use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
     Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Resource, ResourceType,
@@ -16,9 +17,8 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::time::{Month, OffsetDateTime};
-use fhir_model::DateFormatError::InvalidDate;
-use fhir_model::{time, Date, DateTime};
 use fhir_model::{BuilderError, DateFormatError, Instant};
+use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 use std::str::FromStr;
 use thiserror::Error;
@@ -314,13 +314,13 @@ pub(crate) fn hl7_field(
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::mapper::{parse_datetime, FhirMapper};
+    use crate::fhir::mapper::{FhirMapper, parse_datetime};
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
+    use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Encounter, Patient};
     use fhir_model::time::{Month, OffsetDateTime, Time};
-    use fhir_model::DateTime::DateTime;
-    use fhir_model::{time, WrongResourceType};
+    use fhir_model::{WrongResourceType, time};
     use std::collections::HashMap;
 
     #[test]

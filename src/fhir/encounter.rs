@@ -1,16 +1,16 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::{
-    bundle_entry, extract_repeat, hl7_field, message_type, parse_datetime, resource_ref,
-    MappingError,
+    MappingError, bundle_entry, extract_repeat, hl7_field, message_type, parse_datetime,
+    resource_ref,
 };
 use crate::fhir::mapper::{MessageAccessError, MessageType};
 use crate::fhir::resources::ResourceMap;
 use anyhow::anyhow;
+use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{BundleEntry, Encounter, EncounterHospitalization, ResourceType};
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period, Reference};
 use fhir_model::time::OffsetDateTime;
-use fhir_model::DateTime;
 use hl7_parser::Message;
 
 pub(super) fn map_encounter(

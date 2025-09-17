@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::{bundle_entry, extract_repeat, parse_date, parse_datetime, MessageType};
+use crate::fhir::mapper::{MessageType, bundle_entry, extract_repeat, parse_date, parse_datetime};
 use anyhow::anyhow;
 use fhir_model::r4b::codes::AddressType::Both;
 use fhir_model::r4b::codes::{AdministrativeGender, IdentifierUse};
