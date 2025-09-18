@@ -4,9 +4,9 @@ name: MegaLinter
 
 "on":
   push:
-    branches: [ master, main ]
+    branches: [master, main]
     tags:
-      - '**'
+      - "**"
   pull_request:
 
 permissions: read-all
