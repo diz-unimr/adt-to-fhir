@@ -7,6 +7,8 @@ name: Cargo Machete
       - "**"
   pull_request:
 
+permissions: read-all
+
 jobs:
   detect-unused-dependencies:
     runs-on: ubuntu-latest
