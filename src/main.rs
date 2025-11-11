@@ -10,12 +10,12 @@ use config::AppConfig;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, info};
-use rdkafka::ClientConfig;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::{BorrowedMessage, Headers, Message};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
+use rdkafka::ClientConfig;
 use std::sync::Arc;
 
 async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
@@ -284,19 +284,18 @@ mod tests {
             if let Err(e) = run(config.kafka, mapper).await {
                 tx.send(e).unwrap();
             }
-        });
+        })
+        .await;
 
         tokio::select! {
             e = rx =>  {
-                match e {  Ok(e) => {panic!("processing message failed: {e}")}
-                    Err(_) => {}
-                }
+                if let Ok(e) = e {panic!("processing message failed: {e}")}
             }
             m = output_consumer.recv() => {
             // get message from output topic
             let (_, payload) = deserialize_message(&m.unwrap());
             let raw: Value =
-                serde_json::from_str(&*payload.expect("failed to read output message")).unwrap();
+                serde_json::from_str(&payload.expect("failed to read output message")).unwrap();
             let b: Bundle = serde_json::from_value(raw).unwrap();
 
             // assert resources

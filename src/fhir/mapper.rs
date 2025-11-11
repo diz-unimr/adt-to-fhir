@@ -9,7 +9,6 @@ use chrono::{Datelike, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
 use fhir::encounter::map_encounter;
 use fhir::patient::map_patient;
-use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
     Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Resource, ResourceType,
@@ -17,8 +16,9 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::time::{Month, OffsetDateTime};
+use fhir_model::DateFormatError::InvalidDate;
+use fhir_model::{time, Date, DateTime};
 use fhir_model::{BuilderError, DateFormatError, Instant};
-use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 use std::str::FromStr;
 use thiserror::Error;
@@ -117,25 +117,45 @@ impl FhirMapper {
 
 #[derive(PartialEq, Debug)]
 pub enum MessageType {
+    /// ADT A01
     Admit,
+    /// ADT A02
     Transfer,
+    /// ADT A03
     Discharge,
+    /// ADT A04
     Registration,
+    /// ADT A05
     PreAdmit,
+    /// ADT A06
     ChangeOutpatientToInpatient,
+    /// ADT A07
     ChangeInpatientToOutpatient,
+    /// ADT A08
     PatientUpdate,
+    /// ADT A11
     CancelAdmitVisit,
+    /// ADT A12
     CancelTransfer,
+    /// ADT A13
     CancelDischarge,
+    /// ADT A14
     PendingAdmit,
+    /// ADT A27
     CancelPendingAdmit,
+    /// ADT A28
     AddPersonInformation,
+    /// ADT A29
     DeletePersonInformation,
+    /// ADT A31
     ChangePersonData,
+    /// ADT A40
     MergePatientRecords,
+    /// ADT A45
     PatientReassignmentToSingleCase,
+    /// ADT A47
     PatientReassignmentToAllCases,
+    /// ADT A50
     UpdateEncounterNumber,
 }
 
@@ -147,7 +167,6 @@ pub enum MessageTypeError {
     MissingMessageType(String),
 }
 
-// todo refactor
 impl FromStr for MessageType {
     type Err = MessageTypeError;
 
@@ -179,7 +198,7 @@ impl FromStr for MessageType {
 }
 
 pub(crate) fn message_type(msg: &Message) -> Result<MessageType, MessageTypeError> {
-    Ok(MessageType::from_str(
+    MessageType::from_str(
         msg.segment("EVN")
             .ok_or(MissingMessageType("missing ENV segment".to_string()))?
             .field(1)
@@ -187,7 +206,7 @@ pub(crate) fn message_type(msg: &Message) -> Result<MessageType, MessageTypeErro
                 "missing message type segment".to_string(),
             ))?
             .raw_value(),
-    )?)
+    )
 }
 
 // todo: request type parameter
@@ -205,8 +224,7 @@ where
         .identifier()
         .iter()
         .flatten()
-        .filter(|&id| id.r#use.is_some_and(|u| u == IdentifierUse::Usual))
-        .next()
+        .find(|&id| id.r#use.is_some_and(|u| u == IdentifierUse::Usual))
         .ok_or(anyhow!("missing identifier with use: 'usual'"))?;
 
     BundleEntry::builder()
@@ -220,16 +238,15 @@ where
                         .system
                         .as_deref()
                         .ok_or(anyhow!("identifier.system missing"))?,
-                    &identifier
+                    identifier
                         .value
-                        .as_ref()
+                        .as_deref()
                         .ok_or(anyhow!("identifier.value missing"))?,
                 ))
                 .build()?,
         )
         .build()
         .map_err(|e| e.into())
-        .into()
 }
 
 fn conditional_reference(resource_type: &ResourceType, system: &str, value: &str) -> String {
@@ -314,13 +331,13 @@ pub(crate) fn hl7_field(
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::mapper::{FhirMapper, parse_datetime};
+    use crate::fhir::mapper::{parse_datetime, FhirMapper};
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
-    use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Encounter, Patient};
     use fhir_model::time::{Month, OffsetDateTime, Time};
-    use fhir_model::{WrongResourceType, time};
+    use fhir_model::DateTime::DateTime;
+    use fhir_model::{time, WrongResourceType};
     use std::collections::HashMap;
 
     #[test]

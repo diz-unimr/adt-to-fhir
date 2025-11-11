@@ -1,16 +1,16 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::{
-    MappingError, bundle_entry, extract_repeat, hl7_field, message_type, parse_datetime,
-    resource_ref,
+    bundle_entry, extract_repeat, hl7_field, message_type, parse_datetime, resource_ref,
+    MappingError,
 };
 use crate::fhir::mapper::{MessageAccessError, MessageType};
 use crate::fhir::resources::ResourceMap;
 use anyhow::anyhow;
-use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{BundleEntry, Encounter, EncounterHospitalization, ResourceType};
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period, Reference};
 use fhir_model::time::OffsetDateTime;
+use fhir_model::DateTime;
 use hl7_parser::Message;
 
 pub(super) fn map_encounter(
@@ -89,8 +89,7 @@ fn map_einrichtungskontakt(
         ])
         .class(map_encounter_class(msg)?)
         .r#type(map_encounter_type(msg)?)
-        // todo Aufnahmeanlass
-        // .hospitalization(map_admit_source(msg)?)
+        .hospitalization(map_admit_source(msg)?)
         .subject(subject_ref(msg, &config.person.system)?)
         .period(map_period(msg)?)
         // set status depends on period.start / period.end
@@ -129,11 +128,11 @@ fn map_encounter_type(msg: &Message) -> Result<Vec<Option<CodeableConcept>>, Map
 }
 
 fn fab_ref(fab: &str) -> Result<Reference, MappingError> {
-    Ok(resource_ref(
+    resource_ref(
         &ResourceType::Organization,
         fab,
         "https://fhir.diz.uni-marburg.de/sid/department",
-    )?)
+    )
 }
 
 fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
@@ -162,8 +161,78 @@ fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
     }
 }
 
-fn map_admit_source(_: &Message) -> Result<EncounterHospitalization, MappingError> {
-    todo!()
+fn map_admit_source(msg: &Message) -> Result<EncounterHospitalization, MappingError> {
+    let admit =
+        extract_repeat(&hl7_field(msg, "PV1", 4)?, 1).map_err(MessageAccessError::ParseError)?;
+
+    let coding = match admit.as_deref() {
+        Some("E") => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code("E".to_string())
+            .display("Einweisung durch einen Arzt".to_string())
+            .build()?),
+        Some("Z") => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code("Z".to_string())
+            .display("Einweisung durch einen Zahnarzt".to_string())
+            .build()?),
+        Some("N") => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code("N".to_string())
+            .display("Notfall".to_string())
+            .build()?),
+        Some("R") => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code("R".to_string())
+            .display(
+                "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
+                    .to_string(),
+            )
+            .build()?),
+        Some("V") => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code("V".to_string())
+            .display(
+                "Verlegung mit Behandlungsdauer im verlegenden Krankenhaus länger als 24 Stunden"
+                    .to_string(),
+            )
+            .build()?),
+        Some("A") => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code("A".to_string())
+            .display(
+                "Verlegung mit Behandlungsdauer im verlegenden Krankenhaus bis zu 24 Stunden"
+                    .to_string(),
+            )
+            .build()?),
+        Some("G") => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code("G".to_string())
+            .display("Geburt".to_string())
+            .build()?),
+        Some("B") => Ok(Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code("B".to_string())
+            .display("Begleitperson oder mitaufgenommene Pflegekraft".to_string())
+            .build()?),
+
+        Some(other) => Err(MappingError::Other(anyhow!(
+            "Unknown code {} in PV1-4.1 for Encounter.hospitalization.admitSource",
+            other
+        ))),
+        None => Err(MappingError::Other(anyhow!(
+            "Missing PV1-4.1 field / component for Encounter.hospitalization.admitSource"
+        ))),
+    }?;
+
+    EncounterHospitalization::builder()
+        .admit_source(
+            CodeableConcept::builder()
+                .coding(vec![Some(coding)])
+                .build()?,
+        )
+        .build()
+        .map_err(|e| e.into())
 }
 
 fn map_period(msg: &Message) -> Result<Period, MappingError> {
