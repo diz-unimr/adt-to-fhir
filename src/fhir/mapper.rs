@@ -9,6 +9,7 @@ use chrono::{Datelike, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
 use fhir::encounter::map_encounter;
 use fhir::patient::map_patient;
+use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
     Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Resource, ResourceType,
@@ -167,6 +168,7 @@ pub enum MessageTypeError {
     MissingMessageType(String),
 }
 
+// todo refactor
 impl FromStr for MessageType {
     type Err = MessageTypeError;
 
