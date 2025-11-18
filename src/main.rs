@@ -10,7 +10,6 @@ use config::AppConfig;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, info};
-use rdkafka::ClientConfig;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::{BorrowedMessage, Headers, Message};
