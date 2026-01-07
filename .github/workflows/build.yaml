@@ -2,6 +2,10 @@ name: build & test
 
 "on":
   push:
+    branches:
+      - main
+    tags:
+      - "**"
   pull_request:
 
 permissions: read-all
@@ -14,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build
         run: cargo build --verbose
       - name: Install Rust

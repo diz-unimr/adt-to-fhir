@@ -20,12 +20,26 @@ pub(crate) struct Kafka {
 #[derive(Default, Deserialize, Clone)]
 pub(crate) struct Fhir {
     pub(crate) person: ResourceConfig,
-    pub(crate) fall: ResourceConfig,
+    pub(crate) fall: FallConfig,
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct ResourceConfig {
     pub(crate) profile: String,
+    pub(crate) system: String,
+}
+
+#[derive(Default, Debug, Deserialize, Clone)]
+pub(crate) struct FallConfig {
+    pub(crate) profile: String,
+    pub(crate) system: String,
+    pub(crate) einrichtungskontakt: SystemConfig,
+    pub(crate) abteilungskontakt: SystemConfig,
+    pub(crate) versorgungsstellenkontakt: SystemConfig,
+}
+
+#[derive(Default, Debug, Deserialize, Clone)]
+pub(crate) struct SystemConfig {
     pub(crate) system: String,
 }
 
