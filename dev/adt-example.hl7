@@ -1,13 +1,37 @@
-test:MSH|^~\&|SENDING_APPLICATION|SENDING_FACILITY|RECEIVING_APPLICATION|RECEIVING_FACILITY|20110613083617||ADT^A04|934576120110613083617|P|2.3||||
-EVN|A04|20110613083617|||
-PID|1|135769|135769||MOUSE^MICKEY^||19281118|M|||123 Main St.^^Lake Buena Vista^FL^32830||(407)939-1289^^^theMainMouse@disney.com|||||1719|99999999||||||||||||||||||||
-PV1|1|O|||||7^Disney^Walt^^MD^^^^|||||||||||||||||||||||||||||||||||||||||||||
-#test2:MSH|^~\&|SENDING_APPLICATION|SENDING_FACILITY|RECEIVING_APPLICATION|RECEIVING_FACILITY|20110613083617||ADT^A04|934576120110613083617|P|2.3||||
-EVN|A04|20110613083617|||
-PID|1|135769|135769||MOUSE^MICKEY^||19281118|M|||123 Main St.^^Lake Buena Vista^FL^32830||(407)939-1289^^^theMainMouse@disney.com|||||1719|99999999||||||||||||||||||||
-PV1|1|O|||||7^Disney^Walt^^MD^^^^|||||||||||||||||||||||||||||||||||||||||||||
-#test3:MSH|^~\&|ORBIS ®|KH-HL|EGATE|KH-HL|20090330103803||ADT^A01^ADT_A01|8048087|P|2.5|||NE|NE||8859/1
-EVN|A01|20090330103743||30604291|MUSTER-M|20090330103600
-PID|1|015333|015333||Test^Test^^^^^L~Test^^^^^^B||19410909|F|||Test 18&Test&18^^Test^^35075^DE^L||0646^PRN^PH^^^06462^7286^^^^^12345|||M|ka|||||||||DE|||200903301036|Y
-PV1|1|I|LHS08S8^^^LPSYS^^26935080|R^^HL7~01^Normalfall^301||||13954^Otto^Maximilian-Mustermann^^^^Dr.med.^^^L|13954^Mustermann^Max^^^^Dr.med.^^^L|N||||||N|||209047907||K|||||||F100222|||||||||||3100|||||200903301036|||||||A
-PV2|||01^KH-Behandlung, vollstat.^301|||||||||Ew wird nachgereicht!bo||||||||||||I||||||||||||N
+test:MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.3|||||D||DE
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
+PV1|1|I|POLPOLAMB^^^POL^POLPOL^945400^^^|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331
+IN2|1||||||||||||||||||||||||||||^PC^100^K
+DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||20230101131500|Aufn.|||||||||1|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345677|U
+DG1|2||Z11^Spezielle Verfahren zur Untersuchung auf infektiöse und parasitäre Krankheiten^icd10gm2022||20230101131500|Entl.|||||||||2.1|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345678|U
+DG1|3||U99.0!^Spezielle Verfahren zur Untersuchung auf SARS-CoV-2^icd10gm2022||20230101131500|Entl.|||||||||2.2|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345679|U
+ZBE|30674176^ORBIS|202208221309||UPDATE
+ZNG||||||35|
+
+#test2:MSH|^~\&|ORBIS|KH|WEBEPA|KH|20220218211631||ADT^A08^ADT_A01|64569465|P|2.5||634947521|NE|NE||8859/1
+EVN|A08|202202182116||12020_634947521|SASCHNE|202202182113
+PID|1|3678324|3678324|47130953|Schuster^Regine^^^^^L||19350101|F|||Talstraße 16&Talstraße&13^^Holzhausen^^67184^DE^L|||||U||||||||||DE||||N
+PV1|1|O|^ZNA-S2^^^^^^^|E^^HL7~07^Notfall^301||||||N||||||N|||47130953||K|||||||||||||||||||||||202202182113|||||||A
+PV2|||01^KH-Behandlung, vollstat.^301||||||202203040000|||||||||||||N||I||||||||||||N
+IN1|1||230571234^^^^NII~DAK GESUND^^^^XX|DAK Gesundheit|Sommerfelderstr.  120&Sommerfelderstr. &120^^Leipzig^^04316^DE^L||||Ersatzkassen^13^^^1&gesetzliche Krankenkasse^^NII~Ersatzkassen^13^^^^^U|||||||Schuster^Regine||19350101|Talstraße 16&Talstraße&13^^Holzhausen^^67184^DE^L|||H|||||||||R|||||C496215443|||||||F||||||C496215443
+IN2|1|C496215443|||||||||||||||||||||||||||^PC^100.0||||DE|||N
+ZBE|30521686^ORBIS|202202182113||UPDATE
+ZBK|WebEPA+ Einwilligung^Ärzteportal eingewilligt|nicht ausgewählt^Auswahlbox nicht angewählt|1|||47130953^Fall
+ZVK||Regine||Schuster|19350101|Talstraße 16|D|67184|Holzhausen|C496215443|5||230571234|DAK-Gesundheit|00046|||20220218
+IN1|1||230571234^^^^NII~DAK GESUND^^^^XX|DAK Gesundheit|Sommerfelderstr.  120&Sommerfelderstr. &120^^Leipzig^^04316^DE^L||||Ersatzkassen^13^^^1&gesetzliche Krankenkasse^^NII~Ersatzkassen^13^^^^^U|||||||Schuster^Regine||19350101ZVK||Regine||Schuster|19350101|Talstraße 16|D|67184|Holzhausen|C496215443|5||230571234|DAK-Gesundheit|00046|||20220218ll
+
+#test3:MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|N|1|DE||||N
+PV1|1|I|KJMST042^BSP-2-2^^KJM^KLINIKUM^961640|R^^HL7~01^Normalfall^11||KJMST042^BSP-1-1^^KJM^KLINIKUM^961640||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||1000|9||||202511022120|202511022120||||||A
+PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000||||||||||N||I||||||||||||Y
+DG1|1||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA En|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340005|U
+DG1|2||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||2|BBBBBB^^^^^^^^^^^^^^^^^^^^^^KJM||||12340007|U
+DG1|3||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|Aufn.|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340009|U
+DG1|4||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340001|U
+IN1|1||000000000^^^^NII~Krankenkasse^^^^XX|Krankenkasse|Strasse 1&Strasse&1^^Stadt^^1000^DE^L||000000000000^PRN^PH^^^00000^0000000^^^^^000000000000||Krankenkasse^1^^^1&gesetzliche Krankenkasse^^NII~Krankenkasse^1^^^^^U|||||||Nachname^Vorname||19340101|Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L|||H|||||||||F||||||||||||F|||||||||AndereStadt
+IN2|1||||||||||||||||||||||||||||^PC^100.0||||DE|||N|||ev||||||||||||||||||||||||00000 0000000
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes

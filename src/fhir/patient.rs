@@ -1,161 +1,94 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::{MessageType, bundle_entry, extract_repeat, parse_date, parse_datetime};
+use crate::fhir::mapper::{
+    bundle_entry, extract_comp, hl7_field, message_type, parse_date, parse_datetime,
+    repeating_hl7_field, MappingError, MessageAccessError, MessageType,
+};
 use anyhow::anyhow;
-use fhir_model::r4b::codes::AddressType::Both;
-use fhir_model::r4b::codes::{AdministrativeGender, IdentifierUse};
+use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::Patient;
 use fhir_model::r4b::resources::{BundleEntry, PatientDeceased};
-use fhir_model::r4b::types::Extension;
-use fhir_model::r4b::types::{Address, HumanNameInner};
-use fhir_model::r4b::types::{
-    AddressBuilder, AddressInner, ExtensionValue, FieldExtensionBuilder, Identifier, Meta,
-};
-use fhir_model::r4b::types::{ExtensionInner, HumanName};
+use fhir_model::r4b::types::{Address, CodeableConcept, Coding, Extension, FieldExtension};
+use fhir_model::r4b::types::{ExtensionValue, HumanName};
+use fhir_model::r4b::types::{Identifier, Meta};
+use fhir_model::BuilderError;
 use hl7_parser::Message;
-use std::error::Error;
-use std::str::FromStr;
 use std::vec;
 
-pub(super) fn map_patient(
-    v2_msg: &Message,
-    config: Fhir,
-) -> Result<Vec<BundleEntry>, anyhow::Error> {
-    // todo refactor to fn
-    let message_type: MessageType = MessageType::from_str(
-        v2_msg
-            .segment("EVN")
-            .ok_or(anyhow!("missing ENV segment"))?
-            .field(1)
-            .ok_or(anyhow!("missing message type segment"))?
-            .raw_value(),
-    )?;
+pub(super) fn map(map: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
+    let msg_type = message_type(map);
 
-    // todo check message type if necessary for patient mapping
-    let addr_builder = AddressBuilder::default();
-    let pid_seg = v2_msg
-        .segment("PID")
-        .ok_or(anyhow!("missing PID segment"))?;
-    let pid = pid_seg
-        .field(2)
-        .ok_or(anyhow!("missing Patient ID field"))?;
-    let date_of_birth_date = pid_seg
-        .field(7)
-        .ok_or(anyhow!("missing Patient date field"))?;
-    let gender = pid_seg
-        .field(8)
-        .ok_or(anyhow!("missing Patient Gender field"))?;
-    let address = pid_seg
-        .field(11)
-        .ok_or(anyhow!("missing Patient Gender field"))?;
-    let name = pid_seg
-        .field(5)
-        .ok_or(anyhow!("missing Patient MartialStaus field"))?;
-
-    //let martial_staus = pid_seg.field(16).ok_or("missing Patient MartialStaus field")?;
-    let address: Address = AddressInner {
-        id: None,
-        extension: vec![],
-        r#use: None,
-        use_ext: None,
-        r#type: Some(Both),
-        type_ext: None,
-        text: None,
-        text_ext: None,
-        line: vec![extract_repeat(address.raw_value(), 1)?],
-        line_ext: vec![],
-        city: extract_repeat(address.raw_value(), 3)?,
-        city_ext: None,
-        district: None,
-        district_ext: None,
-        state: None,
-        state_ext: None,
-        postal_code: extract_repeat(address.raw_value(), 5)?,
-        postal_code_ext: None,
-        country: extract_repeat(address.raw_value(), 4)?,
-        country_ext: None,
-        period: None,
-        period_ext: None,
-    }
-    .into();
-    // Create Extension for Family
-    let extension: Extension = ExtensionInner {
-        id: None,
-        extension: vec![],
-        url: "http://hl7.org/fhir/StructureDefinition/humanname-own-name".to_string(),
-        value: Some(ExtensionValue::String(
-            extract_repeat(name.raw_value(), 1)?.unwrap().to_string(),
-        )),
-        value_ext: None,
-    }
-    .into();
-
-    let fieldExtension = FieldExtensionBuilder::default()
-        .extension(vec![Some(extension).unwrap()])
-        .build();
-
-    let humanname: HumanName = HumanNameInner {
-        id: None,
-        extension: vec![],
-        r#use: None,
-        use_ext: None,
-        text: None,
-        text_ext: None,
-        family: extract_repeat(name.raw_value(), 1)?,
-        family_ext: Some(fieldExtension?),
-        given: vec![extract_repeat(name.raw_value(), 2)?],
-        given_ext: vec![],
-        prefix: vec![extract_repeat(name.raw_value(), 6)?],
-        prefix_ext: vec![],
-        suffix: vec![],
-        suffix_ext: vec![],
-        period: None,
-        period_ext: None,
-    }
-    .into();
-
-    //let input = "19920220";
-
-    // patient vital status
-    let death_date_time = pid_seg
-        .field(29)
-        .ok_or(anyhow!("missing Patient deathTime field"))?;
-    let death_confirm = pid_seg
-        .field(30)
-        .ok_or(anyhow!("missing Patient deathConfirm field"))?;
-
-    let deceased_confirm = if death_confirm.raw_value().to_owned() == "Y" {
-        if !death_date_time.is_empty() {
-            PatientDeceased::DateTime(parse_datetime(death_date_time.raw_value())?) // period
-        } else if death_date_time.is_empty() {
-            PatientDeceased::Boolean(true) //
-        } else {
-            PatientDeceased::Boolean(false)
+    match msg_type.map_err(MessageAccessError::MessageTypeError)? {
+        MessageType::Admit
+        | MessageType::Registration
+        | MessageType::PreAdmit
+        | MessageType::ChangeOutpatientToInpatient
+        | MessageType::ChangeInpatientToOutpatient
+        | MessageType::PatientUpdate => {
+            let patient = map_patient(map, &config)?;
+            // todo: update-as-create
+            Ok(vec![bundle_entry(patient)?])
         }
-    } else {
-        PatientDeceased::Boolean(false)
-    };
+        MessageType::Transfer | MessageType::Discharge | MessageType::ChangePersonData => {
+            let patient = map_patient(map, &config)?;
+            // todo: conditional-create
+            Ok(vec![bundle_entry(patient)?])
+        }
+        MessageType::PatientMerge | MessageType::MergePatientRecords => {
+            let patient = map_patient(map, &config)?;
+            // todo: create fhir-patch
+            Ok(vec![bundle_entry(patient)?])
+        }
+        // todo error?
+        MessageType::CancelAdmitVisit
+        | MessageType::CancelTransfer
+        | MessageType::CancelDischarge
+        | MessageType::PendingAdmit
+        | MessageType::CancelPendingAdmit => {
+            // ignore
+            Ok(vec![])
+        }
+        other => Err(MappingError::from(anyhow!("Invalid message type: {other}"))),
+    }
+}
 
-    // Replace `is_deceased` with your condition
-    // Replace `is_deceased` with your condition
+fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
+    // test
+    let x = &repeating_hl7_field(msg, "PID", 11)?;
+    let y = &hl7_field(msg, "PID", 11)?;
 
-    // let deceased_confirm = match (
-    //     death_confirm.raw_value().to_owned().as_str(),
-    //     death_date_time.is_empty(),
-    // ) {
-    //     ("Y", false) => PatientDeceased::DateTime(death_date_time.raw_value().to_owned().parse()?),
-    //     ("Y", true) => PatientDeceased::Boolean(true),
-    //     _ => PatientDeceased::Boolean(false),
-    // };
+    let mut res = vec![];
 
-    let admin_gender: AdministrativeGender = match (gender.raw_value()) {
-        "F" => AdministrativeGender::Female,
-        "M" => AdministrativeGender::Male,
-        "U" => AdministrativeGender::Other,
-        _ => AdministrativeGender::Unknown,
-    };
+    if let Some(fields) = &repeating_hl7_field(msg, "PID", 11)? {
+        for addr_field in fields {
+            let mut addr = Address::builder().r#type(AddressType::Both).build()?;
 
-    // Create Address
-    let builder = Patient::builder()
+            // line
+            if let Some(line) = extract_comp(addr_field, 1).ok().flatten() {
+                addr.line = vec![Some(line)];
+            }
+            // city
+            if let Some(city) = extract_comp(addr_field, 3).ok().flatten() {
+                addr.city = Some(city);
+            }
+            // postal code
+            if let Some(postal_code) = extract_comp(addr_field, 5).ok().flatten() {
+                addr.postal_code = Some(postal_code);
+            }
+            // country
+            if let Some(country) = extract_comp(addr_field, 6).ok().flatten() {
+                addr.country = Some(country);
+            }
+
+            res.push(Some(addr));
+        }
+    }
+
+    Ok(res)
+}
+
+fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
+    // patient resource
+    let mut patient = Patient::builder()
         .meta(
             Meta::builder()
                 .profile(vec![Some(config.person.profile.to_owned())])
@@ -165,20 +98,217 @@ pub(super) fn map_patient(
             Identifier::builder()
                 .r#use(IdentifierUse::Usual)
                 .system(config.person.system.to_owned())
-                .value(pid.raw_value().to_owned())
-                .build()
-                .unwrap(),
+                .value(
+                    hl7_field(msg, "PID", 2)?
+                        .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
+                )
+                .build()?,
         )])
-        //.birth_date(birth_date.to_string().parse().unwrap())
-        .birth_date(parse_date(date_of_birth_date.raw_value())?)
-        .gender(admin_gender)
-        .address(vec![Some(address)])
-        .name(vec![Some(humanname)])
-        .deceased(deceased_confirm);
-    let p = builder.build()?;
-    Ok(vec![bundle_entry(p)?])
+        .address(map_addresses(msg)?)
+        .name(map_name(msg)?)
+        .build()?;
+
+    // birth_date
+    if let Some(b) = &hl7_field(msg, "PID", 7)? {
+        patient.birth_date = Some(parse_date(b)?)
+    }
+    // gender
+    if let Some(g) = &hl7_field(msg, "PID", 8)? {
+        patient.gender = Some(map_gender(g));
+    }
+    // marital_status
+    patient.marital_status = map_marital_status(msg)?;
+    // deceased flag
+    patient.deceased = map_deceased(msg)?;
+
+    Ok(patient)
 }
 
-pub(super) fn map_a01(v2_msg: Message, config: Fhir) -> Result<Vec<BundleEntry>, Box<dyn Error>> {
-    todo!("implement")
+fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
+    // patient vital status
+    let death_time = hl7_field(msg, "PID", 29)?;
+    let death_confirm = hl7_field(msg, "PID", 29)?;
+
+    match (death_time, death_confirm) {
+        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(
+            death_time.as_str(),
+        )?))),
+        (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm == "Y"))),
+        _ => Ok(None),
+    }
+}
+
+fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingError> {
+    // marital status
+    if let Some(status) = &hl7_field(msg, "PID", 16)? {
+        extract_comp(status, 1)
+            .map_err(MessageAccessError::from)?
+            .map(|m| {
+                match m.as_str() {
+                    "A" | "E" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("L".to_string())
+                        .display("Legally Separated".to_string())
+                        .build(),
+                    "D" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("D".to_string())
+                        .display("Divorced".to_string())
+                        .build(),
+                    "M" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("M".to_string())
+                        .display("Married".to_string())
+                        .build(),
+                    "S" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("S".to_string())
+                        .display("Never Married".to_string())
+                        .build(),
+                    "W" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("W".to_string())
+                        .display("Widowed".to_string())
+                        .build(),
+                    "C" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("C".to_string())
+                        .display("Common Law".to_string())
+                        .build(),
+                    "G" | "P" | "R" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("T".to_string())
+                        .display("Domestic partner".to_string())
+                        .build(),
+                    "N" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("A".to_string())
+                        .display("Annulled".to_string())
+                        .build(),
+                    "I" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("I".to_string())
+                        .display("Interlocutory".to_string())
+                        .build(),
+                    "B" => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("U".to_string())
+                        .display("Unmarried".to_string())
+                        .build(),
+                    _ => Coding::builder()
+                        .system(
+                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
+                        )
+                        .code("UNK".to_string())
+                        .display("Unknown".to_string())
+                        .build(),
+                }
+                .and_then(|c| CodeableConcept::builder().coding(vec![Some(c)]).build())
+                .map_err(MappingError::from)
+            })
+            .transpose()
+    } else {
+        Ok(None)
+    }
+}
+
+fn map_gender(gender: &str) -> AdministrativeGender {
+    match gender {
+        "F" => AdministrativeGender::Female,
+        "M" => AdministrativeGender::Male,
+        "U" => AdministrativeGender::Other,
+        _ => AdministrativeGender::Unknown,
+    }
+}
+
+fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
+    let mut names = vec![];
+
+    if let Some(name_field) = &hl7_field(v2_msg, "PID", 5)? {
+        let name_use = extract_comp(name_field, 7)
+            .map_err(MessageAccessError::from)?
+            .and_then(|u| match u.as_str() {
+                "L" => Some(NameUse::Official),
+                "M" | "B" => Some(NameUse::Maiden),
+                _ => None,
+            });
+
+        let mut name = HumanName::builder()
+            .given(
+                extract_comp(name_field, 2)
+                    .map(|e| vec![e])
+                    .map_err(MessageAccessError::from)?,
+            )
+            .build()?;
+
+        name.r#use = name_use;
+        name.family = extract_comp(name_field, 1).map_err(MessageAccessError::from)?;
+
+        // prefix
+        if let Some(prefix) = extract_comp(name_field, 6).map_err(MessageAccessError::from)? {
+            name.prefix = vec![Some(prefix)];
+            name.prefix_ext = vec![Some(field_extension(
+                "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
+                ExtensionValue::Code("AC".into()),
+            )?)];
+        }
+
+        // namenszusatz
+        if let Some(namenszusatz) = extract_comp(name_field, 4).map_err(MessageAccessError::from)? {
+            name.family_ext = Some(field_extension(
+                "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
+                ExtensionValue::String(namenszusatz),
+            )?);
+        }
+
+        // vorsatzwort
+        if let Some(vorsatzwort) = extract_comp(name_field, 5).map_err(MessageAccessError::from)? {
+            name.family_ext = Some(field_extension(
+                "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
+                ExtensionValue::String(vorsatzwort),
+            )?);
+        }
+
+        names.push(Some(name));
+
+        // maiden name
+        if let Some(maiden_name) = &hl7_field(v2_msg, "PID", 6)? {
+            names.push(Some(
+                HumanName::builder()
+                    .r#use(NameUse::Maiden)
+                    .family(maiden_name.into())
+                    .build()?,
+            ))
+        }
+    }
+
+    Ok(names)
+}
+
+fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
+    FieldExtension::builder()
+        .extension(vec![
+            Extension::builder().url(url).value(ext_value).build()?,
+        ])
+        .build()
 }

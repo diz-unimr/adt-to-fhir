@@ -1,14 +1,12 @@
 use crate::config::Fhir;
-use crate::fhir;
 use crate::fhir::mapper::MessageAccessError::{MissingMessageField, MissingMessageSegment};
 use crate::fhir::mapper::MessageType::*;
 use crate::fhir::mapper::MessageTypeError::MissingMessageType;
 use crate::fhir::resources::ResourceMap;
+use crate::fhir::{encounter, patient};
 use anyhow::anyhow;
-use chrono::{Datelike, NaiveDateTime, ParseError, TimeZone};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
-use fhir::encounter::map_encounter;
-use fhir::patient::map_patient;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
     Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Resource, ResourceType,
@@ -19,7 +17,9 @@ use fhir_model::time::{Month, OffsetDateTime};
 use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::{time, Date, DateTime};
 use fhir_model::{BuilderError, DateFormatError, Instant};
+use fmt::Display;
 use hl7_parser::Message;
+use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -106,10 +106,10 @@ impl FhirMapper {
     }
 
     fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>, MappingError> {
-        let p = map_patient(v2_msg, self.config.clone())?;
-        let e = map_encounter(v2_msg, self.config.clone(), &self.resources)?;
+        let p = patient::map(v2_msg, self.config.clone())?;
+        let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         // TODO map observation
-        let res = p.into_iter().chain(e).map(|p| Some(p)).collect();
+        let res = p.into_iter().chain(e).map(Some).collect();
 
         Ok(res)
     }
@@ -149,6 +149,8 @@ pub enum MessageType {
     DeletePersonInformation,
     /// ADT A31
     ChangePersonData,
+    /// ADT A34
+    PatientMerge,
     /// ADT A40
     MergePatientRecords,
     /// ADT A45
@@ -157,6 +159,34 @@ pub enum MessageType {
     PatientReassignmentToAllCases,
     /// ADT A50
     UpdateEncounterNumber,
+}
+
+impl Display for MessageType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Admit => write!(f, "A01"),
+            Transfer => write!(f, "A02"),
+            Discharge => write!(f, "A03"),
+            Registration => write!(f, "A04"),
+            PreAdmit => write!(f, "A05"),
+            ChangeOutpatientToInpatient => write!(f, "A06"),
+            ChangeInpatientToOutpatient => write!(f, "A07"),
+            PatientUpdate => write!(f, "A08"),
+            CancelAdmitVisit => write!(f, "A11"),
+            CancelTransfer => write!(f, "A12"),
+            CancelDischarge => write!(f, "A13"),
+            PendingAdmit => write!(f, "A14"),
+            CancelPendingAdmit => write!(f, "A27"),
+            AddPersonInformation => write!(f, "A28"),
+            DeletePersonInformation => write!(f, "A29"),
+            ChangePersonData => write!(f, "A31"),
+            PatientMerge => write!(f, "A34"),
+            MergePatientRecords => write!(f, "A40"),
+            PatientReassignmentToSingleCase => write!(f, "A45"),
+            PatientReassignmentToAllCases => write!(f, "A47"),
+            UpdateEncounterNumber => write!(f, "A50"),
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -189,6 +219,7 @@ impl FromStr for MessageType {
             "A28" => Ok(AddPersonInformation),
             "A29" => Ok(DeletePersonInformation),
             "A31" => Ok(ChangePersonData),
+            "A34" => Ok(PatientMerge),
             "A40" => Ok(MergePatientRecords),
             "A45" => Ok(PatientReassignmentToSingleCase),
             "A47" => Ok(PatientReassignmentToAllCases),
@@ -255,9 +286,10 @@ fn conditional_reference(resource_type: &ResourceType, system: &str, value: &str
 }
 
 fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier> {
-    match identifiers.iter().flatten().count() == 1 {
-        true => identifiers.into_iter().next().unwrap(),
-        false => identifiers
+    if identifiers.iter().flatten().count() == 1 {
+        identifiers.into_iter().next().unwrap()
+    } else {
+        identifiers
             .iter()
             .flatten()
             .filter_map(|i| {
@@ -268,11 +300,11 @@ fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier
                     None
                 }
             })
-            .next(),
+            .next()
     }
 }
 
-pub(crate) fn extract_repeat(
+pub(crate) fn extract_comp(
     field_value: &str,
     component: usize,
 ) -> Result<Option<String>, hl7_parser::parser::ParseError> {
@@ -284,7 +316,7 @@ pub(crate) fn extract_repeat(
 }
 
 pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
-    let dt = NaiveDateTime::parse_and_remainder(input, "%Y%m%d%H%M")?.0;
+    let dt = NaiveDate::parse_and_remainder(input, "%Y%m%d")?.0;
     let date = time::Date::from_calendar_date(
         dt.year(),
         Month::try_from(dt.month() as u8)?,
@@ -319,14 +351,38 @@ pub(crate) fn hl7_field(
     msg: &Message,
     segment: &str,
     field: usize,
-) -> Result<String, MessageAccessError> {
-    Ok(msg
-        .segment(segment)
-        .ok_or(MissingMessageSegment(segment.to_string()))?
-        .field(field)
-        .ok_or(MissingMessageField(field.to_string(), segment.to_string()))?
-        .raw_value()
-        .to_string())
+) -> Result<Option<String>, MessageAccessError> {
+    Ok(Some(
+        msg.segment(segment)
+            .ok_or(MissingMessageSegment(segment.to_string()))?
+            .field(field)
+            .ok_or(MissingMessageField(field.to_string(), segment.to_string()))?
+            .raw_value()
+            .to_string(),
+    )
+    .filter(|f| !f.is_empty()))
+}
+
+pub(crate) fn repeating_hl7_field(
+    msg: &Message,
+    segment: &str,
+    field: usize,
+) -> Result<Option<Vec<String>>, MessageAccessError> {
+    Ok(Some(
+        msg.segment(segment)
+            .ok_or(MissingMessageSegment(segment.to_string()))?
+            .field(field)
+            .ok_or(MissingMessageField(field.to_string(), segment.to_string()))?
+            .repeats()
+            .filter_map(|r| {
+                if r.is_empty() {
+                    None
+                } else {
+                    Some(r.raw_value().to_string())
+                }
+            })
+            .collect::<Vec<String>>(),
+    ))
 }
 
 #[cfg(test)]

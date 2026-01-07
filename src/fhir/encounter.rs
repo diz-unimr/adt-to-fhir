@@ -1,7 +1,6 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::{
-    bundle_entry, extract_repeat, hl7_field, message_type, parse_datetime, resource_ref,
-    MappingError,
+    bundle_entry, extract_comp, hl7_field, message_type, parse_datetime, resource_ref, MappingError,
 };
 use crate::fhir::mapper::{MessageAccessError, MessageType};
 use crate::fhir::resources::ResourceMap;
@@ -13,7 +12,7 @@ use fhir_model::time::OffsetDateTime;
 use fhir_model::DateTime;
 use hl7_parser::Message;
 
-pub(super) fn map_encounter(
+pub(super) fn map(
     v2_msg: &Message,
     config: Fhir,
     resources: &ResourceMap,
@@ -46,7 +45,7 @@ pub(super) fn map_encounter(
 }
 
 fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
-    Ok(hl7_field(msg, "PV1", 2)? == "H")
+    Ok(hl7_field(msg, "PV1", 2)?.is_some_and(|f| f == "H"))
 }
 
 fn map_einrichtungskontakt(
@@ -89,7 +88,6 @@ fn map_einrichtungskontakt(
         ])
         .class(map_encounter_class(msg)?)
         .r#type(map_encounter_type(msg)?)
-        .hospitalization(map_admit_source(msg)?)
         .subject(subject_ref(msg, &config.person.system)?)
         .period(map_period(msg)?)
         // set status depends on period.start / period.end
@@ -103,6 +101,9 @@ fn map_einrichtungskontakt(
         // service provider
         admit.service_provider = Some(fab_ref(&f)?);
     }
+
+    // hospitalization admit source
+    admit.hospitalization = map_admit_source(msg)?;
 
     Ok(admit)
 }
@@ -136,36 +137,38 @@ fn fab_ref(fab: &str) -> Result<Reference, MappingError> {
 }
 
 fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
-    let pid = hl7_field(msg, "PID", 2)?;
+    let pid = hl7_field(msg, "PID", 2)?.ok_or(anyhow!("missing pid value in PID.2"))?;
 
     resource_ref(&ResourceType::Patient, &pid, sid)
 }
 
 fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
-    let assigned_loc = &hl7_field(msg, "PV1", 3)?;
+    if let Some(assigned_loc) = &hl7_field(msg, "PV1", 3)? {
+        let facility = extract_comp(assigned_loc, 4)?;
+        let location = extract_comp(assigned_loc, 1)?;
+        let loc_status = extract_comp(assigned_loc, 5)?;
+        // let kostenstelle = extract_repeat(assigned_loc, 6)?;
 
-    let facility = extract_repeat(assigned_loc, 4)?;
-    let location = extract_repeat(assigned_loc, 1)?;
-    let loc_status = extract_repeat(assigned_loc, 5)?;
-    // let kostenstelle = extract_repeat(assigned_loc, 6)?;
-
-    // todo: kostenstelle lookup etc.
-    match (facility, location, loc_status) {
-        // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
-        (Some(f), Some(_), _) => Ok(Some(f)),
-        // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
-        (None, Some(l), _) => Ok(Some(l)),
-        // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
-        (Some(_), None, Some(st)) => Ok(Some(st)),
-        _ => Ok(None),
+        // todo: kostenstelle lookup etc.
+        return match (facility, location, loc_status) {
+            // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
+            (Some(f), Some(_), _) => Ok(Some(f)),
+            // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
+            (None, Some(l), _) => Ok(Some(l)),
+            // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
+            (Some(_), None, Some(st)) => Ok(Some(st)),
+            _ => Ok(None),
+        };
     }
+
+    Ok(None)
 }
 
-fn map_admit_source(msg: &Message) -> Result<EncounterHospitalization, MappingError> {
-    let admit =
-        extract_repeat(&hl7_field(msg, "PV1", 4)?, 1).map_err(MessageAccessError::ParseError)?;
+fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
+    if let Some(source) = &hl7_field(msg, "PV1", 4)? {
+        let admit = extract_comp(source, 1).map_err(MessageAccessError::ParseError)?;
 
-    let coding = match admit.as_deref() {
+        let coding = match admit.as_deref() {
         Some("E") => Ok(Coding::builder()
             .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
             .code("E".to_string())
@@ -225,23 +228,31 @@ fn map_admit_source(msg: &Message) -> Result<EncounterHospitalization, MappingEr
         ))),
     }?;
 
-    EncounterHospitalization::builder()
-        .admit_source(
-            CodeableConcept::builder()
-                .coding(vec![Some(coding)])
+        return Ok(Some(
+            EncounterHospitalization::builder()
+                .admit_source(
+                    CodeableConcept::builder()
+                        .coding(vec![Some(coding)])
+                        .build()?,
+                )
                 .build()?,
-        )
-        .build()
-        .map_err(|e| e.into())
+        ));
+    }
+
+    Ok(None)
 }
 
 fn map_period(msg: &Message) -> Result<Period, MappingError> {
-    let start: DateTime = parse_datetime(hl7_field(msg, "PV1", 44)?.as_str())?;
+    let start: DateTime = parse_datetime(
+        hl7_field(msg, "PV1", 44)?
+            .ok_or(anyhow!("empty datetime in PV1.44"))?
+            .as_str(),
+    )?;
     let period = Period::builder().start(start.clone());
 
-    let p = match hl7_field(msg, "PV1", 45) {
-        Ok(end) => period.end(parse_datetime(end.as_str())?),
-        Err(_) => {
+    let p = match hl7_field(msg, "PV1", 45)? {
+        Some(end) => period.end(parse_datetime(end.as_str())?),
+        None => {
             match message_type(msg).map_err(MessageAccessError::MessageTypeError)? {
                 // A04 has no end date is assigned start date instead
                 MessageType::Registration => period.end(start),
@@ -269,8 +280,10 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
 
 fn map_visit_number(msg: &Message) -> Result<String, anyhow::Error> {
     match message_type(msg)? {
-        MessageType::PendingAdmit => Ok(hl7_field(msg, "PID", 4)?),
-        _ => Ok(hl7_field(msg, "PV1", 19)?),
+        MessageType::PendingAdmit => {
+            Ok(hl7_field(msg, "PID", 4)?.ok_or(anyhow!("empty visit number in PID.4"))?)
+        }
+        _ => Ok(hl7_field(msg, "PV1", 19)?.ok_or(anyhow!("empty visit number in PV1.19"))?),
     }
 }
 
@@ -283,7 +296,7 @@ fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
 }
 
 fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
-    let code = hl7_field(msg, "PV1", 2)?;
+    let code = hl7_field(msg, "PV1", 2)?.ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
     match code.as_str() {
         "I" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
@@ -306,44 +319,46 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
 }
 
 fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
-    let code = hl7_field(msg, "PV1", 2)?;
-
-    match code.as_str() {
-        // todo: the following are missing
-        // O ("Ambulantes Operieren") => operation
-        // I ("Normalstationär") => normalstationaer
-        // I ("Intensivstationär") => intensivstationaer
-        "I" => Ok(None),
-        "O" => Ok(None),
-        "H" => Ok(Some(
-            Coding::builder()
-                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-                .code("begleitperson".to_string())
-                .display("Begleitperson".to_string())
-                .build()?,
-        )),
-        "TS" => Ok(Some(
-            Coding::builder()
-                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-                .code("teilstationaer".to_string())
-                .display("Teilstationäre Behandlung".to_string())
-                .build()?,
-        )),
-        "NS" => Ok(Some(
-            Coding::builder()
-                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-                .code("nachstationaer".to_string())
-                .display("Nachstationär".to_string())
-                .build()?,
-        )),
-        "UB" => Ok(Some(
-            Coding::builder()
-                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-                .code("ub".to_string())
-                .display("Untersuchung und Behandlung".to_string())
-                .build()?,
-        )),
-        _ => Err(anyhow!("Invalid kontakt_art code (PV1.2): {}", code))
-            .map_err(MappingError::Other)?,
+    if let Some(code) = hl7_field(msg, "PV1", 2)? {
+        match code.as_str() {
+            // todo: the following are missing
+            // O ("Ambulantes Operieren") => operation
+            // I ("Normalstationär") => normalstationaer
+            // I ("Intensivstationär") => intensivstationaer
+            "I" => Ok(None),
+            "O" => Ok(None),
+            "H" => Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                    .code("begleitperson".to_string())
+                    .display("Begleitperson".to_string())
+                    .build()?,
+            )),
+            "TS" => Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                    .code("teilstationaer".to_string())
+                    .display("Teilstationäre Behandlung".to_string())
+                    .build()?,
+            )),
+            "NS" => Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                    .code("nachstationaer".to_string())
+                    .display("Nachstationär".to_string())
+                    .build()?,
+            )),
+            "UB" => Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                    .code("ub".to_string())
+                    .display("Untersuchung und Behandlung".to_string())
+                    .build()?,
+            )),
+            _ => Err(anyhow!("Invalid kontakt_art code (PV1.2): {}", code))
+                .map_err(MappingError::Other)?,
+        }
+    } else {
+        Ok(None)
     }
 }
