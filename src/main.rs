@@ -10,12 +10,12 @@ use config::AppConfig;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, info};
-use rdkafka::ClientConfig;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::{BorrowedMessage, Headers, Message};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
+use rdkafka::ClientConfig;
 use std::sync::Arc;
 
 async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
@@ -69,7 +69,7 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
                     let result = match mapper.map(payload.unwrap()) {
                         Ok(mapped) => match mapped {
                             None => {
-                                commit_offset(&*consumer, &m);
+                                commit_offset(&consumer, &m);
                                 return Ok(());
                             }
                             Some(r) => { r }
@@ -91,7 +91,7 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
                         Ok(delivery) => {
                             debug!("Message sent: key: {key}, partition: {}, offset: {}", delivery.partition,delivery.offset);
                             // store offset
-                            commit_offset(&*consumer, &m);
+                            commit_offset(&consumer, &m);
                         }
                         Err((e, _)) => println!("Error: {:?}", e),
                     }
@@ -109,7 +109,7 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
 
 fn commit_offset(consumer: &StreamConsumer, message: &BorrowedMessage) {
     consumer
-        .store_offset_from_message(&message)
+        .store_offset_from_message(message)
         .expect("Failed to store offset for message");
 }
 
@@ -130,7 +130,7 @@ async fn main() {
     (0..num_partitions)
         .map(|_| tokio::spawn(run(config.kafka.clone(), mapper.clone())))
         .collect::<FuturesUnordered<_>>()
-        .for_each(|_| async { () })
+        .for_each(|_| async {})
         .await
 }
 
@@ -280,7 +280,7 @@ mod tests {
 
         // run processor
         let (tx, rx) = oneshot::channel();
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             if let Err(e) = run(config.kafka, mapper).await {
                 tx.send(e).unwrap();
             }
@@ -288,15 +288,13 @@ mod tests {
 
         tokio::select! {
             e = rx =>  {
-                match e {  Ok(e) => {panic!("processing message failed: {e}")}
-                    Err(_) => {}
-                }
+                if let Ok(e) = e {panic!("processing message failed: {e}")}
             }
             m = output_consumer.recv() => {
             // get message from output topic
             let (_, payload) = deserialize_message(&m.unwrap());
             let raw: Value =
-                serde_json::from_str(&*payload.expect("failed to read output message")).unwrap();
+                serde_json::from_str(&payload.expect("failed to read output message")).unwrap();
             let b: Bundle = serde_json::from_value(raw).unwrap();
 
             // assert resources
@@ -341,9 +339,7 @@ mod tests {
         file_path.push("resources/test");
         file_path.push(file_name);
 
-        let contents = fs::read_to_string(file_path.display().to_string())
-            .expect(format!("Test resource not found: {}", file_path.display()).as_str());
-
-        contents
+        fs::read_to_string(file_path.display().to_string())
+            .unwrap_or_else(|_| panic!("Test resource not found: {}", file_path.display()))
     }
 }
