@@ -241,7 +241,7 @@ pub(crate) fn message_type(msg: &Message) -> Result<MessageType, MessageTypeErro
     )
 }
 
-// todo: request type parameter
+// todo: add request type parameter
 pub(crate) fn bundle_entry<T: IdentifiableResource + Clone>(
     resource: T,
 ) -> Result<BundleEntry, anyhow::Error>
@@ -304,15 +304,33 @@ fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier
     }
 }
 
-pub(crate) fn extract_comp(
-    field_value: &str,
+pub(crate) fn parse_component(
+    field: &str,
     component: usize,
 ) -> Result<Option<String>, hl7_parser::parser::ParseError> {
-    let repeat = hl7_parser::parser::parse_repeat(field_value)?;
-    match repeat.component(component) {
-        Some(c) => Ok(c.raw_value().to_string().parse().ok()),
-        None => Ok(None),
-    }
+    let comp = hl7_parser::parser::parse_field(field)?
+        .component(component)
+        .map(|c| c.raw_value().to_string())
+        .filter(|s| !s.is_empty());
+
+    Ok(comp)
+}
+
+pub(crate) fn parse_subcomponents(
+    field: &str,
+    component: usize,
+) -> Result<Option<Vec<String>>, hl7_parser::parser::ParseError> {
+    let comp: Option<Vec<String>> = hl7_parser::parser::parse_field(field)?
+        .component(component)
+        .map(|c| {
+            c.subcomponents
+                .iter()
+                .map(|s| s.raw_value().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        });
+
+    Ok(comp)
 }
 
 pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
@@ -347,7 +365,7 @@ pub(crate) fn resource_ref(
         .build()?)
 }
 
-pub(crate) fn hl7_field(
+pub(crate) fn parse_field(
     msg: &Message,
     segment: &str,
     field: usize,
@@ -363,32 +381,10 @@ pub(crate) fn hl7_field(
     .filter(|f| !f.is_empty()))
 }
 
-pub(crate) fn repeating_hl7_field(
-    msg: &Message,
-    segment: &str,
-    field: usize,
-) -> Result<Option<Vec<String>>, MessageAccessError> {
-    Ok(Some(
-        msg.segment(segment)
-            .ok_or(MissingMessageSegment(segment.to_string()))?
-            .field(field)
-            .ok_or(MissingMessageField(field.to_string(), segment.to_string()))?
-            .repeats()
-            .filter_map(|r| {
-                if r.is_empty() {
-                    None
-                } else {
-                    Some(r.raw_value().to_string())
-                }
-            })
-            .collect::<Vec<String>>(),
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::mapper::{parse_datetime, FhirMapper};
+    use crate::fhir::mapper::{parse_component, parse_datetime, parse_subcomponents, FhirMapper};
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Encounter, Patient};
@@ -504,5 +500,27 @@ mod tests {
     fn to_encounter(e: &BundleEntry) -> Result<Encounter, WrongResourceType> {
         let r = e.resource.clone().unwrap();
         Encounter::try_from(r)
+    }
+
+    #[test]
+    fn test_parse_component() {
+        let comp = parse_component("Talstraße 16&Talstraße&16^^Holzhausen^^67184^DE^L", 3).unwrap();
+
+        assert_eq!(comp, Some("Holzhausen".to_string()))
+    }
+
+    #[test]
+    fn test_parse_subcomponent() {
+        let sub =
+            parse_subcomponents("Talstraße 16&Talstraße&16^^Holzhausen^^67184^DE^L", 1).unwrap();
+
+        assert_eq!(
+            sub,
+            Some(vec![
+                "Talstraße 16".to_string(),
+                "Talstraße".to_string(),
+                "16".to_string()
+            ])
+        )
     }
 }

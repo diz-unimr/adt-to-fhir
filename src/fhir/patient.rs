@@ -1,7 +1,7 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::{
-    bundle_entry, extract_comp, hl7_field, message_type, parse_date, parse_datetime,
-    repeating_hl7_field, MappingError, MessageAccessError, MessageType,
+    bundle_entry, message_type, parse_component, parse_date, parse_datetime, parse_field,
+    parse_subcomponents, MappingError, MessageAccessError, MessageType,
 };
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
@@ -52,35 +52,30 @@ pub(super) fn map(map: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
 }
 
 fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
-    // test
-    let x = &repeating_hl7_field(msg, "PID", 11)?;
-    let y = &hl7_field(msg, "PID", 11)?;
-
     let mut res = vec![];
 
-    if let Some(fields) = &repeating_hl7_field(msg, "PID", 11)? {
-        for addr_field in fields {
-            let mut addr = Address::builder().r#type(AddressType::Both).build()?;
+    if let Some(addr_field) = &parse_field(msg, "PID", 11)? {
+        // for addr_field in fields {
+        let mut addr = Address::builder().r#type(AddressType::Both).build()?;
 
-            // line
-            if let Some(line) = extract_comp(addr_field, 1).ok().flatten() {
-                addr.line = vec![Some(line)];
-            }
-            // city
-            if let Some(city) = extract_comp(addr_field, 3).ok().flatten() {
-                addr.city = Some(city);
-            }
-            // postal code
-            if let Some(postal_code) = extract_comp(addr_field, 5).ok().flatten() {
-                addr.postal_code = Some(postal_code);
-            }
-            // country
-            if let Some(country) = extract_comp(addr_field, 6).ok().flatten() {
-                addr.country = Some(country);
-            }
-
-            res.push(Some(addr));
+        // line
+        if let Some(lines) = parse_subcomponents(addr_field, 1).ok().flatten() {
+            addr.line = lines.into_iter().map(|l| Some(l)).collect();
         }
+        // city
+        if let Some(city) = parse_component(addr_field, 3).ok().flatten() {
+            addr.city = Some(city);
+        }
+        // postal code
+        if let Some(postal_code) = parse_component(addr_field, 5).ok().flatten() {
+            addr.postal_code = Some(postal_code);
+        }
+        // country
+        if let Some(country) = parse_component(addr_field, 6).ok().flatten() {
+            addr.country = Some(country);
+        }
+
+        res.push(Some(addr));
     }
 
     Ok(res)
@@ -99,7 +94,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
                 .r#use(IdentifierUse::Usual)
                 .system(config.person.system.to_owned())
                 .value(
-                    hl7_field(msg, "PID", 2)?
+                    parse_field(msg, "PID", 2)?
                         .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
                 )
                 .build()?,
@@ -109,11 +104,11 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
         .build()?;
 
     // birth_date
-    if let Some(b) = &hl7_field(msg, "PID", 7)? {
+    if let Some(b) = &parse_field(msg, "PID", 7)? {
         patient.birth_date = Some(parse_date(b)?)
     }
     // gender
-    if let Some(g) = &hl7_field(msg, "PID", 8)? {
+    if let Some(g) = &parse_field(msg, "PID", 8)? {
         patient.gender = Some(map_gender(g));
     }
     // marital_status
@@ -126,8 +121,8 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
 
 fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
     // patient vital status
-    let death_time = hl7_field(msg, "PID", 29)?;
-    let death_confirm = hl7_field(msg, "PID", 29)?;
+    let death_time = parse_field(msg, "PID", 29)?;
+    let death_confirm = parse_field(msg, "PID", 29)?;
 
     match (death_time, death_confirm) {
         (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(
@@ -140,8 +135,8 @@ fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> 
 
 fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingError> {
     // marital status
-    if let Some(status) = &hl7_field(msg, "PID", 16)? {
-        extract_comp(status, 1)
+    if let Some(status) = &parse_field(msg, "PID", 16)? {
+        parse_component(status, 1)
             .map_err(MessageAccessError::from)?
             .map(|m| {
                 match m.as_str() {
@@ -215,7 +210,7 @@ fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingE
                         .code("U".to_string())
                         .display("Unmarried".to_string())
                         .build(),
-                    _ => Coding::builder()
+                    _a => Coding::builder()
                         .system(
                             "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
                         )
@@ -244,8 +239,8 @@ fn map_gender(gender: &str) -> AdministrativeGender {
 fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
     let mut names = vec![];
 
-    if let Some(name_field) = &hl7_field(v2_msg, "PID", 5)? {
-        let name_use = extract_comp(name_field, 7)
+    if let Some(name_field) = &parse_field(v2_msg, "PID", 5)? {
+        let name_use = parse_component(name_field, 7)
             .map_err(MessageAccessError::from)?
             .and_then(|u| match u.as_str() {
                 "L" => Some(NameUse::Official),
@@ -255,17 +250,17 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
 
         let mut name = HumanName::builder()
             .given(
-                extract_comp(name_field, 2)
+                parse_component(name_field, 2)
                     .map(|e| vec![e])
                     .map_err(MessageAccessError::from)?,
             )
             .build()?;
 
         name.r#use = name_use;
-        name.family = extract_comp(name_field, 1).map_err(MessageAccessError::from)?;
+        name.family = parse_component(name_field, 1).map_err(MessageAccessError::from)?;
 
         // prefix
-        if let Some(prefix) = extract_comp(name_field, 6).map_err(MessageAccessError::from)? {
+        if let Some(prefix) = parse_component(name_field, 6).map_err(MessageAccessError::from)? {
             name.prefix = vec![Some(prefix)];
             name.prefix_ext = vec![Some(field_extension(
                 "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
@@ -274,7 +269,9 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
         }
 
         // namenszusatz
-        if let Some(namenszusatz) = extract_comp(name_field, 4).map_err(MessageAccessError::from)? {
+        if let Some(namenszusatz) =
+            parse_component(name_field, 4).map_err(MessageAccessError::from)?
+        {
             name.family_ext = Some(field_extension(
                 "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
                 ExtensionValue::String(namenszusatz),
@@ -282,7 +279,9 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
         }
 
         // vorsatzwort
-        if let Some(vorsatzwort) = extract_comp(name_field, 5).map_err(MessageAccessError::from)? {
+        if let Some(vorsatzwort) =
+            parse_component(name_field, 5).map_err(MessageAccessError::from)?
+        {
             name.family_ext = Some(field_extension(
                 "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
                 ExtensionValue::String(vorsatzwort),
@@ -292,7 +291,7 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
         names.push(Some(name));
 
         // maiden name
-        if let Some(maiden_name) = &hl7_field(v2_msg, "PID", 6)? {
+        if let Some(maiden_name) = &parse_field(v2_msg, "PID", 6)? {
             names.push(Some(
                 HumanName::builder()
                     .r#use(NameUse::Maiden)
