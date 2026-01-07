@@ -25,7 +25,7 @@ jobs:
     if: ${{ github.event_name != 'pull_request' && github.event_name != 'release' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@v3
@@ -45,10 +45,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Log in to the Container registry
-        uses: docker/login-action@3d100841f68d4548bf57e52eb27bd33ec5069f55
+        uses: docker/login-action@916386b00027d425839f8da46d302dab33f5875b
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
