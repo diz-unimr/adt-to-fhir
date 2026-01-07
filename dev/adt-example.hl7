@@ -35,3 +35,14 @@ IN1|1||000000000^^^^NII~Krankenkasse^^^^XX|Krankenkasse|Strasse 1&Strasse&1^^Sta
 IN2|1||||||||||||||||||||||||||||^PC^100.0||||DE|||N|||ev||||||||||||||||||||||||00000 0000000
 ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes
+
+#test4:MSH|^~\&|ORBIS|KH|WEBEPA|KH|202208200651||ADT^A04^ADT_A04|65298857|P|2.5||640340718|NE|NE||8859/1
+EVN|A01|202208200651|190005040000|12033_640340718|OPERATOR|202208200618
+PID|1|1212121|1212121|21600000|Sokolovski, Malina||19820101101139|F|||Hexengasse  1^^Traumstadt^^12345^D^L||012345/1234^^PH~0123451234^^CP~max-muster.mann@web.de^^X.400|||S|ev||||12345~23456|||||D||||N
+NK1|1|Mustermann, Herbert|15^Ehemann| |s. o.
+PV1|1|I|^^^^KLINIKUM^|R^^HL7~01^Normalfall^301||||||N||||||N|||21600000||K||||||||||||||||||2500|||||202208200618|||||||A
+PV2|||01^KH-Behandlung, vollstat.^301||||||202209030000|||||||||||||N||I||||||||||||
+IN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||^^^^^^^20130331
+IN2|1||||||||||||||||||||||||||||^PC^100^K
+ZBE|30644727^ORBIS|202208200618||INSERT
+ZNG|1|N|N|Normal|L|56|3132|||Gesundes Neugeborenes

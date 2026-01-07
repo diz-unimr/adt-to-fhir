@@ -249,10 +249,12 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
             });
 
         let mut name = HumanName::builder()
+            // todo: parse multiple names
             .given(
                 parse_component(name_field, 2)
-                    .map(|e| vec![e])
-                    .map_err(MessageAccessError::from)?,
+                    .map_err(MessageAccessError::from)?
+                    .map(|e| vec![Some(e)])
+                    .unwrap_or_default(),
             )
             .build()?;
 
