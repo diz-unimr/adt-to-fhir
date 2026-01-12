@@ -46,7 +46,7 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
                 async move {
                     let (key, payload) = deserialize_message(&m);
 
-                    info!(
+                    debug!(
                         "Message received: key: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
                         key,
                         m.topic(),

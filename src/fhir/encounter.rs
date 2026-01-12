@@ -1,7 +1,7 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::{
     bundle_entry, message_type, parse_component, parse_datetime, parse_field, resource_ref,
-    MappingError,
+    EntryRequestType, MappingError,
 };
 use crate::fhir::mapper::{MessageAccessError, MessageType};
 use crate::fhir::resources::ResourceMap;
@@ -35,7 +35,10 @@ pub(super) fn map(
             // todo
             // ...
 
-            Ok(vec![bundle_entry(enc_admit)?])
+            Ok(vec![bundle_entry(
+                enc_admit,
+                EntryRequestType::UpdateAsCreate,
+            )?])
         }
         MessageType::CancelAdmitVisit | MessageType::CancelPendingAdmit => {
             // todo
