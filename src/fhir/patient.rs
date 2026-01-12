@@ -1,12 +1,13 @@
 use crate::config::Fhir;
+use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, UpdateAsCreate};
 use crate::fhir::mapper::{
     bundle_entry, message_type, parse_component, parse_date, parse_datetime, parse_field,
-    parse_subcomponents, MappingError, MessageAccessError, MessageType,
+    parse_subcomponents, patch_bundle_entry, MappingError, MessageAccessError, MessageType,
 };
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
-use fhir_model::r4b::resources::Patient;
-use fhir_model::r4b::resources::{BundleEntry, PatientDeceased};
+use fhir_model::r4b::resources::{BundleEntry, PatientDeceased, ResourceType};
+use fhir_model::r4b::resources::{Parameters, Patient};
 use fhir_model::r4b::types::{Address, CodeableConcept, Coding, Extension, FieldExtension};
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
@@ -14,8 +15,8 @@ use fhir_model::BuilderError;
 use hl7_parser::Message;
 use std::vec;
 
-pub(super) fn map(map: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
-    let msg_type = message_type(map);
+pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
+    let msg_type = message_type(msg);
 
     match msg_type.map_err(MessageAccessError::MessageTypeError)? {
         MessageType::Admit
@@ -24,19 +25,23 @@ pub(super) fn map(map: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         | MessageType::ChangeOutpatientToInpatient
         | MessageType::ChangeInpatientToOutpatient
         | MessageType::PatientUpdate => {
-            let patient = map_patient(map, &config)?;
-            // todo: update-as-create
-            Ok(vec![bundle_entry(patient)?])
+            let patient = map_patient(msg, &config)?;
+            // update-as-create
+            Ok(vec![bundle_entry(patient, UpdateAsCreate)?])
         }
         MessageType::Transfer | MessageType::Discharge | MessageType::ChangePersonData => {
-            let patient = map_patient(map, &config)?;
-            // todo: conditional-create
-            Ok(vec![bundle_entry(patient)?])
+            let patient = map_patient(msg, &config)?;
+            // conditional-create
+            Ok(vec![bundle_entry(patient, ConditionalCreate)?])
         }
         MessageType::PatientMerge | MessageType::MergePatientRecords => {
-            let patient = map_patient(map, &config)?;
-            // todo: create fhir-patch
-            Ok(vec![bundle_entry(patient)?])
+            // create fhir-patch
+            let (identifier, patch) = map_patch(msg, &config)?;
+            Ok(vec![patch_bundle_entry(
+                identifier,
+                &ResourceType::Patient,
+                &patch,
+            )?])
         }
         // todo error?
         MessageType::CancelAdmitVisit
@@ -60,7 +65,7 @@ fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
 
         // line
         if let Some(lines) = parse_subcomponents(addr_field, 1).ok().flatten() {
-            addr.line = lines.into_iter().map(|l| Some(l)).collect();
+            addr.line = lines.into_iter().map(Some).collect();
         }
         // city
         if let Some(city) = parse_component(addr_field, 3).ok().flatten() {
@@ -79,6 +84,10 @@ fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
     }
 
     Ok(res)
+}
+
+fn map_patch(msg: &Message, config: &Fhir) -> Result<(Parameters, Identifier), MappingError> {
+    todo!()
 }
 
 fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {

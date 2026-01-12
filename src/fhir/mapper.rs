@@ -7,9 +7,11 @@ use crate::fhir::{encounter, patient};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
+use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
-    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Resource, ResourceType,
+    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Parameters, Resource,
+    ResourceType,
 };
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::time::error::InvalidFormatDescription;
@@ -241,9 +243,14 @@ pub(crate) fn message_type(msg: &Message) -> Result<MessageType, MessageTypeErro
     )
 }
 
-// todo: add request type parameter
+pub(crate) enum EntryRequestType {
+    UpdateAsCreate,
+    ConditionalCreate,
+}
+
 pub(crate) fn bundle_entry<T: IdentifiableResource + Clone>(
     resource: T,
+    request_type: EntryRequestType,
 ) -> Result<BundleEntry, anyhow::Error>
 where
     Resource: From<T>,
@@ -259,35 +266,78 @@ where
         .find(|&id| id.r#use.is_some_and(|u| u == IdentifierUse::Usual))
         .ok_or(anyhow!("missing identifier with use: 'usual'"))?;
 
+    let request = match request_type {
+        EntryRequestType::UpdateAsCreate => BundleEntryRequest::builder()
+            .method(HTTPVerb::Put)
+            .url(conditional_reference(&resource_type, identifier)?)
+            .build()?,
+
+        EntryRequestType::ConditionalCreate => BundleEntryRequest::builder()
+            .method(HTTPVerb::Post)
+            .url(resource_type.to_string())
+            .if_none_exist(identifier_search(
+                identifier
+                    .system
+                    .as_deref()
+                    .ok_or(anyhow!("identifier.system missing"))?,
+                identifier
+                    .value
+                    .as_deref()
+                    .ok_or(anyhow!("identifier.value missing"))?,
+            ))
+            .build()?,
+    };
+
     BundleEntry::builder()
         .resource(resource.clone().into())
-        .request(
-            BundleEntryRequest::builder()
-                .method(HTTPVerb::Put)
-                .url(conditional_reference(
-                    &resource_type,
-                    identifier
-                        .system
-                        .as_deref()
-                        .ok_or(anyhow!("identifier.system missing"))?,
-                    identifier
-                        .value
-                        .as_deref()
-                        .ok_or(anyhow!("identifier.value missing"))?,
-                ))
-                .build()?,
-        )
+        .request(request)
         .build()
         .map_err(|e| e.into())
 }
 
-fn conditional_reference(resource_type: &ResourceType, system: &str, value: &str) -> String {
-    format!("{resource_type}?identifier={system}|{value}")
+pub(crate) fn patch_bundle_entry(
+    resource: Parameters,
+    resource_type: &ResourceType,
+    identifier: &Identifier,
+) -> Result<BundleEntry, MappingError> {
+    let request = BundleEntryRequest::builder()
+        .method(Patch)
+        .url(conditional_reference(resource_type, identifier)?)
+        .build()?;
+
+    BundleEntry::builder()
+        .resource(resource.into())
+        .request(request)
+        .build()
+        .map_err(|e| e.into())
+}
+
+fn conditional_reference(
+    resource_type: &ResourceType,
+    identifier: &Identifier,
+) -> Result<String, MappingError> {
+    Ok(format!(
+        "{resource_type}?{}",
+        identifier_search(
+            identifier
+                .system
+                .as_deref()
+                .ok_or(anyhow!("identifier.system missing"))?,
+            identifier
+                .value
+                .as_deref()
+                .ok_or(anyhow!("identifier.value missing"))?
+        )
+    ))
+}
+
+fn identifier_search(system: &str, value: &str) -> String {
+    format!("identifier={system}|{value}")
 }
 
 fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier> {
     if identifiers.iter().flatten().count() == 1 {
-        identifiers.into_iter().next().unwrap()
+        identifiers.into_iter().next()?
     } else {
         identifiers
             .iter()
@@ -361,7 +411,10 @@ pub(crate) fn resource_ref(
     system: &str,
 ) -> Result<Reference, MappingError> {
     Ok(Reference::builder()
-        .reference(conditional_reference(res_type, system, id))
+        .reference(format!(
+            "{res_type}?identifier={}",
+            identifier_search(system, id)
+        ))
         .build()?)
 }
 
@@ -384,10 +437,17 @@ pub(crate) fn parse_field(
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::mapper::{parse_component, parse_datetime, parse_subcomponents, FhirMapper};
+    use crate::fhir::mapper::Identifier;
+    use crate::fhir::mapper::{
+        parse_component, parse_datetime, parse_subcomponents, patch_bundle_entry, FhirMapper,
+    };
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
-    use fhir_model::r4b::resources::{Bundle, BundleEntry, Encounter, Patient};
+    use fhir_model::r4b::codes::HTTPVerb::Patch;
+    use fhir_model::r4b::resources::{
+        Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
+        ResourceType,
+    };
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use fhir_model::DateTime::DateTime;
     use fhir_model::{time, WrongResourceType};
@@ -521,6 +581,35 @@ mod tests {
                 "Talstraße".to_string(),
                 "16".to_string()
             ])
+        )
+    }
+
+    #[test]
+    fn test_patch_bundle_entry() {
+        let entry = patch_bundle_entry(
+            Parameters::builder().build().unwrap(),
+            &ResourceType::Patient,
+            &Identifier::builder()
+                .system("system".to_string())
+                .value("value".to_string())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            entry,
+            BundleEntry::builder()
+                .resource(Resource::from(Parameters::builder().build().unwrap()))
+                .request(
+                    BundleEntryRequest::builder()
+                        .method(Patch)
+                        .url("Patient?identifier=system|value".to_string())
+                        .build()
+                        .unwrap()
+                )
+                .build()
+                .unwrap(),
         )
     }
 }
