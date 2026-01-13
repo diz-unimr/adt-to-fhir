@@ -62,38 +62,36 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
                     }
 
                     // filter tombstone records
-                    if payload.is_none() {
-                        return Ok(());
-                    }
-
-                    let result = match mapper.map(payload.unwrap()) {
-                        Ok(mapped) => match mapped {
-                            None => {
-                                commit_offset(&consumer, &m);
-                                return Ok(());
+                    if let Some(payload) = payload {
+                        let result = match mapper.map(payload) {
+                            Ok(mapped) => match mapped {
+                                None => {
+                                    commit_offset(&consumer, &m);
+                                    return Ok(());
+                                }
+                                Some(r) => { r }
                             }
-                            Some(r) => { r }
-                        }
-                        Err(err) => {
-                            error!("Failed to map payload with [key={key}]: {}", err);
-                            return Err(err);
-                        }
-                    };
+                            Err(err) => {
+                                error!("Failed to map payload with [key={key}]: {}", err);
+                                return Err(err);
+                            }
+                        };
 
-                    // send to output topic
-                    let mut record = FutureRecord::to(&output_topic)
-                        .key(&key)
-                        .payload(result.as_str());
-                    record.timestamp = m.timestamp().to_millis();
+                        // send to output topic
+                        let mut record = FutureRecord::to(&output_topic)
+                            .key(&key)
+                            .payload(result.as_str());
+                        record.timestamp = m.timestamp().to_millis();
 
-                    let produce_future = producer.send(record, Timeout::Never);
-                    match produce_future.await {
-                        Ok(delivery) => {
-                            debug!("Message sent: key: {key}, partition: {}, offset: {}", delivery.partition,delivery.offset);
-                            // store offset
-                            commit_offset(&consumer, &m);
+                        let produce_future = producer.send(record, Timeout::Never);
+                        match produce_future.await {
+                            Ok(delivery) => {
+                                debug!("Message sent: key: {key}, partition: {}, offset: {}", delivery.partition,delivery.offset);
+                                // store offset
+                                commit_offset(&consumer, &m);
+                            }
+                            Err((e, _)) => error!("Error producing record: {:?}", e),
                         }
-                        Err((e, _)) => println!("Error: {:?}", e),
                     }
 
                     Ok(())

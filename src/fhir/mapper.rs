@@ -81,13 +81,7 @@ impl FhirMapper {
 
     pub(crate) fn map(&self, msg: String) -> Result<Option<String>, anyhow::Error> {
         // deserialize
-        // TODO parse hl7 string correctly
-        // let v2_msg = Message::parse(msg.as_str()).unwrap();
         let v2_msg = Message::parse_with_lenient_newlines(msg.as_str(), true)?;
-        // let msh = v2_msg.segment("MSH").unwrap();
-
-        // let message_time = msh.field(7).unwrap();
-        // let time: TimeStamp = message_time.raw_value().parse().unwrap();
 
         // map hl7 message
         let resources = self.map_resources(&v2_msg)?;
