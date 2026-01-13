@@ -306,7 +306,7 @@ pub(crate) fn patch_bundle_entry(
         .map_err(|e| e.into())
 }
 
-fn conditional_reference(
+pub(crate) fn conditional_reference(
     resource_type: &ResourceType,
     identifier: &Identifier,
 ) -> Result<String, MappingError> {

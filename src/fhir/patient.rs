@@ -1,14 +1,19 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, UpdateAsCreate};
 use crate::fhir::mapper::{
-    bundle_entry, message_type, parse_component, parse_date, parse_datetime, parse_field,
-    parse_subcomponents, patch_bundle_entry, MappingError, MessageAccessError, MessageType,
+    bundle_entry, conditional_reference, message_type, parse_component, parse_date,
+    parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, MappingError, MessageAccessError,
+    MessageType,
 };
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
-use fhir_model::r4b::resources::{BundleEntry, PatientDeceased, ResourceType};
+use fhir_model::r4b::resources::{
+    BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased, ResourceType,
+};
 use fhir_model::r4b::resources::{Parameters, Patient};
-use fhir_model::r4b::types::{Address, CodeableConcept, Coding, Extension, FieldExtension};
+use fhir_model::r4b::types::{
+    Address, CodeableConcept, Coding, Extension, FieldExtension, Reference,
+};
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
 use fhir_model::BuilderError;
@@ -36,7 +41,7 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         }
         MessageType::PatientMerge | MessageType::MergePatientRecords => {
             // create fhir-patch
-            let (identifier, patch) = map_patch(msg, &config)?;
+            let (identifier, patch) = create_patient_merge(msg, &config)?;
             Ok(vec![patch_bundle_entry(
                 identifier,
                 &ResourceType::Patient,
@@ -86,8 +91,89 @@ fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
     Ok(res)
 }
 
-fn map_patch(msg: &Message, config: &Fhir) -> Result<(Parameters, Identifier), MappingError> {
-    todo!()
+fn create_patient_merge(
+    msg: &Message,
+    config: &Fhir,
+) -> Result<(Parameters, Identifier), MappingError> {
+    let params = Parameters::builder()
+        .parameter(vec![Some(
+            ParametersParameter::builder()
+                .name("operation".to_string())
+                .part(vec![
+                    Some(
+                        ParametersParameter::builder()
+                            .name("type".to_string())
+                            .value(ParametersParameterValue::Code("add".to_string()))
+                            .build()?,
+                    ),
+                    Some(
+                        ParametersParameter::builder()
+                            .name("path".to_string())
+                            .value(ParametersParameterValue::String(
+                                ResourceType::Patient.to_string(),
+                            ))
+                            .build()?,
+                    ),
+                    Some(
+                        ParametersParameter::builder()
+                            .name("name".to_string())
+                            .value(ParametersParameterValue::String("link".to_string()))
+                            .build()?,
+                    ),
+                    Some(
+                        ParametersParameter::builder()
+                            .name("value".to_string())
+                            .part(vec![
+                                Some(
+                                    ParametersParameter::builder()
+                                        .name("other".to_string())
+                                        .value(ParametersParameterValue::Reference(
+                                            Reference::builder()
+                                                .reference(conditional_reference(
+                                                    &ResourceType::Patient,
+                                                    &create_patient_identifier(msg, config)?,
+                                                )?)
+                                                .r#type(ResourceType::Patient.to_string())
+                                                .build()?,
+                                        ))
+                                        .build()?,
+                                ),
+                                Some(
+                                    ParametersParameter::builder()
+                                        .name("type".to_string())
+                                        .value(ParametersParameterValue::Code(
+                                            "replaced-by".to_string(),
+                                        ))
+                                        .build()?,
+                                ),
+                            ])
+                            .build()?,
+                    ),
+                ])
+                .build()?,
+        )])
+        .build()?;
+
+    Ok((
+        params,
+        Identifier::builder()
+            .system(config.person.system.to_string())
+            .value(parse_field(msg, "MRG", 1)?.ok_or(anyhow!(
+                "Failed to map Patient merge: Missing MRG.1 segment"
+            ))?)
+            .build()?,
+    ))
+}
+
+fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier, MappingError> {
+    Ok(Identifier::builder()
+        .r#use(IdentifierUse::Usual)
+        .system(config.person.system.to_owned())
+        .value(
+            parse_field(msg, "PID", 2)?
+                .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
+        )
+        .build()?)
 }
 
 fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
@@ -98,16 +184,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
                 .profile(vec![Some(config.person.profile.to_owned())])
                 .build()?,
         )
-        .identifier(vec![Some(
-            Identifier::builder()
-                .r#use(IdentifierUse::Usual)
-                .system(config.person.system.to_owned())
-                .value(
-                    parse_field(msg, "PID", 2)?
-                        .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
-                )
-                .build()?,
-        )])
+        .identifier(vec![Some(create_patient_identifier(msg, config)?)])
         .address(map_addresses(msg)?)
         .name(map_name(msg)?)
         .build()?;
@@ -321,4 +398,83 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
             Extension::builder().url(url).value(ext_value).build()?,
         ])
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{FallConfig, Fhir, ResourceConfig};
+    use crate::fhir::patient::create_patient_merge;
+    use fhir_model::r4b::resources::{ParametersParameter, ParametersParameterValue, ResourceType};
+    use fhir_model::r4b::types::Reference;
+    use hl7_parser::Message;
+
+    #[test]
+    fn test_create_patient_merge() {
+        let config = Fhir {
+            person: ResourceConfig {
+                profile: Default::default(),
+                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
+            },
+            fall: FallConfig::default(),
+        };
+
+        let msg =
+            Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
+EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
+PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
+MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#,true)
+                .unwrap();
+
+        // act
+        let (params, _) = create_patient_merge(&msg, &config).unwrap();
+
+        // get value parameters from result
+        let values: Vec<ParametersParameter> = params
+            .parameter
+            .iter()
+            .flatten()
+            .filter_map(|p| {
+                if p.name == "operation" {
+                    Some(p.part.iter().flatten())
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .find_map(|p| {
+                if p.name == "value" {
+                    Some(p.part.clone().into_iter().flatten().collect())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+
+        let other = values.first().unwrap();
+        let m_type = values.get(1).unwrap();
+
+        assert_eq!(
+            *other,
+            ParametersParameter::builder()
+                .name("other".to_string())
+                .value(ParametersParameterValue::Reference(
+                    Reference::builder()
+                        .r#type(ResourceType::Patient.to_string())
+                        .reference("Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1234567".to_string())
+                        .build()
+                        .unwrap()
+                ))
+                .build()
+                .unwrap()
+        );
+
+        assert_eq!(
+            *m_type,
+            ParametersParameter::builder()
+                .name("type".to_string())
+                .value(ParametersParameterValue::Code("replaced-by".to_string()))
+                .build()
+                .unwrap()
+        );
+    }
 }

@@ -46,3 +46,8 @@ IN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetz
 IN2|1||||||||||||||||||||||||||||^PC^100^K
 ZBE|30644727^ORBIS|202208200618||INSERT
 ZNG|1|N|N|Normal|L|56|3132|||Gesundes Neugeborenes
+
+#patient-merge:MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
+EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
+PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
+MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L
