@@ -418,13 +418,7 @@ mod tests {
 
     #[test]
     fn test_create_patient_merge() {
-        let config = Fhir {
-            person: ResourceConfig {
-                profile: Default::default(),
-                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
-            },
-            fall: FallConfig::default(),
-        };
+        let config = test_config();
 
         let msg =
             Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
@@ -487,13 +481,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#,true)
     }
     #[test]
     fn test_delete_patient() {
-        let config = Fhir {
-            person: ResourceConfig {
-                profile: Default::default(),
-                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
-            },
-            fall: FallConfig::default(),
-        };
+        let config = test_config();
 
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20221121142711||ADT^A29^ADT_A21|71546182|P|2.5||684450133|NE|NE||8859/1
 EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
@@ -516,5 +504,15 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
                     .unwrap()
             )
         );
+    }
+
+    fn test_config() -> Fhir {
+        Fhir {
+            person: ResourceConfig {
+                profile: Default::default(),
+                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
+            },
+            fall: FallConfig::default(),
+        }
     }
 }
