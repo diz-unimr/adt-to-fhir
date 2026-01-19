@@ -228,7 +228,7 @@ impl FromStr for MessageType {
 pub(crate) fn message_type(msg: &Message) -> Result<MessageType, MessageTypeError> {
     MessageType::from_str(
         msg.segment("EVN")
-            .ok_or(MissingMessageType("missing ENV segment".to_string()))?
+            .ok_or(MissingMessageType("missing EVN segment".to_string()))?
             .field(1)
             .ok_or(MissingMessageType(
                 "missing message type segment".to_string(),
@@ -240,17 +240,18 @@ pub(crate) fn message_type(msg: &Message) -> Result<MessageType, MessageTypeErro
 pub(crate) enum EntryRequestType {
     UpdateAsCreate,
     ConditionalCreate,
+    Delete,
 }
 
 pub(crate) fn bundle_entry<T: IdentifiableResource + Clone>(
     resource: T,
     request_type: EntryRequestType,
-) -> Result<BundleEntry, anyhow::Error>
+) -> Result<BundleEntry, MappingError>
 where
     Resource: From<T>,
 {
-    // resource type
-    let resource_type = Resource::from(resource.clone()).resource_type();
+    // resource
+    let r = Resource::from(resource.clone());
 
     // identifier
     let identifier = resource
@@ -260,7 +261,24 @@ where
         .find(|&id| id.r#use.is_some_and(|u| u == IdentifierUse::Usual))
         .ok_or(anyhow!("missing identifier with use: 'usual'"))?;
 
-    let request = match request_type {
+    // resource type
+    let resource_type = r.resource_type();
+
+    let request = bundle_entry_request(resource_type, identifier, request_type)?;
+
+    BundleEntry::builder()
+        .resource(r)
+        .request(request)
+        .build()
+        .map_err(|e| e.into())
+}
+
+fn bundle_entry_request(
+    resource_type: ResourceType,
+    identifier: &Identifier,
+    request_type: EntryRequestType,
+) -> Result<BundleEntryRequest, MappingError> {
+    Ok(match request_type {
         EntryRequestType::UpdateAsCreate => BundleEntryRequest::builder()
             .method(HTTPVerb::Put)
             .url(conditional_reference(&resource_type, identifier)?)
@@ -269,24 +287,14 @@ where
         EntryRequestType::ConditionalCreate => BundleEntryRequest::builder()
             .method(HTTPVerb::Post)
             .url(resource_type.to_string())
-            .if_none_exist(identifier_search(
-                identifier
-                    .system
-                    .as_deref()
-                    .ok_or(anyhow!("identifier.system missing"))?,
-                identifier
-                    .value
-                    .as_deref()
-                    .ok_or(anyhow!("identifier.value missing"))?,
-            ))
+            .if_none_exist(conditional_reference(&resource_type, identifier)?)
             .build()?,
-    };
 
-    BundleEntry::builder()
-        .resource(resource.clone().into())
-        .request(request)
-        .build()
-        .map_err(|e| e.into())
+        EntryRequestType::Delete => BundleEntryRequest::builder()
+            .method(HTTPVerb::Delete)
+            .url(conditional_reference(&resource_type, identifier)?)
+            .build()?,
+    })
 }
 
 pub(crate) fn patch_bundle_entry(

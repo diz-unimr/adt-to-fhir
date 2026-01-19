@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, UpdateAsCreate};
+use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{
     bundle_entry, conditional_reference, message_type, parse_component, parse_date,
     parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, MappingError, MessageAccessError,
@@ -56,6 +56,11 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         | MessageType::CancelPendingAdmit => {
             // ignore
             Ok(vec![])
+        }
+        MessageType::DeletePersonInformation => {
+            let patient = map_patient(msg, &config)?;
+            // delete
+            Ok(vec![bundle_entry(patient, Delete)?])
         }
         other => Err(MappingError::from(anyhow!("Invalid message type: {other}"))),
     }
@@ -403,8 +408,11 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::patient::create_patient_merge;
-    use fhir_model::r4b::resources::{ParametersParameter, ParametersParameterValue, ResourceType};
+    use crate::fhir::patient::{create_patient_merge, map};
+    use fhir_model::r4b::codes::HTTPVerb::Delete;
+    use fhir_model::r4b::resources::{
+        BundleEntryRequest, ParametersParameter, ParametersParameterValue, ResourceType,
+    };
     use fhir_model::r4b::types::Reference;
     use hl7_parser::Message;
 
@@ -475,6 +483,38 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#,true)
                 .value(ParametersParameterValue::Code("replaced-by".to_string()))
                 .build()
                 .unwrap()
+        );
+    }
+    #[test]
+    fn test_delete_patient() {
+        let config = Fhir {
+            person: ResourceConfig {
+                profile: Default::default(),
+                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
+            },
+            fall: FallConfig::default(),
+        };
+
+        let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20221121142711||ADT^A29^ADT_A21|71546182|P|2.5||684450133|NE|NE||8859/1
+EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
+PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#,true)
+            .unwrap();
+
+        let entry = map(&msg, config.clone()).unwrap();
+
+        assert_eq!(
+            entry.first().unwrap().request,
+            Some(
+                BundleEntryRequest::builder()
+                    .url(format!(
+                        "{}?identifier={}|1234567",
+                        &ResourceType::Patient,
+                        config.person.system
+                    ))
+                    .method(Delete)
+                    .build()
+                    .unwrap()
+            )
         );
     }
 }
