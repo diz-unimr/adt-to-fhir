@@ -208,7 +208,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
 fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
     // patient vital status
     let death_time = parse_field(msg, "PID", 29)?;
-    let death_confirm = parse_field(msg, "PID", 29)?;
+    let death_confirm = parse_field(msg, "PID", 30)?;
 
     match (death_time, death_confirm) {
         (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(
