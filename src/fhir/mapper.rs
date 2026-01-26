@@ -33,6 +33,8 @@ pub(crate) enum MappingError {
     BuilderError(#[from] BuilderError),
     #[error(transparent)]
     FormattingError(#[from] FormattingError),
+    #[error("HL7 message content at field '{field}' is unexpected or invalid. Expected value(s) `{expected_value}`.")]
+    MessageContentUnexpected{field : String, expected_value: String },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

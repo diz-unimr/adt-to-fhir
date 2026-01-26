@@ -1,14 +1,16 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, UpdateAsCreate};
 use crate::fhir::mapper::{
-    bundle_entry, conditional_reference, message_type, parse_component, parse_date,
-    parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, MappingError, MessageAccessError,
-    MessageType,
+    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
+    message_type, parse_component, parse_date, parse_datetime, parse_field, parse_subcomponents,
+    patch_bundle_entry,
 };
 use anyhow::anyhow;
+use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
-    BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased, ResourceType,
+    BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased,
+    PatientMultipleBirth, ResourceType,
 };
 use fhir_model::r4b::resources::{Parameters, Patient};
 use fhir_model::r4b::types::{
@@ -16,7 +18,6 @@ use fhir_model::r4b::types::{
 };
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
-use fhir_model::BuilderError;
 use hl7_parser::Message;
 use std::vec;
 
@@ -202,6 +203,8 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
     // deceased flag
     patient.deceased = map_deceased(msg)?;
 
+    patient.multiple_birth = map_multiple_birth(msg)?;
+
     Ok(patient)
 }
 
@@ -215,6 +218,56 @@ fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> 
             death_time.as_str(),
         )?))),
         (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm == "Y"))),
+        _ => Ok(None),
+    }
+}
+
+fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, MappingError> {
+    let is_multi_birth = &parse_field(msg, "PID", 24)?;
+    let multi_birth_number = &parse_field(msg, "PID", 25)?;
+
+    enum MultiBirthFlags {
+        Yes,
+        No,
+        None,
+        Unsupported,
+    }
+
+    let multi_birth_flag: MultiBirthFlags = match is_multi_birth {
+        Some(is_multi_birth) => match is_multi_birth.clone().as_str() {
+            "J" => MultiBirthFlags::Yes,
+            "N" => MultiBirthFlags::No,
+            _ => MultiBirthFlags::Unsupported,
+        },
+        None => MultiBirthFlags::None,
+    };
+
+    match (multi_birth_flag, multi_birth_number) {
+        // nur Mehrlingsgeburt-Kennung vorhanden
+        (multi_birth_flag, None) => match multi_birth_flag {
+            MultiBirthFlags::Yes => Ok(Some(PatientMultipleBirth::Boolean(true))),
+            MultiBirthFlags::No => Ok(Some(PatientMultipleBirth::Boolean(false))),
+            MultiBirthFlags::None => Ok(None),
+            MultiBirthFlags::Unsupported => Err(MappingError::MessageContentUnexpected {
+                field: "Multibirth flag PID.24".to_string(),
+                expected_value: "`Y` or `N` or empty".to_string(),
+            }),
+        },
+        // Mehrlingsgeburt nein aber Anzahl vorhanden -> Widersprüchlich!
+        (MultiBirthFlags::No, Some(_)) => Err(MappingError::MessageContentUnexpected {
+            field: "Multibirth flag PID.24".to_string(),
+            expected_value: "`Y`".to_string(),
+        }),
+        // beides vorhanden - Reihenfolge plus Mehrlingsgeburt-Kennung
+        (MultiBirthFlags::Yes, Some(multi_birth_number)) => {
+            match multi_birth_number.parse::<i32>() {
+                Ok(number) => Ok(Some(PatientMultipleBirth::Integer(number))),
+                Err(e) => Err(MappingError::MessageContentUnexpected {
+                    field: "Birth number PID.25".to_string(),
+                    expected_value: "`Integer value`".to_string(),
+                }),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -403,10 +456,77 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::patient::create_patient_merge;
-    use fhir_model::r4b::resources::{ParametersParameter, ParametersParameterValue, ResourceType};
+    use crate::fhir::patient::{create_patient_merge, map_multiple_birth};
+    use fhir_model::r4b::resources::{
+        ParametersParameter, ParametersParameterValue, PatientMultipleBirth, ResourceType,
+    };
     use fhir_model::r4b::types::Reference;
     use hl7_parser::Message;
+    use rstest::rstest;
+
+    #[test]
+    fn test_multibirth_empty() {
+        let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|||DE||||N"#, true).unwrap();
+        let actual = map_multiple_birth(&msg).unwrap();
+        assert_eq!(actual, None);
+    }
+
+    #[rstest]
+    #[case("J", "1", None)]
+    #[case("J", "2", None)]
+    #[case("J", "", Some(true))]
+    #[case("N", "", Some(false))]
+    fn test_multibirth_number_ok(
+        #[case] multibirth_flag: String,
+        #[case] multibirth_num: String,
+        #[case] expect_bool_result: Option<bool>,
+    ) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|{}|{}|DE||||N"#,
+            multibirth_flag, multibirth_num
+        );
+        let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
+        let actual = map_multiple_birth(&msg).unwrap().unwrap();
+
+        match expect_bool_result {
+            Some(true) => {
+                assert_eq!(actual, PatientMultipleBirth::Boolean(true));
+            }
+            Some(false) => {
+                assert_eq!(actual, PatientMultipleBirth::Boolean(false));
+            }
+            None => {
+                assert_eq!(
+                    actual,
+                    PatientMultipleBirth::Integer(multibirth_num.parse().unwrap())
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    #[case("N", "12")]
+    #[case("J", "a")]
+    #[should_panic]
+    fn test_multibirth_number_fail(
+        #[case] multibirth_flag: String,
+        #[case] multibirth_num: String,
+    ) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|{}|{}|DE||||N"#,
+            multibirth_flag, multibirth_num
+        );
+        let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
+        let actual = map_multiple_birth(&msg).unwrap().unwrap();
+
+        assert_eq!(actual, PatientMultipleBirth::Integer(1));
+    }
 
     #[test]
     fn test_create_patient_merge() {
