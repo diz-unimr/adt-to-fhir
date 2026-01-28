@@ -19,6 +19,8 @@ use fhir_model::r4b::types::{
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
 use hl7_parser::Message;
+use log::warn;
+use std::fmt::Debug;
 use std::vec;
 
 pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
@@ -225,19 +227,21 @@ fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> 
 fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, MappingError> {
     let is_multi_birth = &parse_field(msg, "PID", 24)?;
     let multi_birth_number = &parse_field(msg, "PID", 25)?;
+    let msg_id = &parse_field(msg, "MSH", 10)?;
 
+    #[derive(Debug, PartialEq, Eq)]
     enum MultiBirthFlags {
         Yes,
         No,
         None,
-        Unsupported,
+        Unsupported(String),
     }
 
     let multi_birth_flag: MultiBirthFlags = match is_multi_birth {
-        Some(is_multi_birth) => match is_multi_birth.clone().as_str() {
+        Some(is_multi_birth) => match is_multi_birth.as_str() {
             "J" => MultiBirthFlags::Yes,
             "N" => MultiBirthFlags::No,
-            _ => MultiBirthFlags::Unsupported,
+            _ => MultiBirthFlags::Unsupported(is_multi_birth.to_string()),
         },
         None => MultiBirthFlags::None,
     };
@@ -248,27 +252,42 @@ fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, Map
             MultiBirthFlags::Yes => Ok(Some(PatientMultipleBirth::Boolean(true))),
             MultiBirthFlags::No => Ok(Some(PatientMultipleBirth::Boolean(false))),
             MultiBirthFlags::None => Ok(None),
-            MultiBirthFlags::Unsupported => Err(MappingError::MessageContentUnexpected {
-                field: "Multibirth flag PID.24".to_string(),
-                expected_value: "`Y` or `N` or empty".to_string(),
-            }),
+            MultiBirthFlags::Unsupported(some_value) => {
+                warn!(
+                    "MSG-ID {:?}: Unsupported multi-birth flag value '{:?}'!",
+                    msg_id, some_value
+                );
+                Ok(None)
+            }
         },
-        // Mehrlingsgeburt nein aber Anzahl vorhanden -> Widersprüchlich!
-        (MultiBirthFlags::No, Some(_)) => Err(MappingError::MessageContentUnexpected {
-            field: "Multibirth flag PID.24".to_string(),
-            expected_value: "`Y`".to_string(),
-        }),
-        // beides vorhanden - Reihenfolge plus Mehrlingsgeburt-Kennung
-        (MultiBirthFlags::Yes, Some(multi_birth_number)) => {
+
+        (multi_birth_flag, Some(multi_birth_number)) => {
+            match multi_birth_flag {
+                MultiBirthFlags::No => warn!(
+                    "MSH-ID {:?}: Multi-birth flag is 'N' but birth number is present!",
+                    msg_id
+                ),
+                MultiBirthFlags::Yes => (),
+                MultiBirthFlags::Unsupported(some_value) => {
+                    warn!(
+                        "MSH-ID {:?}: Multi-birth flag is '{:?}' but birth number is present!",
+                        msg_id, some_value
+                    )
+                }
+                MultiBirthFlags::None => warn!(
+                    "MSH-ID {:?}: Multi-birth flag is empty but birth number is present!",
+                    msg_id
+                ),
+            }
+
             match multi_birth_number.parse::<i32>() {
                 Ok(number) => Ok(Some(PatientMultipleBirth::Integer(number))),
-                Err(e) => Err(MappingError::MessageContentUnexpected {
-                    field: "Birth number PID.25".to_string(),
-                    expected_value: "`Integer value`".to_string(),
-                }),
+                Err(e) => Err(MappingError::Other(anyhow!(
+                    "Invalid multi-birth number: {}",
+                    e
+                ))),
             }
         }
-        _ => Ok(None),
     }
 }
 
@@ -478,6 +497,9 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
     #[case("J", "2", None)]
     #[case("J", "", Some(true))]
     #[case("N", "", Some(false))]
+    #[case("N", "1", None)]
+    #[case("O", "1", None)]
+    #[case("", "1", None)]
     fn test_multibirth_number_ok(
         #[case] multibirth_flag: String,
         #[case] multibirth_num: String,
@@ -509,7 +531,6 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
     }
 
     #[rstest]
-    #[case("N", "12")]
     #[case("J", "a")]
     #[should_panic]
     fn test_multibirth_number_fail(
