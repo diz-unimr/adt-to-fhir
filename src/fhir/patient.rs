@@ -1,11 +1,13 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
+use crate::fhir::mapper::MessageAccessError::MissingMessageSegment;
 use crate::fhir::mapper::{
-    bundle_entry, conditional_reference, message_type, parse_component, parse_date,
-    parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, MappingError, MessageAccessError,
-    MessageType,
+    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
+    message_type, parse_component, parse_date, parse_datetime, parse_field, parse_subcomponents,
+    patch_bundle_entry,
 };
 use anyhow::anyhow;
+use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
     BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased, ResourceType,
@@ -16,8 +18,9 @@ use fhir_model::r4b::types::{
 };
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
-use fhir_model::BuilderError;
 use hl7_parser::Message;
+use hl7_parser::message::Segment;
+use log::warn;
 use std::vec;
 
 pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
@@ -171,14 +174,49 @@ fn create_patient_merge(
 }
 
 fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier, MappingError> {
-    Ok(Identifier::builder()
+    Identifier::builder()
         .r#use(IdentifierUse::Usual)
         .system(config.person.system.to_owned())
         .value(
             parse_field(msg, "PID", 2)?
                 .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
         )
-        .build()?)
+        .build().map_err(MappingError::from)
+}
+
+fn create_patient_identifiers(
+    msg: &Message,
+    config: &Fhir,
+) -> Result<Vec<Option<Identifier>>, MappingError> {
+    let mut res: Vec<Option<Identifier>>;
+
+    // init result vector: one for PID and x for IN1 count
+    let in1_count = msg.segment_count("IN1");
+    if in1_count > 0 {
+        res = Vec::with_capacity(in1_count + 1);
+    } else {
+        res = Vec::with_capacity(1);
+    }
+
+    match create_patient_identifier(msg, config) {
+        Ok(pid_identifier) => res.push(Some(pid_identifier)),
+        Err(err) =>
+        // mandatory identifier - if it is missing, mapping patient does not make sense
+        {
+            return Err(err);
+        }
+    }
+
+    // create and add further identifiers
+    if in1_count > 0 {
+        for idx in 1..in1_count + 1 {
+            if let Some(segment_by_index) = msg.segment_n("IN1", idx) {
+                res.push(map_versicherungsdaten(segment_by_index)?);
+            }
+        }
+    }
+
+    Ok(res)
 }
 
 fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
@@ -189,7 +227,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
                 .profile(vec![Some(config.person.profile.to_owned())])
                 .build()?,
         )
-        .identifier(vec![Some(create_patient_identifier(msg, config)?)])
+        .identifier(create_patient_identifiers(msg, config)?)
         .address(map_addresses(msg)?)
         .name(map_name(msg)?)
         .build()?;
@@ -397,6 +435,10 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
     Ok(names)
 }
 
+fn map_versicherungsdaten(in1_segment: &Segment) -> Result<Option<Identifier>, MappingError> {
+    Ok(None)
+}
+
 fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
     FieldExtension::builder()
         .extension(vec![
@@ -514,5 +556,9 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
             },
             fall: FallConfig::default(),
         }
+    }
+    #[test]
+    fn test_map_versicherungsdaten() {
+        assert!(false);
     }
 }

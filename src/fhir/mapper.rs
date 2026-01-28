@@ -7,6 +7,7 @@ use crate::fhir::{encounter, patient};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
+use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
@@ -16,9 +17,8 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::time::{Month, OffsetDateTime};
-use fhir_model::DateFormatError::InvalidDate;
-use fhir_model::{time, Date, DateTime};
 use fhir_model::{BuilderError, DateFormatError, Instant};
+use fhir_model::{Date, DateTime, time};
 use fmt::Display;
 use hl7_parser::Message;
 use std::fmt;
@@ -436,23 +436,46 @@ pub(crate) fn parse_field(
     .filter(|f| !f.is_empty()))
 }
 
+pub(crate) fn parse_segments_field(
+    msg: &Message,
+    segment: &str,
+    field: usize,
+) -> Result<Vec<Option<String>>, MessageAccessError> {
+    let vec_size_needed= msg.segment_count(segment);
+    if vec_size_needed < 1 {
+        return Err(MissingMessageSegment(segment.to_string()));
+    }
+    let mut result:Vec<Option<String>> = Vec::with_capacity(vec_size_needed);
+    for idx  in 1..  vec_size_needed+1{
+        match  msg.segment_n(segment,idx){
+            Some(segment_of_index) => {
+                 match segment_of_index.field(field) {
+                    Some(raw) =>result.push(Some(raw.raw_value().to_string())) ,
+                    None => return Err(MissingMessageField(field.to_string(), segment.to_string()))
+                }
+            },
+            None => result.push(None),
+        }
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::mapper::Identifier;
-    use crate::fhir::mapper::{
-        parse_component, parse_datetime, parse_subcomponents, patch_bundle_entry, FhirMapper,
-    };
+    use crate::fhir::mapper::{FhirMapper, parse_component, parse_datetime, parse_subcomponents, patch_bundle_entry, parse_segments_field, MessageAccessError};
+    use crate::fhir::mapper::{Identifier, parse_field};
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
+    use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
         Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
         ResourceType,
     };
     use fhir_model::time::{Month, OffsetDateTime, Time};
-    use fhir_model::DateTime::DateTime;
-    use fhir_model::{time, WrongResourceType};
+    use fhir_model::{WrongResourceType, time};
+    use hl7_parser::Message;
     use std::collections::HashMap;
 
     #[test]
@@ -613,5 +636,32 @@ mod tests {
                 .build()
                 .unwrap(),
         )
+    }
+
+    #[test]
+    fn test_read_multiple_segment_same_name() {
+        let test_msg=
+        Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE||||N
+PV1|1|I|KJMST042^BSP-2-2^^KJM^KLINIKUM^000000|R^^HL7~01^Normalfall^11||KJMST042^BSP-1-1^^KJM^KLINIKUM^000000||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||1000|9||||202511022120|202511022120||||||A
+PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000||||||||||N||I||||||||||||Y
+DG1|1||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA En|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340005|U
+DG1|2||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||2|BBBBBB^^^^^^^^^^^^^^^^^^^^^^KJM||||12340007|U
+DG1|3||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|Aufn.|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340009|U
+DG1|4||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340001|U
+IN1|1||000000000^^^^NII~Krankenkasse^^^^XX|Krankenkasse|Strasse 1&Strasse&1^^Stadt^^1000^DE^L||000000000000^PRN^PH^^^00000^0000000^^^^^000000000000||Krankenkasse^1^^^1&gesetzliche Krankenkasse^^NII~Krankenkasse^1^^^^^U|||||||Nachname^Vorname||19340101|Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L|||H|||||||||F||||||||||||F|||||||||AndereStadt
+IN2|1||||||||||||||||||||||||||||^PC^100.0||||DE|||N|||ev||||||||||||||||||||||||00000 0000000
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes"#,true).unwrap();
+
+        let actual = parse_segments_field(&test_msg, "DG1", 1);
+
+        assert_eq!(4, actual.as_ref().unwrap().len());
+
+        for idx in 0..3 {
+            let value = actual.as_ref().unwrap();
+            assert_eq!((idx+1).to_string(),value[idx].clone().unwrap());
+        }
     }
 }
