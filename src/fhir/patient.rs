@@ -1,6 +1,5 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
-use crate::fhir::mapper::MessageAccessError::MissingMessageSegment;
 use crate::fhir::mapper::{
     MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
     message_type, parse_component, parse_date, parse_datetime, parse_field, parse_subcomponents,
@@ -21,7 +20,6 @@ use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
 use hl7_parser::Message;
 use hl7_parser::message::Segment;
-use log::warn;
 use log::warn;
 use std::fmt::Debug;
 use std::vec;
