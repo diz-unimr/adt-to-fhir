@@ -19,6 +19,7 @@ pub(crate) struct Kafka {
 
 #[derive(Default, Deserialize, Clone)]
 pub(crate) struct Fhir {
+    pub(crate) facility_id: String,
     pub(crate) person: ResourceConfig,
     pub(crate) fall: FallConfig,
 }

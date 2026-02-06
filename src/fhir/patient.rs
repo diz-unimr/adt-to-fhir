@@ -6,21 +6,22 @@ use crate::fhir::mapper::{
     patch_bundle_entry,
 };
 use anyhow::anyhow;
-use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
-    BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased,
-    PatientMultipleBirth, ResourceType,
+    BundleEntry, Organization, OrganizationBuilder, ParametersParameter, ParametersParameterValue,
+    PatientDeceased, PatientMultipleBirth, ResourceType,
 };
 use fhir_model::r4b::resources::{Parameters, Patient};
 use fhir_model::r4b::types::{
-    Address, CodeableConcept, Coding, Extension, FieldExtension, Reference,
+    Address, CodeableConcept, Coding, Extension, FieldExtension, Period, Reference,
 };
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
+use fhir_model::{BuilderError, Date};
 use hl7_parser::Message;
-use hl7_parser::message::Segment;
+use hl7_parser::message::{Field, Segment};
 use log::warn;
+use regex::Regex;
 use std::fmt::Debug;
 use std::vec;
 
@@ -182,7 +183,19 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
             parse_field(msg, "PID", 2)?
                 .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
         )
-        .build().map_err(MappingError::from)
+        .assigner(
+            Reference::builder()
+                .display("UKGM -Universitätsklinikum Marburg".to_string())
+                .identifier(
+                    Identifier::builder()
+                        .value(config.facility_id.to_string())
+                        .system("http://fhir.de/sid/arge-ik/iknr".to_string())
+                        .build()?,
+                )
+                .build()?,
+        )
+        .build()
+        .map_err(MappingError::from)
 }
 
 fn create_patient_identifiers(
@@ -505,8 +518,107 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
     Ok(names)
 }
 
-fn map_versicherungsdaten(in1_segment: &Segment) -> Result<Option<Identifier>, MappingError> {
-    Ok(None)
+static GKV10_VALID: once_cell::sync::Lazy<Regex> =
+    once_cell::sync::Lazy::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
+
+fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingError> {
+    // 10-stellige Nummer
+    let insurance_number = match in1.field(36) {
+        Some(f) if !f.is_empty() => f.raw_value(),
+        _ => return Ok(None),
+    };
+
+    let mut result = Identifier::builder()
+        .value(insurance_number.to_string())
+        .r#use(IdentifierUse::Official)
+        .build()
+        .map_err(MappingError::from)?;
+
+    if GKV10_VALID.is_match(insurance_number) {
+        // GKV
+        result.system = Some("http://fhir.de/sid/gkv/kvid-10".to_string());
+        result.r#type = Some(
+            CodeableConcept::builder()
+                .coding(vec![Some(
+                    Coding::builder()
+                        .code("KVZ10".to_string())
+                        .system("http://fhir.de/CodeSystem/identifier-type-de-basis".to_string())
+                        .build()?,
+                )])
+                .build()?,
+        );
+    } else {
+        // OTHER INSURANCE NUMBER! vor 2012 waren 9 - 12 Stellen ohne führenden Buchstaben valide.
+    }
+
+    // Gültigkeitszeitraum
+    let start = match in1
+        .field(12)
+        .filter(|f| !f.is_empty())
+        .map(|f| parse_date(f.raw_value()))
+        .transpose()
+    {
+        Ok(Some(start)) => Some(start),
+
+        Err(e) => return Err(MappingError::FormattingError(e).into()),
+
+        Ok(None) => None,
+    };
+
+    let end = match in1
+        .field(13)
+        .filter(|f| !f.is_empty())
+        .map(|f| parse_date(f.raw_value()))
+        .transpose()
+    {
+        Ok(Some(start)) => Some(start),
+
+        Err(e) => return Err(MappingError::FormattingError(e).into()),
+
+        Ok(None) => None,
+    };
+
+    if start.is_some() || end.is_some() {
+        let mut period = Period::builder().build()?;
+
+        if let Some(start) = start {
+            period.start = Some(fhir_model::DateTime::Date(start))
+        }
+
+        if let Some(end) = end {
+            period.end = Some(fhir_model::DateTime::Date(end))
+        }
+
+        result.period = Some(period);
+    }
+
+    Ok(Some(result))
+}
+
+fn build_insurance_organization(in1: &Segment) -> Result<Organization, MappingError> {
+    let insurance_company_id = in1.field(3).unwrap().repeats.get(1).unwrap().raw_value();
+    let insurance_company_name = in1.field(4).unwrap().repeats.get(1).unwrap().raw_value();
+    let company_identifier = Identifier::builder()
+        .value(insurance_company_id.to_string())
+        .system("http://fhir.de/sid/arge-ik/iknr".to_string())
+        .r#type(
+            CodeableConcept::builder()
+                .coding(vec![Some(
+                    Coding::builder()
+                        .code("XX".to_string())
+                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
+                        .build()?,
+                )])
+                .build()?,
+        )
+        .build()
+        .map_err(MappingError::from);
+
+    Organization::builder()
+        .name(insurance_company_name.to_string())
+        .identifier(vec![Some(company_identifier?)])
+        .build()
+        .map_err(MappingError::from)
 }
 
 fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
@@ -520,14 +632,20 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::patient::{create_patient_merge, map, map_multiple_birth};
+    use crate::fhir::mapper::MappingError;
+    use crate::fhir::patient::{
+        create_patient_merge, map, map_multiple_birth, map_versicherungsdaten,
+    };
     use fhir_model::r4b::codes::HTTPVerb::Delete;
     use fhir_model::r4b::resources::{
-        BundleEntryRequest, ParametersParameter, ParametersParameterValue, PatientMultipleBirth, ResourceType,
+        BundleEntryRequest, ParametersParameter, ParametersParameterValue, PatientMultipleBirth,
+        ResourceType,
     };
-    use fhir_model::r4b::types::Reference;
+    use fhir_model::r4b::types::{Coding, Identifier, Reference};
     use hl7_parser::Message;
+    use hl7_parser::message::Segment;
     use rstest::rstest;
+    use std::fmt::Debug;
 
     #[test]
     fn test_multibirth_empty() {
@@ -600,11 +718,11 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
         let config = test_config();
 
         let msg =
-            Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
+                Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
 EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
 PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
-MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#,true)
-                .unwrap();
+MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
+                    .unwrap();
 
         // act
         let (params, _) = create_patient_merge(&msg, &config).unwrap();
@@ -635,19 +753,19 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#,true)
         let m_type = values.get(1).unwrap();
 
         assert_eq!(
-            *other,
-            ParametersParameter::builder()
-                .name("other".to_string())
-                .value(ParametersParameterValue::Reference(
-                    Reference::builder()
-                        .r#type(ResourceType::Patient.to_string())
-                        .reference("Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1234567".to_string())
-                        .build()
-                        .unwrap()
-                ))
-                .build()
-                .unwrap()
-        );
+                *other,
+                ParametersParameter::builder()
+                    .name("other".to_string())
+                    .value(ParametersParameterValue::Reference(
+                        Reference::builder()
+                            .r#type(ResourceType::Patient.to_string())
+                            .reference("Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1234567".to_string())
+                            .build()
+                            .unwrap()
+                    ))
+                    .build()
+                    .unwrap()
+            );
 
         assert_eq!(
             *m_type,
@@ -664,8 +782,8 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#,true)
 
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20221121142711||ADT^A29^ADT_A21|71546182|P|2.5||684450133|NE|NE||8859/1
 EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
-PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#,true)
-            .unwrap();
+PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#, true)
+                .unwrap();
 
         let entry = map(&msg, config.clone()).unwrap();
 
@@ -687,6 +805,7 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
 
     fn test_config() -> Fhir {
         Fhir {
+            facility_id: "260620431".to_string(),
             person: ResourceConfig {
                 profile: Default::default(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
@@ -694,8 +813,106 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
             fall: FallConfig::default(),
         }
     }
+
+    #[test]
+    fn test_map_versicherung_missing_insurance_number() {
+        let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
+IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R||||||||||||M| ^^^^^D  |||||454874316^^^^^^^20150630"#, true).unwrap();
+        let in1 = msg.segment("IN1").unwrap();
+
+        let result = map_versicherungsdaten(in1).unwrap();
+
+        // Assert
+        assert!(result.is_none());
+    }
+
     #[test]
     fn test_map_versicherungsdaten() {
-        assert!(false);
+        let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
+EVN|A04|201111280722|201111280722||TEST
+PID|1|111111|111111||Mustermann^Max|Mustermann|19500118|M|||Mustergasse 10^^Musterort^^33333^DE||012345/12346^^PH|||M|kl|||||||N||DE
+NK1|1|Fr. Müller, Miriam|14^Ehefrau| |s.Pat.
+PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
+IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20020120|20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||A454874316|||||||M| ^^^^^D  |||||A454874316^^^^^^^20150630
+"#, true).unwrap();
+
+        let result = &map_versicherungsdaten(msg.segment("IN1").unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.value.as_ref().unwrap(), "A454874316");
+        assert_eq!(
+            result.system.as_ref().unwrap(),
+            "http://fhir.de/sid/gkv/kvid-10"
+        );
+        assert_eq!(
+            result.r#type.as_ref().unwrap().coding[0]
+                .as_ref()
+                .unwrap()
+                .code,
+            Some("KVZ10".to_string())
+        );
+        assert_eq!(
+            result.r#type.as_ref().unwrap().coding[0]
+                .as_ref()
+                .unwrap()
+                .system,
+            Some("http://fhir.de/CodeSystem/identifier-type-de-basis".to_string())
+        );
+
+        match result.assigner.as_ref() {
+            None => assert!(false, "assigner is expected"),
+            Some(assigner_ref) => {
+                assert!(false, "assigner reference present but needs more testing.")
+                //TODO! may be separate test
+            }
+        }
+    }
+
+    #[test]
+    fn test_map_insurance_is_not_gkv10() {
+        assert!(
+            false,
+            "need implement insurance number which fail regex GKV10_VALID"
+        );
+    }
+
+    fn helper_print_hl7_message(msg: &Message) {
+        let _z = &msg
+            .segments
+            .iter()
+            .map(|s| {
+                println!("Segment {}", s.name);
+                for idx in 0..s.fields.len() {
+                    if s.fields[idx].is_empty() {
+                        println!("{}-{} = ''", s.name, idx + 1);
+                    } else if s.fields[idx].repeats.is_empty() || s.fields[idx].repeats.len() == 1 {
+                        println!("{}-{} = {}", s.name, idx + 1, s.fields[idx].raw_value());
+                    } else {
+                        for i in 0..s.fields[idx].repeats.len() {
+                            println!(
+                                "{}-{}.{} = {}",
+                                s.name,
+                                idx + 1,
+                                i + 1,
+                                s.fields[idx].repeats[i].raw_value()
+                            )
+                        }
+                    }
+                }
+            })
+            .count();
+    }
+
+    fn test_patient_multiple_insurance() {
+        let msg_full = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
+EVN|A04|201111280722|201111280722||TEST
+PID|1|111111|111111||Mustermann^Max|Mustermann|19500118|M|||Mustergasse 10^^Musterort^^33333^DE||012345/12346^^PH|||M|kl|||||||N||DE
+NK1|1|Fr. Müller, Miriam|14^Ehefrau| |s.Pat.
+PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
+IN1|1|105313145|AOK HESSEN|AOK Hessen|^^Marburg^^35039^D||||AOK^1^^^1&gesetzlich||||||50001|||||||1|||||||||R|||||454874316|||||||U|
+IN2|1||||||||||||||||||||||||||||^PC^0^K
+IN1|2||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||454874316|||||||M| ^^^^^D  |||||454874316^^^^^^^20150630
+IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
+        assert!(false)
     }
 }

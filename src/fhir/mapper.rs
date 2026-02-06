@@ -406,7 +406,6 @@ pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, FormattingError> {
         OffsetDateTime::from_unix_timestamp(dt_with_tz.timestamp())?,
     )))
 }
-
 pub(crate) fn resource_ref(
     res_type: &ResourceType,
     id: &str,
@@ -441,18 +440,16 @@ pub(crate) fn parse_segments_field(
     segment: &str,
     field: usize,
 ) -> Result<Vec<Option<String>>, MessageAccessError> {
-    let vec_size_needed= msg.segment_count(segment);
+    let vec_size_needed = msg.segment_count(segment);
     if vec_size_needed < 1 {
         return Err(MissingMessageSegment(segment.to_string()));
     }
-    let mut result:Vec<Option<String>> = Vec::with_capacity(vec_size_needed);
-    for idx  in 1..  vec_size_needed+1{
-        match  msg.segment_n(segment,idx){
-            Some(segment_of_index) => {
-                 match segment_of_index.field(field) {
-                    Some(raw) =>result.push(Some(raw.raw_value().to_string())) ,
-                    None => return Err(MissingMessageField(field.to_string(), segment.to_string()))
-                }
+    let mut result: Vec<Option<String>> = Vec::with_capacity(vec_size_needed);
+    for idx in 1..vec_size_needed + 1 {
+        match msg.segment_n(segment, idx) {
+            Some(segment_of_index) => match segment_of_index.field(field) {
+                Some(raw) => result.push(Some(raw.raw_value().to_string())),
+                None => return Err(MissingMessageField(field.to_string(), segment.to_string())),
             },
             None => result.push(None),
         }
@@ -463,11 +460,14 @@ pub(crate) fn parse_segments_field(
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
-    use crate::fhir::mapper::{FhirMapper, parse_component, parse_datetime, parse_subcomponents, patch_bundle_entry, parse_segments_field, MessageAccessError};
+    use crate::fhir::mapper::{
+        FhirMapper, FormattingError, MessageAccessError, parse_component, parse_datetime,
+        parse_segments_field, parse_subcomponents, patch_bundle_entry,
+    };
     use crate::fhir::mapper::{Identifier, parse_field};
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
-    use fhir_model::DateTime::DateTime;
+    use fhir_model::DateTime::{Date, DateTime};
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
         Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
@@ -477,6 +477,7 @@ mod tests {
     use fhir_model::{WrongResourceType, time};
     use hl7_parser::Message;
     use std::collections::HashMap;
+    use std::fmt::Debug;
 
     #[test]
     fn test_parse_datetime() {
@@ -502,6 +503,7 @@ mod tests {
         let hl7 = read_test_resource("a01_test.hl7");
 
         let config = Fhir {
+            facility_id: "260620431".to_string(),
             person: ResourceConfig {
                 profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
@@ -661,7 +663,7 @@ ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes"#,true).unwrap();
 
         for idx in 0..3 {
             let value = actual.as_ref().unwrap();
-            assert_eq!((idx+1).to_string(),value[idx].clone().unwrap());
+            assert_eq!((idx + 1).to_string(), value[idx].clone().unwrap());
         }
     }
 }
