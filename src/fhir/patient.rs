@@ -634,7 +634,8 @@ mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
     use crate::fhir::mapper::MappingError;
     use crate::fhir::patient::{
-        create_patient_merge, map, map_multiple_birth, map_versicherungsdaten,
+        create_patient_identifiers, create_patient_merge, map, map_multiple_birth,
+        map_versicherungsdaten,
     };
     use fhir_model::r4b::codes::HTTPVerb::Delete;
     use fhir_model::r4b::resources::{
@@ -642,6 +643,8 @@ mod tests {
         ResourceType,
     };
     use fhir_model::r4b::types::{Coding, Identifier, Reference};
+    use fhir_model::time::Month;
+    use fhir_model::{Date, DateTime, time};
     use hl7_parser::Message;
     use hl7_parser::message::Segment;
     use rstest::rstest;
@@ -836,6 +839,8 @@ PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr.
 IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20020120|20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||A454874316|||||||M| ^^^^^D  |||||A454874316^^^^^^^20150630
 "#, true).unwrap();
 
+        helper_print_hl7_message(&msg);
+
         let result = &map_versicherungsdaten(msg.segment("IN1").unwrap())
             .unwrap()
             .unwrap();
@@ -851,6 +856,7 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
                 .code,
             Some("KVZ10".to_string())
         );
+
         assert_eq!(
             result.r#type.as_ref().unwrap().coding[0]
                 .as_ref()
@@ -858,6 +864,19 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
                 .system,
             Some("http://fhir.de/CodeSystem/identifier-type-de-basis".to_string())
         );
+
+        // IN-12
+        let expected_start =
+            Date::Date(time::Date::from_calendar_date(2002, Month::January, 20).unwrap());
+        if let DateTime::Date(actual) = result.period.as_ref().unwrap().start.as_ref().unwrap() {
+            assert_eq!(&expected_start, actual);
+        }
+        // IN-13
+        let expected_end =
+            Date::Date(time::Date::from_calendar_date(2009, Month::December, 31).unwrap());
+        if let DateTime::Date(actual) = result.period.as_ref().unwrap().end.as_ref().unwrap() {
+            assert_eq!(&expected_end, actual);
+        }
 
         match result.assigner.as_ref() {
             None => assert!(false, "assigner is expected"),
@@ -870,6 +889,23 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
 
     #[test]
     fn test_map_insurance_is_not_gkv10() {
+        let msg = Message::parse_with_lenient_newlines(
+            r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
+EVN|A04|201111280722|201111280722||TEST
+PID|1|111111|111111||Mustermann^Max|Mustermann|19500118|M|||Mustergasse 10^^Musterort^^33333^DE||012345/12346^^PH|||M|kl|||||||N||DE
+NK1|1|Fr. Müller, Miriam|14^Ehefrau| |s.Pat.
+PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
+IN1|1||666666666^^^^NII~BG BAU MITTE^^^^XX|BG der Bauwirtschaft - BV Mitte|Viktoriastr. 21&Viktoriastr.&21^^Wuppertal^^42115^DE^L||12345612^PRN^PH^^^0000^3333^^^^^12345612~11111111111^PRN^FX^^^0000^1111111^^^^^11111111111||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U|||||||Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||N|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L
+IN2|1||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||Beruf-des-Pateinten|||||||||||||||||0123 45678|||||||Test GmbH
+IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||000000000001^PRN^PH^^^0800^99900801^^^^^000000000001~1313131331313^PRN^FX^^^00000^00000000^^^^^1313131331313||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U||||||10001|Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||H|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L
+IN2|2||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||Beruf-des-Pateinten|||||||||||||||||0123 45678|||||||Test GmbH
+IN1|3||8888888888^^^^NII~P DEMO^^^^XX|Krankenversicherung a.G.|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||0000000-0^PRN^PH^^^0000^111-0^^^^^0000000-0~0000000-2913^PRN^FX^^^0000^111-2913^^^^^0000000-2913~^NET^Internet^info@email.de||Private^6^^^8&Private Krankenkasse^^NII~Private^6^^^^^U|||||||Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||N|||||||||P|||||123123123|||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||||123123123^^^^^^^0236
+IN2|3|123123123|12345TES^TEST GmbH||||||||||||||||||||||||||||||DE|||N|||kl|||||||Beruf-des-Pateinten|||||||||||||||||0123 45678|||||||Test GmbH
+IN1|4||SELBST^^^^XX|Selbstzahler|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||00000000^PRN^PH^^^06420^6399^^^^^00000000~00000000000^PRN^CP^^^0000^0000000^^^^^00000000000||Sonstige^5^^^6&Selbstzahler^^NII~Sonstige^5^^^^^U|||||||Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||N|||J|20251207|||||P||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L
+IN2|4||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||Beruf-des-Pateinten|||||||||||||||||0123 45678|||||||Test GmbH
+"#,
+            true,
+        );
         assert!(
             false,
             "need implement insurance number which fail regex GKV10_VALID"
@@ -903,6 +939,7 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
             .count();
     }
 
+    #[test]
     fn test_patient_multiple_insurance() {
         let msg_full = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
 EVN|A04|201111280722|201111280722||TEST
@@ -913,6 +950,9 @@ IN1|1|105313145|AOK HESSEN|AOK Hessen|^^Marburg^^35039^D||||AOK^1^^^1&gesetzlich
 IN2|1||||||||||||||||||||||||||||^PC^0^K
 IN1|2||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||454874316|||||||M| ^^^^^D  |||||454874316^^^^^^^20150630
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
-        assert!(false)
+        let config = test_config();
+        let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
+
+        assert_eq!(identifiers.len(), 3);
     }
 }
