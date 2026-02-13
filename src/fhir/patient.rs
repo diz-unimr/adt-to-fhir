@@ -549,9 +549,20 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
         );
     } else {
         // OTHER INSURANCE NUMBER! vor 2012 waren 9 - 12 Stellen ohne führenden Buchstaben valide.
-        return Err(MappingError::Other(anyhow!("Insurance number mapping for length != 10 is not implemented, yet!")));
+        return Err(MappingError::Other(anyhow!(
+            "Insurance number mapping for length != 10 is not implemented, yet!"
+        )));
     }
 
+    match try_set_identifier_period(in1, &mut result) {
+        Ok(_) => {}
+        Err(map_err) => return Err(map_err),
+    }
+
+    Ok(Some(result))
+}
+
+fn try_set_identifier_period(in1: &Segment, result: &mut Identifier) -> Result<bool, MappingError> {
     // Gültigkeitszeitraum
     let start = match in1
         .field(12)
@@ -561,7 +572,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
     {
         Ok(Some(start)) => Some(start),
 
-        Err(e) => return Err(MappingError::FormattingError(e).into()),
+        Err(e) => return Err(MappingError::FormattingError(e)),
 
         Ok(None) => None,
     };
@@ -574,7 +585,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
     {
         Ok(Some(start)) => Some(start),
 
-        Err(e) => return Err(MappingError::FormattingError(e).into()),
+        Err(e) => return Err(MappingError::FormattingError(e)),
 
         Ok(None) => None,
     };
@@ -592,8 +603,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
 
         result.period = Some(period);
     }
-
-    Ok(Some(result))
+    Ok(true)
 }
 
 fn build_insurance_organization(in1: &Segment) -> Result<Organization, MappingError> {
