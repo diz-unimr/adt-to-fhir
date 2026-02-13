@@ -549,6 +549,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
         );
     } else {
         // OTHER INSURANCE NUMBER! vor 2012 waren 9 - 12 Stellen ohne führenden Buchstaben valide.
+        return Err(MappingError::Other(anyhow!("Insurance number mapping for length != 10 is not implemented, yet!")));
     }
 
     // Gültigkeitszeitraum
