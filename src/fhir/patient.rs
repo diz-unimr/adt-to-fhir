@@ -3,7 +3,7 @@ use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsC
 use crate::fhir::mapper::{
     MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
     message_type, parse_component, parse_date, parse_datetime, parse_field, parse_subcomponents,
-    patch_bundle_entry,
+    patch_bundle_entry, resource_ref,
 };
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
@@ -20,7 +20,7 @@ use fhir_model::r4b::types::{Identifier, Meta};
 use fhir_model::{BuilderError, Date};
 use hl7_parser::Message;
 use hl7_parser::message::{Field, Segment};
-use log::warn;
+use log::{error, warn};
 use regex::Regex;
 use std::fmt::Debug;
 use std::vec;
@@ -534,6 +534,22 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
         .build()
         .map_err(MappingError::from)?;
 
+    match get_repeat_value(in1, 3, 0) {
+        None => {println!("no insurance id found")}
+        Some(id) => {
+            match resource_ref(
+                &ResourceType::Organization,
+                id.as_str(),
+                "http://fhir.de/sid/arge-ik/iknr",
+            ) {
+                Ok(reference) => result.assigner = Some(reference),
+                Err(err) => {
+                    error! {"{}", err}
+                }
+            };
+        }
+    };
+
     if GKV10_VALID.is_match(insurance_number) {
         // GKV
         result.system = Some("http://fhir.de/sid/gkv/kvid-10".to_string());
@@ -606,11 +622,18 @@ fn try_set_identifier_period(in1: &Segment, result: &mut Identifier) -> Result<b
     Ok(true)
 }
 
+// TODO: add to bundle and add test for all insurance types
 fn build_insurance_organization(in1: &Segment) -> Result<Organization, MappingError> {
-    let insurance_company_id = in1.field(3).unwrap().repeats.get(1).unwrap().raw_value();
-    let insurance_company_name = in1.field(4).unwrap().repeats.get(1).unwrap().raw_value();
+    // fixme: remove unwrap from implementation!
+
+    let insurance_company_id = match get_repeat_value(in1, 3, 0) {
+        None => return Err(MappingError::Other(anyhow!("no company id found!"))),
+        Some(insurance_company_id) => insurance_company_id,
+    };
+    let insurance_company_name = get_repeat_value(in1, 4, 1).unwrap_or_else(|| "".to_string());
+
     let company_identifier = Identifier::builder()
-        .value(insurance_company_id.to_string())
+        .value(insurance_company_id)
         .system("http://fhir.de/sid/arge-ik/iknr".to_string())
         .r#type(
             CodeableConcept::builder()
@@ -626,10 +649,47 @@ fn build_insurance_organization(in1: &Segment) -> Result<Organization, MappingEr
         .map_err(MappingError::from);
 
     Organization::builder()
-        .name(insurance_company_name.to_string())
+        .name(insurance_company_name)
         .identifier(vec![Some(company_identifier?)])
         .build()
         .map_err(MappingError::from)
+}
+
+
+fn get_repeat_value(segment: &Segment, field_index: usize, repeat_index: usize) -> Option<String> {
+    let result: Option<String>;
+    if repeat_index == 0 {
+        result = match segment
+            .field(field_index)
+            .filter(|f| f.repeats.is_empty() && f.repeats.len() == 1)
+            .map(|f| f.raw_value())
+        {
+            Some(value) => {
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                }
+            }
+            None => None,
+        };
+    } else {
+        result = match segment
+            .field(field_index)
+            .filter(|f| !f.repeats.is_empty())
+            .map(|f| f.repeats[repeat_index].raw_value())
+        {
+            Some(value) => {
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                }
+            }
+            None => None,
+        };
+    }
+    result
 }
 
 fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
@@ -847,7 +907,7 @@ EVN|A04|201111280722|201111280722||TEST
 PID|1|111111|111111||Mustermann^Max|Mustermann|19500118|M|||Mustergasse 10^^Musterort^^33333^DE||012345/12346^^PH|||M|kl|||||||N||DE
 NK1|1|Fr. Müller, Miriam|14^Ehefrau| |s.Pat.
 PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
-IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20020120|20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||A454874316|||||||M| ^^^^^D  |||||A454874316^^^^^^^20150630
+IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20020120|20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||A454874316|||||||M| ^^^^^D  |||||A454874316^^^^^^^20150630
 "#, true).unwrap();
 
         helper_print_hl7_message(&msg);
