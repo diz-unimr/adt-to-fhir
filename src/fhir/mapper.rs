@@ -21,6 +21,7 @@ use fhir_model::{BuilderError, DateFormatError, Instant};
 use fhir_model::{Date, DateTime, time};
 use fmt::Display;
 use hl7_parser::Message;
+use hl7_parser::message::Segment;
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
@@ -457,12 +458,50 @@ pub(crate) fn parse_segments_field(
     Ok(result)
 }
 
+/// Extraktion eines Werts aus einem Segment
+/// # Arguments
+/// * `segment` - Referenz des Segments aus dem wir Informationen lesen wollen
+/// * `field_number` - 1 basierter Feld-Index des Ziels
+/// * `repeat_index` - 0 basierter Index der Feldwiederholungen
+/// * `component_number` - 1 basierter Komponenten-Index des ausgewählten Repeats
+/// # Result
+/// `String`-Wert des Eintrags. Sollte einer oder mehre Indexe außerhalb der verfügbaren Felder
+/// liegen, so wird `None` zurückgeliefert.
+///
+pub(crate) fn get_repeat_value(
+    segment: &Segment,
+    field_number: usize,
+    repeat_index: usize,
+    component_number: usize,
+) -> Option<String> {
+    if field_number == 0 || component_number == 0 {
+        return None;
+    }
+
+    match segment
+        .fields()
+        .nth(field_number - 1)?
+        .repeats()
+        .nth(repeat_index)?
+        .component(component_number)
+    {
+        Some(value) => {
+            if value.is_empty() {
+                None
+            } else {
+                Some(value.raw_value().to_string())
+            }
+        }
+        None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
     use crate::fhir::mapper::{
-        FhirMapper, FormattingError, MessageAccessError, parse_component, parse_datetime,
-        parse_segments_field, parse_subcomponents, patch_bundle_entry,
+        FhirMapper, FormattingError, MessageAccessError, get_repeat_value, parse_component,
+        parse_datetime, parse_segments_field, parse_subcomponents, patch_bundle_entry,
     };
     use crate::fhir::mapper::{Identifier, parse_field};
     use crate::fhir::resources::{Department, ResourceMap};
@@ -476,6 +515,7 @@ mod tests {
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use fhir_model::{WrongResourceType, time};
     use hl7_parser::Message;
+    use rstest::rstest;
     use std::collections::HashMap;
     use std::fmt::Debug;
 
@@ -664,6 +704,37 @@ ZNG|1|N|N|Normal|L|48|3390|||Gesundes Neugeborenes"#,true).unwrap();
         for idx in 0..3 {
             let value = actual.as_ref().unwrap();
             assert_eq!((idx + 1).to_string(), value[idx].clone().unwrap());
+        }
+    }
+
+    #[rstest]
+    #[case(3, 0, 1, Some("777777777"))]
+    #[case(3, 0, 5, Some("NII"))]
+    #[case(3, 1, 5, Some("XX"))]
+    #[case(300, 0, 5, None)]
+    #[case(3, 100, 5, None)]
+    #[case(3, 1, 500, None)]
+    #[case(0, 0, 0, None)]
+    fn test_get_repeat_value(
+        #[case] field_number: usize,
+        #[case] repeat_index: usize,
+        #[case] component_number: usize,
+        #[case] expected: Option<&str>,
+    ) {
+        let segment_raw: &str = r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
+IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||000000000001^PRN^PH^^^0800^99900801^^^^^000000000001~1313131331313^PRN^FX^^^00000^00000000^^^^^1313131331313||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U||||||10001|Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||H|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L"#;
+        let msg = Message::parse_with_lenient_newlines(segment_raw, true).unwrap();
+
+        let segment = msg.segment("IN1").unwrap();
+        let result = get_repeat_value(segment, field_number, repeat_index, component_number);
+
+        match expected {
+            None => {
+                assert_eq!(None, result);
+            }
+            Some(expect_value) => {
+                assert_eq!(expect_value, result.unwrap());
+            }
         }
     }
 }

@@ -1,10 +1,6 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
-use crate::fhir::mapper::{
-    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
-    message_type, parse_component, parse_date, parse_datetime, parse_field, parse_subcomponents,
-    patch_bundle_entry, resource_ref,
-};
+use crate::fhir::mapper::{MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference, message_type, parse_component, parse_date, parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, resource_ref, get_repeat_value};
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
@@ -534,8 +530,10 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
         .build()
         .map_err(MappingError::from)?;
 
-    match get_repeat_value(in1, 3, 0) {
-        None => {println!("no insurance id found")}
+    match get_repeat_value(in1, 3, 0, 1) {
+        None => {
+            println!("no insurance id found")
+        }
         Some(id) => {
             match resource_ref(
                 &ResourceType::Organization,
@@ -626,11 +624,11 @@ fn try_set_identifier_period(in1: &Segment, result: &mut Identifier) -> Result<b
 fn build_insurance_organization(in1: &Segment) -> Result<Organization, MappingError> {
     // fixme: remove unwrap from implementation!
 
-    let insurance_company_id = match get_repeat_value(in1, 3, 0) {
+    let insurance_company_id = match get_repeat_value(in1, 3, 0, 1) {
         None => return Err(MappingError::Other(anyhow!("no company id found!"))),
         Some(insurance_company_id) => insurance_company_id,
     };
-    let insurance_company_name = get_repeat_value(in1, 4, 1).unwrap_or_else(|| "".to_string());
+    let insurance_company_name = get_repeat_value(in1, 4, 1, 1).unwrap_or_else(|| "".to_string());
 
     let company_identifier = Identifier::builder()
         .value(insurance_company_id)
@@ -656,42 +654,6 @@ fn build_insurance_organization(in1: &Segment) -> Result<Organization, MappingEr
 }
 
 
-fn get_repeat_value(segment: &Segment, field_index: usize, repeat_index: usize) -> Option<String> {
-    let result: Option<String>;
-    if repeat_index == 0 {
-        result = match segment
-            .field(field_index)
-            .filter(|f| f.repeats.is_empty() && f.repeats.len() == 1)
-            .map(|f| f.raw_value())
-        {
-            Some(value) => {
-                if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                }
-            }
-            None => None,
-        };
-    } else {
-        result = match segment
-            .field(field_index)
-            .filter(|f| !f.repeats.is_empty())
-            .map(|f| f.repeats[repeat_index].raw_value())
-        {
-            Some(value) => {
-                if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                }
-            }
-            None => None,
-        };
-    }
-    result
-}
-
 fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
     FieldExtension::builder()
         .extension(vec![
@@ -705,8 +667,8 @@ mod tests {
     use crate::config::{FallConfig, Fhir, ResourceConfig};
     use crate::fhir::mapper::MappingError;
     use crate::fhir::patient::{
-        create_patient_identifiers, create_patient_merge, map, map_multiple_birth,
-        map_versicherungsdaten,
+        create_patient_identifiers, create_patient_merge, map,
+        map_multiple_birth, map_versicherungsdaten,
     };
     use fhir_model::r4b::codes::HTTPVerb::Delete;
     use fhir_model::r4b::resources::{
@@ -716,8 +678,8 @@ mod tests {
     use fhir_model::r4b::types::{Coding, Identifier, Reference};
     use fhir_model::time::Month;
     use fhir_model::{Date, DateTime, time};
-    use hl7_parser::Message;
     use hl7_parser::message::Segment;
+    use hl7_parser::{Message, parser};
     use rstest::rstest;
     use std::fmt::Debug;
 
