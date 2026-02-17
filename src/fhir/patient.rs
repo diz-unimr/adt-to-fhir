@@ -235,7 +235,7 @@ fn create_patient_identifiers(
         for idx in 1..in1_count + 1 {
             if let Some(segment_by_index) = msg.segment_n("IN1", idx) {
                 match map_versicherungsdaten(segment_by_index, config)? {
-                    Some(ident) => { res.push(Some(ident)) }
+                    Some(ident) => res.push(Some(ident)),
                     None => {}
                 }
             }
@@ -650,7 +650,7 @@ mod tests {
     use crate::fhir::mapper::MappingError;
     use crate::fhir::patient::{
         create_patient_identifiers, create_patient_merge, map, map_multiple_birth,
-        map_versicherungsdaten,
+        map_versicherungsdaten, try_set_identifier_period,
     };
     use fhir_model::r4b::codes::HTTPVerb::Delete;
     use fhir_model::r4b::resources::{
@@ -931,7 +931,6 @@ IN2|4||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||
         let config = test_config();
         let identifiers = create_patient_identifiers(&msg, &config).unwrap();
         assert_eq!(identifiers.len(), 2);
-
     }
 
     ///
@@ -1001,5 +1000,81 @@ IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
             "http://fhir.de/sid/gkv/kvid-10",
             identifiers[2].as_ref().unwrap().system.as_ref().unwrap()
         );
+    }
+
+    #[rstest]
+    #[case("", "")]
+    #[case("20260101", "20260101")]
+    #[case("20260101", "")]
+    #[case("", "20260101")]
+    fn test_try_set_identifier_period(#[case] start_date: String, #[case] end_date: String) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||{}|{}||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R||||||||||||M| ^^^^^D  |||||454874316^^^^^^^20150630"#,
+            start_date, end_date
+        );
+
+        let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
+        let in1 = msg.segment("IN1").unwrap();
+
+        let mut ident = Identifier::builder().build().unwrap();
+
+        match try_set_identifier_period(&in1, &mut ident) {
+            Ok(_) => {
+                assert!(true, "not expecting therfore ok!");
+
+                if (start_date.is_empty() && end_date.is_empty()) {
+                    assert!(ident.period.is_none())
+                } else {
+                    match start_date.is_empty() {
+                        true => {
+                            assert!(ident.period.as_ref().unwrap().start.is_none())
+                        }
+                        false => {
+                            assert!(ident.period.as_ref().unwrap().start.is_some())
+                        }
+                    }
+
+                    match end_date.is_empty() {
+                        true => {
+                            assert!(ident.period.as_ref().unwrap().end.is_none())
+                        }
+                        false => {
+                            assert!(ident.period.as_ref().unwrap().end.is_some())
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                assert!(false, "was not expecting error but found one!")
+            }
+        }
+    }
+
+    #[rstest]
+    #[case("20263101", "20260101")]
+    #[case("20260101", "20263141")]
+    fn test_try_set_identifier_period_expect_error(
+        #[case] start_date: String,
+        #[case] end_date: String,
+    ) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||{}|{}||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R||||||||||||M| ^^^^^D  |||||454874316^^^^^^^20150630"#,
+            start_date, end_date
+        );
+
+        let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
+        let in1 = msg.segment("IN1").unwrap();
+
+        let mut ident = Identifier::builder().build().unwrap();
+
+        match try_set_identifier_period(&in1, &mut ident) {
+            Ok(_) => {
+                assert!(false, "expecting error but found none!")
+            }
+            Err(FormattingError) => assert!(true),
+            Err(e) => assert!(false, "was expecting 'ForamttingError'"),
+        }
     }
 }
