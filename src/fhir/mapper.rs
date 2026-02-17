@@ -498,7 +498,7 @@ pub(crate) fn get_repeat_value(
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{FallConfig, Fhir, ResourceConfig};
+    use crate::config::{FallConfig, Fhir, PatientConfig, ResourceConfig};
     use crate::fhir::mapper::{
         FhirMapper, FormattingError, MessageAccessError, get_repeat_value, parse_component,
         parse_datetime, parse_segments_field, parse_subcomponents, patch_bundle_entry,
@@ -544,9 +544,10 @@ mod tests {
 
         let config = Fhir {
             facility_id: "260620431".to_string(),
-            person: ResourceConfig {
+            person: PatientConfig {
                 profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
+                other_insurance_system: "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id".to_string()
             },
             fall: FallConfig {
                 profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0".to_string(),

@@ -1,6 +1,10 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
-use crate::fhir::mapper::{MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference, message_type, parse_component, parse_date, parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, resource_ref, get_repeat_value};
+use crate::fhir::mapper::{
+    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
+    get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
+    parse_subcomponents, patch_bundle_entry, resource_ref,
+};
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
@@ -194,6 +198,14 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         .map_err(MappingError::from)
 }
 
+/// Erzeugt Patienten-Identifier
+///
+/// * Ein PID-Identifier ist min. notwendig
+/// * Zusätzlich werden weitere Identifier aus Gesundheitskassendaten *(IN1-Segmente)* erzeugt
+///  werden, falls dies vorhanden sind.
+///
+/// _Hinweis:_ Es gibt HL7 Nachrichten, die in denen IN1 Segmente fehlen.
+///
 fn create_patient_identifiers(
     msg: &Message,
     config: &Fhir,
@@ -208,6 +220,7 @@ fn create_patient_identifiers(
         res = Vec::with_capacity(1);
     }
 
+    // mandatory PID identifier
     match create_patient_identifier(msg, config) {
         Ok(pid_identifier) => res.push(Some(pid_identifier)),
         Err(err) =>
@@ -217,11 +230,14 @@ fn create_patient_identifiers(
         }
     }
 
-    // create and add further identifiers
+    // create optional identifiers from insurance data
     if in1_count > 0 {
         for idx in 1..in1_count + 1 {
             if let Some(segment_by_index) = msg.segment_n("IN1", idx) {
-                res.push(map_versicherungsdaten(segment_by_index)?);
+                match map_versicherungsdaten(segment_by_index, config)? {
+                    Some(ident) => { res.push(Some(ident)) }
+                    None => {}
+                }
             }
         }
     }
@@ -517,8 +533,11 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
 static GKV10_VALID: once_cell::sync::Lazy<Regex> =
     once_cell::sync::Lazy::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
 
-fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingError> {
-    // 10-stellige Nummer
+fn map_versicherungsdaten(
+    in1: &Segment,
+    config: &Fhir,
+) -> Result<Option<Identifier>, MappingError> {
+    // Versicherungsnummer
     let insurance_number = match in1.field(36) {
         Some(f) if !f.is_empty() => f.raw_value(),
         _ => return Ok(None),
@@ -532,7 +551,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
 
     match get_repeat_value(in1, 3, 0, 1) {
         None => {
-            println!("no insurance id found")
+            println!("no insurance company id found - cannot add assigner")
         }
         Some(id) => {
             match resource_ref(
@@ -563,9 +582,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Identifier>, MappingEr
         );
     } else {
         // OTHER INSURANCE NUMBER! vor 2012 waren 9 - 12 Stellen ohne führenden Buchstaben valide.
-        return Err(MappingError::Other(anyhow!(
-            "Insurance number mapping for length != 10 is not implemented, yet!"
-        )));
+        result.system = Some(config.person.other_insurance_system.to_string());
     }
 
     match try_set_identifier_period(in1, &mut result) {
@@ -653,7 +670,6 @@ fn build_insurance_organization(in1: &Segment) -> Result<Organization, MappingEr
         .map_err(MappingError::from)
 }
 
-
 fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
     FieldExtension::builder()
         .extension(vec![
@@ -664,11 +680,11 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{FallConfig, Fhir, ResourceConfig};
+    use crate::config::{FallConfig, Fhir, PatientConfig, ResourceConfig};
     use crate::fhir::mapper::MappingError;
     use crate::fhir::patient::{
-        create_patient_identifiers, create_patient_merge, map,
-        map_multiple_birth, map_versicherungsdaten,
+        create_patient_identifiers, create_patient_merge, map, map_multiple_birth,
+        map_versicherungsdaten,
     };
     use fhir_model::r4b::codes::HTTPVerb::Delete;
     use fhir_model::r4b::resources::{
@@ -842,9 +858,11 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
     fn test_config() -> Fhir {
         Fhir {
             facility_id: "260620431".to_string(),
-            person: ResourceConfig {
+            person: PatientConfig {
                 profile: Default::default(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
+                other_insurance_system:
+                    "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id".to_string(),
             },
             fall: FallConfig::default(),
         }
@@ -856,7 +874,7 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
 IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R||||||||||||M| ^^^^^D  |||||454874316^^^^^^^20150630"#, true).unwrap();
         let in1 = msg.segment("IN1").unwrap();
 
-        let result = map_versicherungsdaten(in1).unwrap();
+        let result = map_versicherungsdaten(in1, &test_config()).unwrap();
 
         // Assert
         assert!(result.is_none());
@@ -872,9 +890,9 @@ PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr.
 IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20020120|20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||A454874316|||||||M| ^^^^^D  |||||A454874316^^^^^^^20150630
 "#, true).unwrap();
 
-        helper_print_hl7_message(&msg);
+        //helper_print_hl7_message(&msg);
 
-        let result = &map_versicherungsdaten(msg.segment("IN1").unwrap())
+        let result = &map_versicherungsdaten(msg.segment("IN1").unwrap(), &test_config())
             .unwrap()
             .unwrap();
         assert_eq!(result.value.as_ref().unwrap(), "A454874316");
@@ -914,14 +932,18 @@ IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|
         match result.assigner.as_ref() {
             None => assert!(false, "assigner is expected"),
             Some(assigner_ref) => {
-                assert!(false, "assigner reference present but needs more testing.")
+                assert_eq!(
+                    "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|555555555",
+                    assigner_ref.reference.as_ref().unwrap()
+                );
+                //assert!(false, "assigner reference present but needs more testing.")
                 //TODO! may be separate test
             }
         }
     }
 
     #[test]
-    fn test_map_insurance_is_not_gkv10() {
+    fn test_map_insurance_skip_none() {
         let msg = Message::parse_with_lenient_newlines(
             r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
 EVN|A04|201111280722|201111280722||TEST
@@ -930,22 +952,30 @@ NK1|1|Fr. Müller, Miriam|14^Ehefrau| |s.Pat.
 PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
 IN1|1||666666666^^^^NII~BG BAU MITTE^^^^XX|BG der Bauwirtschaft - BV Mitte|Viktoriastr. 21&Viktoriastr.&21^^Wuppertal^^42115^DE^L||12345612^PRN^PH^^^0000^3333^^^^^12345612~11111111111^PRN^FX^^^0000^1111111^^^^^11111111111||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U|||||||Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||N|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L
 IN2|1||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||Beruf-des-Pateinten|||||||||||||||||0123 45678|||||||Test GmbH
-IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||000000000001^PRN^PH^^^0800^99900801^^^^^000000000001~1313131331313^PRN^FX^^^00000^00000000^^^^^1313131331313||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U||||||10001|Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||H|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L
+IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||000000000001^PRN^PH^^^0000^0000^^^^^000000000001~1313131331313^PRN^FX^^^00000^00000000^^^^^1313131331313||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U||||||10001|Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||H|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L
 IN2|2||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||Beruf-des-Pateinten|||||||||||||||||0123 45678|||||||Test GmbH
 IN1|3||8888888888^^^^NII~P DEMO^^^^XX|Krankenversicherung a.G.|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||0000000-0^PRN^PH^^^0000^111-0^^^^^0000000-0~0000000-2913^PRN^FX^^^0000^111-2913^^^^^0000000-2913~^NET^Internet^info@email.de||Private^6^^^8&Private Krankenkasse^^NII~Private^6^^^^^U|||||||Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||N|||||||||P|||||123123123|||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||||123123123^^^^^^^0236
 IN2|3|123123123|12345TES^TEST GmbH||||||||||||||||||||||||||||||DE|||N|||kl|||||||Beruf-des-Pateinten|||||||||||||||||0123 45678|||||||Test GmbH
-IN1|4||SELBST^^^^XX|Selbstzahler|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||00000000^PRN^PH^^^06420^6399^^^^^00000000~00000000000^PRN^CP^^^0000^0000000^^^^^00000000000||Sonstige^5^^^6&Selbstzahler^^NII~Sonstige^5^^^^^U|||||||Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||N|||J|20251207|||||P||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L
+IN1|4||SELBST^^^^XX|Selbstzahler|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||00000000^PRN^PH^^^000^000^^^^^00000000~00000000000^PRN^CP^^^0000^0000000^^^^^00000000000||Sonstige^5^^^6&Selbstzahler^^NII~Sonstige^5^^^^^U|||||||Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||N|||J|20251207|||||P||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L
 IN2|4||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||Beruf-des-Pateinten|||||||||||||||||0123 45678|||||||Test GmbH
 "#,
             true,
-        );
-        assert!(
-            false,
-            "need implement insurance number which fail regex GKV10_VALID"
-        );
+        ).unwrap();
+
+        let config = test_config();
+        let identifiers = create_patient_identifiers(&msg, &config).unwrap();
+        assert_eq!(identifiers.len(), 2);
+
     }
 
-    fn helper_print_hl7_message(msg: &Message) {
+    ///
+    /// print segments to console for better readability
+    /// # Arguments
+    ///
+    /// * `msg`: parsed Hl7 message
+    ///
+    /// returns: ()
+    fn print_hl7_message(msg: &Message) {
         let _z = &msg
             .segments
             .iter()
@@ -981,11 +1011,29 @@ NK1|1|Fr. Müller, Miriam|14^Ehefrau| |s.Pat.
 PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
 IN1|1|105313145|AOK HESSEN|AOK Hessen|^^Marburg^^35039^D||||AOK^1^^^1&gesetzlich||||||50001|||||||1|||||||||R|||||454874316|||||||U|
 IN2|1||||||||||||||||||||||||||||^PC^0^K
-IN1|2||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||454874316|||||||M| ^^^^^D  |||||454874316^^^^^^^20150630
+IN1|2||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||K454874316|||||||M| ^^^^^D  |||||K454874316^^^^^^^20150630
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = test_config();
         let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
-
+        //print_hl7_message(&msg_full);
         assert_eq!(identifiers.len(), 3);
+
+        assert_eq!(
+            "454874316",
+            identifiers[1].as_ref().unwrap().value.as_ref().unwrap()
+        );
+        assert_eq!(
+            &test_config().person.other_insurance_system,
+            identifiers[1].as_ref().unwrap().system.as_ref().unwrap()
+        );
+
+        assert_eq!(
+            "K454874316",
+            identifiers[2].as_ref().unwrap().value.as_ref().unwrap()
+        );
+        assert_eq!(
+            "http://fhir.de/sid/gkv/kvid-10",
+            identifiers[2].as_ref().unwrap().system.as_ref().unwrap()
+        );
     }
 }

@@ -20,7 +20,7 @@ pub(crate) struct Kafka {
 #[derive(Default, Deserialize, Clone)]
 pub(crate) struct Fhir {
     pub(crate) facility_id: String,
-    pub(crate) person: ResourceConfig,
+    pub(crate) person: PatientConfig,
     pub(crate) fall: FallConfig,
 }
 
@@ -28,6 +28,13 @@ pub(crate) struct Fhir {
 pub(crate) struct ResourceConfig {
     pub(crate) profile: String,
     pub(crate) system: String,
+}
+
+#[derive(Default, Debug, Deserialize, Clone)]
+pub(crate) struct PatientConfig {
+    pub(crate) profile: String,
+    pub(crate) system: String,
+    pub(crate) other_insurance_system: String,
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]
