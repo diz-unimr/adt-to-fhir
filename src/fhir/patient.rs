@@ -636,40 +636,6 @@ fn try_set_identifier_period(in1: &Segment, result: &mut Identifier) -> Result<b
     }
     Ok(true)
 }
-
-// TODO: add to bundle and add test for all insurance types
-fn build_insurance_organization(in1: &Segment) -> Result<Organization, MappingError> {
-    // fixme: remove unwrap from implementation!
-
-    let insurance_company_id = match get_repeat_value(in1, 3, 0, 1) {
-        None => return Err(MappingError::Other(anyhow!("no company id found!"))),
-        Some(insurance_company_id) => insurance_company_id,
-    };
-    let insurance_company_name = get_repeat_value(in1, 4, 1, 1).unwrap_or_else(|| "".to_string());
-
-    let company_identifier = Identifier::builder()
-        .value(insurance_company_id)
-        .system("http://fhir.de/sid/arge-ik/iknr".to_string())
-        .r#type(
-            CodeableConcept::builder()
-                .coding(vec![Some(
-                    Coding::builder()
-                        .code("XX".to_string())
-                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
-                        .build()?,
-                )])
-                .build()?,
-        )
-        .build()
-        .map_err(MappingError::from);
-
-    Organization::builder()
-        .name(insurance_company_name)
-        .identifier(vec![Some(company_identifier?)])
-        .build()
-        .map_err(MappingError::from)
-}
-
 fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
     FieldExtension::builder()
         .extension(vec![
