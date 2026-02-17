@@ -414,7 +414,7 @@ pub(crate) fn resource_ref(
 ) -> Result<Reference, MappingError> {
     Ok(Reference::builder()
         .reference(format!(
-            "{res_type}?identifier={}",
+            "{res_type}?{}",
             identifier_search(system, id)
         ))
         .build()?)
