@@ -20,7 +20,7 @@ use fhir_model::r4b::types::{Identifier, Meta};
 use fhir_model::{BuilderError, Date};
 use hl7_parser::Message;
 use hl7_parser::message::{Field, Segment};
-use log::{error, warn};
+use log::{Level, error, log, warn};
 use regex::Regex;
 use std::fmt::Debug;
 use std::vec;
@@ -549,21 +549,40 @@ fn map_versicherungsdaten(
         .build()
         .map_err(MappingError::from)?;
 
+    // set assigner
     match get_repeat_value(in1, 3, 0, 1) {
         None => {
-            println!("no insurance company id found - cannot add assigner")
+            log!(
+                Level::Warn,
+                "for insurance '{}' no insurance company id found - \
+            cannot add assigner",
+                insurance_number
+            )
         }
         Some(id) => {
-            match resource_ref(
-                &ResourceType::Organization,
-                id.as_str(),
-                "http://fhir.de/sid/arge-ik/iknr",
-            ) {
-                Ok(reference) => result.assigner = Some(reference),
-                Err(err) => {
-                    error! {"{}", err}
-                }
-            };
+            let reference = Reference::builder()
+                .identifier(
+                    Identifier::builder()
+                        .system("http://fhir.de/sid/arge-ik/iknr".to_string())
+                        .value(id)
+                        .r#type(
+                            CodeableConcept::builder()
+                                .coding(vec![
+                                    Coding::builder()
+                                        .code("XX".to_string())
+                                        .system(
+                                            "http://terminology.hl7.org/CodeSystem/v2-0203"
+                                                .to_string(),
+                                        )
+                                        .build()
+                                        .ok(),
+                                ])
+                                .build()?,
+                        )
+                        .build()?,
+                )
+                .build()?;
+            result.assigner = Some(reference);
         }
     };
 
@@ -898,12 +917,61 @@ IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|
         match result.assigner.as_ref() {
             None => assert!(false, "assigner is expected"),
             Some(assigner_ref) => {
+                assert!(assigner_ref.reference.is_none());
+                assert!(assigner_ref.identifier.is_some());
                 assert_eq!(
-                    "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|555555555",
-                    assigner_ref.reference.as_ref().unwrap()
+                    "555555555",
+                    assigner_ref
+                        .identifier
+                        .as_ref()
+                        .unwrap()
+                        .value
+                        .as_ref()
+                        .unwrap()
                 );
-                //assert!(false, "assigner reference present but needs more testing.")
-                //TODO! may be separate test
+                assert_eq!(
+                    "http://fhir.de/sid/arge-ik/iknr",
+                    assigner_ref
+                        .identifier
+                        .as_ref()
+                        .unwrap()
+                        .system
+                        .as_ref()
+                        .unwrap()
+                );
+                assert!(assigner_ref.identifier.as_ref().unwrap().r#type.is_some());
+                assert_eq!(
+                    "http://terminology.hl7.org/CodeSystem/v2-0203",
+                    assigner_ref
+                        .identifier
+                        .as_ref()
+                        .unwrap()
+                        .r#type
+                        .as_ref()
+                        .unwrap()
+                        .coding[0]
+                        .as_ref()
+                        .unwrap()
+                        .system
+                        .as_ref()
+                        .unwrap()
+                );
+                assert_eq!(
+                    "XX",
+                    assigner_ref
+                        .identifier
+                        .as_ref()
+                        .unwrap()
+                        .r#type
+                        .as_ref()
+                        .unwrap()
+                        .coding[0]
+                        .as_ref()
+                        .unwrap()
+                        .code
+                        .as_ref()
+                        .unwrap()
+                );
             }
         }
     }
