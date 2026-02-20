@@ -7,7 +7,6 @@ use crate::fhir::{encounter, patient};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
-use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
@@ -17,11 +16,12 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::time::{Month, OffsetDateTime};
+use fhir_model::DateFormatError::InvalidDate;
+use fhir_model::{time, Date, DateTime};
 use fhir_model::{BuilderError, DateFormatError, Instant};
-use fhir_model::{Date, DateTime, time};
 use fmt::Display;
-use hl7_parser::Message;
 use hl7_parser::message::Segment;
+use hl7_parser::Message;
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
@@ -413,10 +413,7 @@ pub(crate) fn resource_ref(
     system: &str,
 ) -> Result<Reference, MappingError> {
     Ok(Reference::builder()
-        .reference(format!(
-            "{res_type}?{}",
-            identifier_search(system, id)
-        ))
+        .reference(format!("{res_type}?{}", identifier_search(system, id)))
         .build()?)
 }
 
@@ -436,6 +433,23 @@ pub(crate) fn parse_field(
     .filter(|f| !f.is_empty()))
 }
 
+pub(crate) fn parse_segments_field2(msg: &Message, segment: &str, field: usize) -> Vec<String> {
+    msg.segments
+        .iter()
+        .filter_map(|s| {
+            if s.name == segment {
+                Some(s.field(field).map(|f| f.raw_value().to_string()))
+            } else {
+                None
+            }
+        })
+        .flatten()
+        .filter(|f| !f.is_empty())
+        .collect()
+}
+
+// nur in test benutzt?
+// vereinfachung s.o.
 pub(crate) fn parse_segments_field(
     msg: &Message,
     segment: &str,
@@ -487,11 +501,14 @@ pub(crate) fn get_repeat_value(
     {
         Some(value) => {
             if value.is_empty() {
+                // hier ist ein filter()
                 None
             } else {
+                // hier wird der value gemappt -> map()
                 Some(value.raw_value().to_string())
             }
         }
+        // unnötiges mapping von None -> None
         None => None,
     }
 }
@@ -500,20 +517,20 @@ pub(crate) fn get_repeat_value(
 mod tests {
     use crate::config::{FallConfig, Fhir, PatientConfig, ResourceConfig};
     use crate::fhir::mapper::{
-        FhirMapper, FormattingError, MessageAccessError, get_repeat_value, parse_component,
-        parse_datetime, parse_segments_field, parse_subcomponents, patch_bundle_entry,
+        get_repeat_value, parse_component, parse_datetime, parse_segments_field, parse_subcomponents,
+        patch_bundle_entry, FhirMapper, FormattingError, MessageAccessError,
     };
-    use crate::fhir::mapper::{Identifier, parse_field};
+    use crate::fhir::mapper::{parse_field, Identifier};
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
-    use fhir_model::DateTime::{Date, DateTime};
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
         Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
         ResourceType,
     };
     use fhir_model::time::{Month, OffsetDateTime, Time};
-    use fhir_model::{WrongResourceType, time};
+    use fhir_model::DateTime::{Date, DateTime};
+    use fhir_model::{time, WrongResourceType};
     use hl7_parser::Message;
     use rstest::rstest;
     use std::collections::HashMap;
@@ -616,8 +633,8 @@ mod tests {
             .unwrap()
             .as_str();
 
-        assert_eq!(patient_profile, config.person.profile.to_owned());
-        assert_eq!(encounter_profile, config.fall.profile.to_owned());
+        assert_eq!(patient_profile, config.person.profile);
+        assert_eq!(encounter_profile, config.fall.profile);
     }
 
     fn to_patient(e: &BundleEntry) -> Result<Patient, WrongResourceType> {

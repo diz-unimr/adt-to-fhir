@@ -1,9 +1,10 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
+use crate::fhir::mapper::MappingError::FormattingError;
 use crate::fhir::mapper::{
-    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
-    get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
-    parse_subcomponents, patch_bundle_entry, resource_ref,
+    bundle_entry, conditional_reference, get_repeat_value, message_type, parse_component,
+    parse_date, parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, resource_ref,
+    MappingError, MessageAccessError, MessageType,
 };
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
@@ -18,11 +19,12 @@ use fhir_model::r4b::types::{
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
 use fhir_model::{BuilderError, Date};
-use hl7_parser::Message;
 use hl7_parser::message::{Field, Segment};
-use log::{Level, error, log, warn};
+use hl7_parser::Message;
+use log::{error, log, warn, Level};
 use regex::Regex;
 use std::fmt::Debug;
+use std::sync::LazyLock;
 use std::vec;
 
 pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
@@ -530,8 +532,14 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
     Ok(names)
 }
 
-static GKV10_VALID: once_cell::sync::Lazy<Regex> =
-    once_cell::sync::Lazy::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
+// state -> struct member or global?
+// static GKV10_VALID = regex!(Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
+// alternative:
+// https://docs.rs/regex/latest/regex/#avoid-re-compiling-regexes-especially-in-a-loop
+fn is_valid_gkv10(insurance_number: &str) -> bool {
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
+    RE.is_match(insurance_number)
+}
 
 fn map_versicherungsdaten(
     in1: &Segment,
@@ -586,7 +594,7 @@ fn map_versicherungsdaten(
         }
     };
 
-    if GKV10_VALID.is_match(insurance_number) {
+    if is_valid_gkv10(insurance_number) {
         // GKV
         result.system = Some("http://fhir.de/sid/gkv/kvid-10".to_string());
         result.r#type = Some(
@@ -604,53 +612,42 @@ fn map_versicherungsdaten(
         result.system = Some(config.person.other_insurance_system.to_string());
     }
 
-    match try_set_identifier_period(in1, &mut result) {
-        Ok(_) => {}
-        Err(map_err) => return Err(map_err),
-    }
+    try_set_identifier_period(in1, &mut result)?;
 
     Ok(Some(result))
 }
 
 fn try_set_identifier_period(in1: &Segment, result: &mut Identifier) -> Result<bool, MappingError> {
     // Gültigkeitszeitraum
-    let start = match in1
+    let start = in1
         .field(12)
         .filter(|f| !f.is_empty())
         .map(|f| parse_date(f.raw_value()))
         .transpose()
-    {
-        Ok(Some(start)) => Some(start),
+        .map_err(MappingError::from)?;
 
-        Err(e) => return Err(MappingError::FormattingError(e)),
-
-        Ok(None) => None,
-    };
-
-    let end = match in1
+    let end = in1
         .field(13)
         .filter(|f| !f.is_empty())
         .map(|f| parse_date(f.raw_value()))
         .transpose()
-    {
-        Ok(Some(start)) => Some(start),
-
-        Err(e) => return Err(MappingError::FormattingError(e)),
-
-        Ok(None) => None,
-    };
+        .map_err(MappingError::from)?;
 
     if start.is_some() || end.is_some() {
+        // let mut period = Period::builder().build()?;
+
         let mut period = Period::builder().build()?;
+        period.start = start.map(fhir_model::DateTime::Date);
+        period.end = end.map(fhir_model::DateTime::Date);
 
-        if let Some(start) = start {
-            period.start = Some(fhir_model::DateTime::Date(start))
-        }
-
-        if let Some(end) = end {
-            period.end = Some(fhir_model::DateTime::Date(end))
-        }
-
+        // if let Some(start) = start {
+        //     period.start = Some(fhir_model::DateTime::Date(start))
+        // }
+        //
+        // if let Some(end) = end {
+        //     period.end = Some(fhir_model::DateTime::Date(end))
+        // }
+        //
         result.period = Some(period);
     }
     Ok(true)
@@ -678,9 +675,9 @@ mod tests {
     };
     use fhir_model::r4b::types::{Coding, Identifier, Reference};
     use fhir_model::time::Month;
-    use fhir_model::{Date, DateTime, time};
+    use fhir_model::{time, Date, DateTime};
     use hl7_parser::message::Segment;
-    use hl7_parser::{Message, parser};
+    use hl7_parser::{parser, Message};
     use rstest::rstest;
     use std::fmt::Debug;
 
