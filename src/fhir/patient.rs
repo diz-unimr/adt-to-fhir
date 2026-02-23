@@ -606,15 +606,12 @@ fn map_versicherungsdaten(
         result.system = Some(config.person.other_insurance_system.to_string());
     }
 
-    match try_set_identifier_period(in1, &mut result) {
-        Ok(_) => {}
-        Err(map_err) => return Err(map_err),
-    }
+    result.period = get_identifier_period(in1)?;
 
     Ok(Some(result))
 }
 
-fn try_set_identifier_period(in1: &Segment, result: &mut Identifier) -> Result<bool, MappingError> {
+fn get_identifier_period(in1: &Segment) -> Result<Option<Period>, MappingError> {
     // Gültigkeitszeitraum
     let start = match in1
         .field(12)
@@ -646,10 +643,9 @@ fn try_set_identifier_period(in1: &Segment, result: &mut Identifier) -> Result<b
         let mut period = Period::builder().build()?;
         period.start = start.map(fhir_model::DateTime::Date);
         period.end = end.map(fhir_model::DateTime::Date);
-
-        result.period = Some(period);
+        return Ok(Some(period));
     }
-    Ok(true)
+    Ok(None)
 }
 fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
     FieldExtension::builder()
@@ -663,8 +659,8 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 mod tests {
     use crate::config::{FallConfig, Fhir, PatientConfig};
     use crate::fhir::patient::{
-        create_patient_identifiers, create_patient_merge, map, map_multiple_birth,
-        map_versicherungsdaten, try_set_identifier_period,
+        create_patient_identifiers, create_patient_merge, get_identifier_period, map,
+        map_multiple_birth, map_versicherungsdaten,
     };
     use fhir_model::r4b::codes::HTTPVerb::Delete;
     use fhir_model::r4b::resources::{
@@ -1079,36 +1075,35 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
         let in1 = msg.segment("IN1").unwrap();
 
-        let mut ident = Identifier::builder().build().unwrap();
-
-        match try_set_identifier_period(&in1, &mut ident) {
-            Ok(_) => {
-                assert!(true, "not expecting therfore ok!");
+        let period = get_identifier_period(&in1);
+        match period {
+            Ok(period) => {
+                assert!(true, "not expecting therefore ok!");
 
                 if (start_date.is_empty() && end_date.is_empty()) {
-                    assert!(ident.period.is_none())
+                    assert!(period.is_none(), "not expecting therefore ok!");
                 } else {
                     match start_date.is_empty() {
                         true => {
-                            assert!(ident.period.as_ref().unwrap().start.is_none())
+                            assert!(period.as_ref().unwrap().start.is_none())
                         }
                         false => {
-                            assert!(ident.period.as_ref().unwrap().start.is_some())
+                            assert!(period.as_ref().unwrap().start.is_some())
                         }
                     }
 
                     match end_date.is_empty() {
                         true => {
-                            assert!(ident.period.as_ref().unwrap().end.is_none())
+                            assert!(period.as_ref().unwrap().end.is_none())
                         }
                         false => {
-                            assert!(ident.period.as_ref().unwrap().end.is_some())
+                            assert!(period.as_ref().unwrap().end.is_some())
                         }
                     }
                 }
             }
-            Err(_) => {
-                assert!(false, "was not expecting error but found one!")
+            _ => {
+                assert!(false, "expecting result - if none error has occured!");
             }
         }
     }
@@ -1131,7 +1126,7 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
 
         let mut ident = Identifier::builder().build().unwrap();
 
-        match try_set_identifier_period(&in1, &mut ident) {
+        match get_identifier_period(&in1) {
             Ok(_) => {
                 assert!(false, "expecting error but found none!")
             }
