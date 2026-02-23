@@ -16,6 +16,7 @@ dependencies = [
  "hl7-parser",
  "log",
  "rdkafka",
+ "regex",
  "rstest",
  "serde",
  "serde_derive",
