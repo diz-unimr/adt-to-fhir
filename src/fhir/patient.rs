@@ -23,6 +23,7 @@ use hl7_parser::message::{Field, Segment};
 use log::{Level, error, log, warn};
 use regex::Regex;
 use std::fmt::Debug;
+use std::sync::LazyLock;
 use std::vec;
 
 pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
@@ -529,9 +530,10 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
 
     Ok(names)
 }
-
-static GKV10_VALID: once_cell::sync::Lazy<Regex> =
-    once_cell::sync::Lazy::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
+fn is_valid_gkv10(insurance_number: &str) -> bool {
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
+    RE.is_match(insurance_number)
+}
 
 fn map_versicherungsdaten(
     in1: &Segment,
@@ -586,7 +588,7 @@ fn map_versicherungsdaten(
         }
     };
 
-    if GKV10_VALID.is_match(insurance_number) {
+    if is_valid_gkv10(insurance_number) {
         // GKV
         result.system = Some("http://fhir.de/sid/gkv/kvid-10".to_string());
         result.r#type = Some(
@@ -642,14 +644,8 @@ fn try_set_identifier_period(in1: &Segment, result: &mut Identifier) -> Result<b
 
     if start.is_some() || end.is_some() {
         let mut period = Period::builder().build()?;
-
-        if let Some(start) = start {
-            period.start = Some(fhir_model::DateTime::Date(start))
-        }
-
-        if let Some(end) = end {
-            period.end = Some(fhir_model::DateTime::Date(end))
-        }
+        period.start = start.map(fhir_model::DateTime::Date);
+        period.end = end.map(fhir_model::DateTime::Date);
 
         result.period = Some(period);
     }
@@ -665,8 +661,7 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{FallConfig, Fhir, PatientConfig, ResourceConfig};
-    use crate::fhir::mapper::MappingError;
+    use crate::config::{FallConfig, Fhir, PatientConfig};
     use crate::fhir::patient::{
         create_patient_identifiers, create_patient_merge, map, map_multiple_birth,
         map_versicherungsdaten, try_set_identifier_period,
@@ -676,11 +671,10 @@ mod tests {
         BundleEntryRequest, ParametersParameter, ParametersParameterValue, PatientMultipleBirth,
         ResourceType,
     };
-    use fhir_model::r4b::types::{Coding, Identifier, Reference};
+    use fhir_model::r4b::types::{Identifier, Reference};
     use fhir_model::time::Month;
     use fhir_model::{Date, DateTime, time};
-    use hl7_parser::message::Segment;
-    use hl7_parser::{Message, parser};
+    use hl7_parser::{Message};
     use rstest::rstest;
     use std::fmt::Debug;
 
@@ -1142,7 +1136,6 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
                 assert!(false, "expecting error but found none!")
             }
             Err(FormattingError) => assert!(true),
-            Err(e) => assert!(false, "was expecting 'ForamttingError'"),
         }
     }
 }

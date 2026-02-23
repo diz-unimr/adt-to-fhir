@@ -15,7 +15,6 @@ dependencies = [
  "futures",
  "hl7-parser",
  "log",
- "once_cell",
  "rdkafka",
  "regex",
  "rstest",
