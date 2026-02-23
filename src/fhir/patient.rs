@@ -674,7 +674,7 @@ mod tests {
     use fhir_model::r4b::types::{Identifier, Reference};
     use fhir_model::time::Month;
     use fhir_model::{Date, DateTime, time};
-    use hl7_parser::{Message};
+    use hl7_parser::Message;
     use rstest::rstest;
     use std::fmt::Debug;
 
