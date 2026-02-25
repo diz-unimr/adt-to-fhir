@@ -233,16 +233,18 @@ fn create_patient_identifiers(
 
     // create optional identifiers from insurance data
     if in1_count > 0 {
-        for idx in 1..in1_count + 1 {
-            if let Some(segment_by_index) = msg.segment_n("IN1", idx) {
-                match map_versicherungsdaten(segment_by_index, config)? {
-                    Some(ident) => res.push(Some(ident)),
-                    None => {}
-                }
-            }
+        // currently MII profile supports only one insurance Identifier
+        if let Some(in1_segment) = msg.segment_n("IN1", 1) {
+            res.push(map_versicherungsdaten(in1_segment, config)?)
         }
-    }
 
+        //uncomment and replace above if multiple insurance identifier are allowed
+        // for idx in 1..in1_count + 1 {
+        //     if let Some(segment_by_index) = msg.segment_n("IN1", idx) {
+        //          res.push(map_versicherungsdaten(segment_by_index, config)?)
+        //     }
+        // }
+    }
     Ok(res)
 }
 
@@ -1032,14 +1034,14 @@ EVN|A04|201111280722|201111280722||TEST
 PID|1|111111|111111||Mustermann^Max|Mustermann|19500118|M|||Mustergasse 10^^Musterort^^33333^DE||012345/12346^^PH|||M|kl|||||||N||DE
 NK1|1|Fr. Müller, Miriam|14^Ehefrau| |s.Pat.
 PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
-IN1|1|105313145|AOK HESSEN|AOK Hessen|^^Marburg^^35039^D||||AOK^1^^^1&gesetzlich||||||50001|||||||1|||||||||R|||||454874316|||||||U|
+IN1|1||8888888888^^^^NII~P DEMO^^^^XX|AOK Hessen|^^Marburg^^35039^D||||AOK^1^^^1&gesetzlich||||||50001|||||||1|||||||||R|||||454874316|||||||U|
 IN2|1||||||||||||||||||||||||||||^PC^0^K
-IN1|2||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||K454874316|||||||M| ^^^^^D  |||||K454874316^^^^^^^20150630
+IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||K454874316|||||||M| ^^^^^D  |||||K454874316^^^^^^^20150630
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = test_config();
         let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
         //print_hl7_message(&msg_full);
-        assert_eq!(identifiers.len(), 3);
+        assert_eq!(identifiers.len(), 2);
 
         assert_eq!(
             "454874316",
@@ -1051,12 +1053,19 @@ IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         );
 
         assert_eq!(
-            "K454874316",
-            identifiers[2].as_ref().unwrap().value.as_ref().unwrap()
-        );
-        assert_eq!(
-            "http://fhir.de/sid/gkv/kvid-10",
-            identifiers[2].as_ref().unwrap().system.as_ref().unwrap()
+            "8888888888",
+            identifiers[1]
+                .as_ref()
+                .unwrap()
+                .assigner
+                .as_ref()
+                .unwrap()
+                .identifier
+                .as_ref()
+                .unwrap()
+                .value
+                .as_ref()
+                .unwrap()
         );
     }
 
