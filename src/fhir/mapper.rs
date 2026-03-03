@@ -7,7 +7,6 @@ use crate::fhir::{encounter, patient};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
-use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
@@ -17,11 +16,12 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::time::{Month, OffsetDateTime};
+use fhir_model::DateFormatError::InvalidDate;
+use fhir_model::{time, Date, DateTime};
 use fhir_model::{BuilderError, DateFormatError, Instant};
-use fhir_model::{Date, DateTime, time};
 use fmt::Display;
-use hl7_parser::Message;
 use hl7_parser::message::Segment;
+use hl7_parser::Message;
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
@@ -413,10 +413,7 @@ pub(crate) fn resource_ref(
     system: &str,
 ) -> Result<Reference, MappingError> {
     Ok(Reference::builder()
-        .reference(format!(
-            "{res_type}?{}",
-            identifier_search(system, id)
-        ))
+        .reference(format!("{res_type}?{}", identifier_search(system, id)))
         .build()?)
 }
 
@@ -478,46 +475,37 @@ pub(crate) fn get_repeat_value(
         return None;
     }
 
-    match segment
+    segment
         .fields()
         .nth(field_number - 1)?
         .repeats()
         .nth(repeat_index)?
         .component(component_number)
-    {
-        Some(value) => {
-            if value.is_empty() {
-                None
-            } else {
-                Some(value.raw_value().to_string())
-            }
-        }
-        None => None,
-    }
+        .filter(|c| !c.is_empty())
+        .map(|v| v.raw_value().to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{FallConfig, Fhir, PatientConfig, ResourceConfig};
+    use crate::config::{FallConfig, Fhir, PatientConfig};
+    use crate::fhir::mapper::Identifier;
     use crate::fhir::mapper::{
-        FhirMapper, FormattingError, MessageAccessError, get_repeat_value, parse_component,
-        parse_datetime, parse_segments_field, parse_subcomponents, patch_bundle_entry,
+        get_repeat_value, parse_component, parse_datetime, parse_segments_field, parse_subcomponents,
+        patch_bundle_entry, FhirMapper,
     };
-    use crate::fhir::mapper::{Identifier, parse_field};
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
-    use fhir_model::DateTime::{Date, DateTime};
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
         Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
         ResourceType,
     };
     use fhir_model::time::{Month, OffsetDateTime, Time};
-    use fhir_model::{WrongResourceType, time};
+    use fhir_model::DateTime::DateTime;
+    use fhir_model::{time, WrongResourceType};
     use hl7_parser::Message;
     use rstest::rstest;
     use std::collections::HashMap;
-    use std::fmt::Debug;
 
     #[test]
     fn test_parse_datetime() {
