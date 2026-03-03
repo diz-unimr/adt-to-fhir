@@ -1,4 +1,4 @@
-mod encounter;
-pub mod mapper;
-mod patient;
+pub(crate) mod encounter;
+pub(crate) mod mapper;
+pub(crate) mod patient;
 pub(crate) mod resources;

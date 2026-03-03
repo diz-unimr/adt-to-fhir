@@ -1,15 +1,15 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{
-    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
-    get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
-    parse_subcomponents, patch_bundle_entry, resource_ref,
+    bundle_entry, conditional_reference, get_repeat_value, message_type, parse_component,
+    parse_date, parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, resource_ref,
+    MappingError, MessageAccessError, MessageType,
 };
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
-    BundleEntry, Organization, OrganizationBuilder, ParametersParameter, ParametersParameterValue,
-    PatientDeceased, PatientMultipleBirth, ResourceType,
+    BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased,
+    PatientMultipleBirth, ResourceType,
 };
 use fhir_model::r4b::resources::{Parameters, Patient};
 use fhir_model::r4b::types::{
@@ -17,10 +17,10 @@ use fhir_model::r4b::types::{
 };
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
-use fhir_model::{BuilderError, Date};
+use fhir_model::BuilderError;
+use hl7_parser::message::Segment;
 use hl7_parser::Message;
-use hl7_parser::message::{Field, Segment};
-use log::{Level, error, log, warn};
+use log::{log, warn, Level};
 use regex::Regex;
 use std::fmt::Debug;
 use std::sync::LazyLock;
@@ -211,41 +211,28 @@ fn create_patient_identifiers(
     msg: &Message,
     config: &Fhir,
 ) -> Result<Vec<Option<Identifier>>, MappingError> {
-    let mut res: Vec<Option<Identifier>>;
-
-    // init result vector: one for PID and x for IN1 count
-    let in1_count = msg.segment_count("IN1");
-    if in1_count > 0 {
-        res = Vec::with_capacity(in1_count + 1);
-    } else {
-        res = Vec::with_capacity(1);
-    }
-
     // mandatory PID identifier
-    match create_patient_identifier(msg, config) {
-        Ok(pid_identifier) => res.push(Some(pid_identifier)),
-        Err(err) =>
-        // mandatory identifier - if it is missing, mapping patient does not make sense
-        {
-            return Err(err);
-        }
-    }
+    let mut identifiers = vec![Some(create_patient_identifier(msg, config)?)];
 
     // create optional identifiers from insurance data
-    if in1_count > 0 {
-        // currently MII profile supports only one insurance Identifier
-        if let Some(in1_segment) = msg.segment_n("IN1", 1) {
-            res.push(map_versicherungsdaten(in1_segment, config)?)
-        }
+    let insurance_ids: Vec<Option<Identifier>> = msg
+        .segments
+        .iter()
+        .filter(|s| s.name == "IN1")
+        .map(|s| map_versicherungsdaten(s, config))
+        .collect::<Result<Vec<Option<Identifier>>, MappingError>>()?;
 
-        //uncomment and replace above if multiple insurance identifier are allowed
-        // for idx in 1..in1_count + 1 {
-        //     if let Some(segment_by_index) = msg.segment_n("IN1", idx) {
-        //          res.push(map_versicherungsdaten(segment_by_index, config)?)
-        //     }
-        // }
+    // pick first without period.end (only one allowed currently)
+    if let Some(id) = insurance_ids
+        .into_iter()
+        .flatten()
+        // pick first without period or without end
+        .find(|v| v.period.clone().map(|p| p.end.clone()).is_none())
+    {
+        identifiers.push(Some(id));
     }
-    Ok(res)
+
+    Ok(identifiers)
 }
 
 fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
@@ -615,18 +602,18 @@ fn map_versicherungsdaten(
 
 fn get_identifier_period(in1: &Segment) -> Result<Option<Period>, MappingError> {
     // Gültigkeitszeitraum
-    let start = match in1
+    let start = in1
         .field(12)
         .filter(|f| !f.is_empty())
         .map(|f| parse_date(f.raw_value()))
-        .transpose()
-    {
-        Ok(Some(start)) => Some(start),
-
-        Err(e) => return Err(MappingError::FormattingError(e)),
-
-        Ok(None) => None,
-    };
+        .transpose()?;
+    // {
+    //     Ok(Some(start)) => Some(start),
+    //
+    //     Err(e) => return Err(MappingError::FormattingError(e)),
+    //
+    //     Ok(None) => None,
+    // };
 
     let end = match in1
         .field(13)
@@ -660,6 +647,7 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 #[cfg(test)]
 mod tests {
     use crate::config::{FallConfig, Fhir, PatientConfig};
+    use crate::fhir::mapper::MappingError;
     use crate::fhir::patient::{
         create_patient_identifiers, create_patient_merge, get_identifier_period, map,
         map_multiple_birth, map_versicherungsdaten,
@@ -669,12 +657,11 @@ mod tests {
         BundleEntryRequest, ParametersParameter, ParametersParameterValue, PatientMultipleBirth,
         ResourceType,
     };
-    use fhir_model::r4b::types::{Identifier, Reference};
+    use fhir_model::r4b::types::Reference;
     use fhir_model::time::Month;
-    use fhir_model::{Date, DateTime, time};
+    use fhir_model::{time, Date, DateTime};
     use hl7_parser::Message;
     use rstest::rstest;
-    use std::fmt::Debug;
 
     #[test]
     fn test_multibirth_empty() {
@@ -747,11 +734,11 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
         let config = test_config();
 
         let msg =
-                Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
+            Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
 EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
 PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
 MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
-                    .unwrap();
+                .unwrap();
 
         // act
         let (params, _) = create_patient_merge(&msg, &config).unwrap();
@@ -782,19 +769,19 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
         let m_type = values.get(1).unwrap();
 
         assert_eq!(
-                *other,
-                ParametersParameter::builder()
-                    .name("other".to_string())
-                    .value(ParametersParameterValue::Reference(
-                        Reference::builder()
-                            .r#type(ResourceType::Patient.to_string())
-                            .reference("Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1234567".to_string())
-                            .build()
-                            .unwrap()
-                    ))
-                    .build()
-                    .unwrap()
-            );
+            *other,
+            ParametersParameter::builder()
+                .name("other".to_string())
+                .value(ParametersParameterValue::Reference(
+                    Reference::builder()
+                        .r#type(ResourceType::Patient.to_string())
+                        .reference("Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1234567".to_string())
+                        .build()
+                        .unwrap()
+                ))
+                .build()
+                .unwrap()
+        );
 
         assert_eq!(
             *m_type,
@@ -812,7 +799,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20221121142711||ADT^A29^ADT_A21|71546182|P|2.5||684450133|NE|NE||8859/1
 EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
 PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#, true)
-                .unwrap();
+            .unwrap();
 
         let entry = map(&msg, config.clone()).unwrap();
 
@@ -1133,13 +1120,9 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
         let in1 = msg.segment("IN1").unwrap();
 
-        let mut ident = Identifier::builder().build().unwrap();
-
-        match get_identifier_period(&in1) {
-            Ok(_) => {
-                assert!(false, "expecting error but found none!")
-            }
-            Err(FormattingError) => assert!(true),
-        }
+        assert!(matches!(
+            get_identifier_period(in1),
+            Err(MappingError::FormattingError(_))
+        ));
     }
 }
