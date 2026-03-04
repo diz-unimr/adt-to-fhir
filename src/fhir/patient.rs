@@ -607,26 +607,12 @@ fn get_identifier_period(in1: &Segment) -> Result<Option<Period>, MappingError> 
         .filter(|f| !f.is_empty())
         .map(|f| parse_date(f.raw_value()))
         .transpose()?;
-    // {
-    //     Ok(Some(start)) => Some(start),
-    //
-    //     Err(e) => return Err(MappingError::FormattingError(e)),
-    //
-    //     Ok(None) => None,
-    // };
 
-    let end = match in1
+    let end = in1
         .field(13)
         .filter(|f| !f.is_empty())
         .map(|f| parse_date(f.raw_value()))
-        .transpose()
-    {
-        Ok(Some(start)) => Some(start),
-
-        Err(e) => return Err(MappingError::FormattingError(e)),
-
-        Ok(None) => None,
-    };
+        .transpose()?;
 
     if start.is_some() || end.is_some() {
         let mut period = Period::builder().build()?;
