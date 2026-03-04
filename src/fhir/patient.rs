@@ -1,11 +1,12 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{
-    bundle_entry, conditional_reference, get_repeat_value, message_type, parse_component,
-    parse_date, parse_datetime, parse_field, parse_subcomponents, patch_bundle_entry, resource_ref,
-    MappingError, MessageAccessError, MessageType,
+    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
+    get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
+    parse_subcomponents, patch_bundle_entry, resource_ref,
 };
 use anyhow::anyhow;
+use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
     BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased,
@@ -17,10 +18,9 @@ use fhir_model::r4b::types::{
 };
 use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use fhir_model::r4b::types::{Identifier, Meta};
-use fhir_model::BuilderError;
-use hl7_parser::message::Segment;
 use hl7_parser::Message;
-use log::{log, warn, Level};
+use hl7_parser::message::Segment;
+use log::{Level, log, warn};
 use regex::Regex;
 use std::fmt::Debug;
 use std::sync::LazyLock;
@@ -645,7 +645,7 @@ mod tests {
     };
     use fhir_model::r4b::types::Reference;
     use fhir_model::time::Month;
-    use fhir_model::{time, Date, DateTime};
+    use fhir_model::{Date, DateTime, time};
     use hl7_parser::Message;
     use rstest::rstest;
 

@@ -10,12 +10,12 @@ use config::AppConfig;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, info};
+use rdkafka::ClientConfig;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::{BorrowedMessage, Headers, Message};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
-use rdkafka::ClientConfig;
 use std::sync::Arc;
 
 async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
@@ -33,71 +33,71 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
     let consumer = Arc::new(consumer);
     let producer = Arc::new(create_producer(config.clone()));
 
-    let stream = consumer
-        .stream()
-        .map_err(|e| e.into())
-        .try_for_each(|m| {
-            let consumer = consumer.clone();
-            let producer = producer.clone();
-            let output_topic = config.output_topic.clone();
-            let mapper = mapper.clone();
+    let stream = consumer.stream().map_err(|e| e.into()).try_for_each(|m| {
+        let consumer = consumer.clone();
+        let producer = producer.clone();
+        let output_topic = config.output_topic.clone();
+        let mapper = mapper.clone();
 
-            {
-                async move {
-                    let (key, payload) = deserialize_message(&m);
+        {
+            async move {
+                let (key, payload) = deserialize_message(&m);
 
-                    debug!(
-                        "Message received: key: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
-                        key,
-                        m.topic(),
-                        m.partition(),
-                        m.offset(),
-                        m.timestamp()
-                    );
+                debug!(
+                    "[Received] key: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
+                    key,
+                    m.topic(),
+                    m.partition(),
+                    m.offset(),
+                    m.timestamp()
+                );
 
-                    if let Some(headers) = m.headers() {
-                        for header in headers.iter() {
-                            debug!("Header {:#?}: {:?}", header.key, header.value);
-                        }
+                if let Some(headers) = m.headers() {
+                    for header in headers.iter() {
+                        debug!("Header {:#?}: {:?}", header.key, header.value);
                     }
-
-                    // filter tombstone records
-                    if let Some(payload) = payload {
-                        let result = match mapper.map(payload) {
-                            Ok(mapped) => match mapped {
-                                None => {
-                                    commit_offset(&consumer, &m);
-                                    return Ok(());
-                                }
-                                Some(r) => { r }
-                            }
-                            Err(err) => {
-                                error!("Failed to map payload with [key={key}]: {}", err);
-                                return Err(err);
-                            }
-                        };
-
-                        // send to output topic
-                        let mut record = FutureRecord::to(&output_topic)
-                            .key(&key)
-                            .payload(result.as_str());
-                        record.timestamp = m.timestamp().to_millis();
-
-                        let produce_future = producer.send(record, Timeout::Never);
-                        match produce_future.await {
-                            Ok(delivery) => {
-                                debug!("Message sent: key: {key}, partition: {}, offset: {}", delivery.partition,delivery.offset);
-                                // store offset
-                                commit_offset(&consumer, &m);
-                            }
-                            Err((e, _)) => error!("Error producing record: {:?}", e),
-                        }
-                    }
-
-                    Ok(())
                 }
+
+                // filter tombstone records
+                if let Some(payload) = payload {
+                    let result = match mapper.map(payload) {
+                        Ok(mapped) => match mapped {
+                            None => {
+                                commit_offset(&consumer, &m);
+                                return Ok(());
+                            }
+                            Some(r) => r,
+                        },
+                        Err(err) => {
+                            error!("Failed to map payload with [key={key}]: {}", err);
+                            return Err(err);
+                        }
+                    };
+
+                    // send to output topic
+                    let mut record = FutureRecord::to(&output_topic)
+                        .key(&key)
+                        .payload(result.as_str());
+                    record.timestamp = m.timestamp().to_millis();
+
+                    let produce_future = producer.send(record, Timeout::Never);
+                    match produce_future.await {
+                        Ok(delivery) => {
+                            debug!(
+                                "[Sent] key: {key}, partition: {}, offset: {}",
+                                delivery.partition, delivery.offset
+                            );
+                            // store offset
+                            commit_offset(&consumer, &m);
+                        }
+                        Err((e, _)) => error!("Error producing record: {:?}", e),
+                    }
+                }
+
+                Ok(())
             }
-        });
+        }
+    });
 
     info!("Starting consumer");
     let error = stream.await;

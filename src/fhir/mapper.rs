@@ -7,6 +7,7 @@ use crate::fhir::{encounter, patient};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, ParseError, TimeZone};
 use chrono_tz::Europe::Berlin;
+use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
@@ -16,12 +17,11 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::time::{Month, OffsetDateTime};
-use fhir_model::DateFormatError::InvalidDate;
-use fhir_model::{time, Date, DateTime};
 use fhir_model::{BuilderError, DateFormatError, Instant};
+use fhir_model::{Date, DateTime, time};
 use fmt::Display;
-use hl7_parser::message::Segment;
 use hl7_parser::Message;
+use hl7_parser::message::Segment;
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
@@ -490,19 +490,20 @@ mod tests {
     use crate::config::{FallConfig, Fhir, PatientConfig};
     use crate::fhir::mapper::Identifier;
     use crate::fhir::mapper::{
-        get_repeat_value, parse_component, parse_datetime, parse_segments_field, parse_subcomponents,
-        patch_bundle_entry, FhirMapper,
+        FhirMapper, get_repeat_value, parse_component, parse_datetime, parse_segments_field,
+        parse_subcomponents, patch_bundle_entry,
     };
     use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
+    use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
         Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
         ResourceType,
     };
+
     use fhir_model::time::{Month, OffsetDateTime, Time};
-    use fhir_model::DateTime::DateTime;
-    use fhir_model::{time, WrongResourceType};
+    use fhir_model::{WrongResourceType, time};
     use hl7_parser::Message;
     use rstest::rstest;
     use std::collections::HashMap;
