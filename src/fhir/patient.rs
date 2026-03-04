@@ -1057,36 +1057,26 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
         let in1 = msg.segment("IN1").unwrap();
 
-        let period = get_identifier_period(&in1);
-        match period {
-            Ok(period) => {
-                assert!(true, "not expecting therefore ok!");
+        let period = get_identifier_period(&in1).expect("es wird ein Ergebnis erwartet!");
 
-                if (start_date.is_empty() && end_date.is_empty()) {
-                    assert!(period.is_none(), "not expecting therefore ok!");
-                } else {
-                    match start_date.is_empty() {
-                        true => {
-                            assert!(period.as_ref().unwrap().start.is_none())
-                        }
-                        false => {
-                            assert!(period.as_ref().unwrap().start.is_some())
-                        }
-                    }
+        if start_date.is_empty() && end_date.is_empty() {
+            assert!(
+                period.is_none(),
+                "wenn kein Start und kein Ende dann auch keine Period"
+            );
+        } else {
+            let period = period.expect("wir haben Start und/oder Ende also auch eine Period");
+            assert_eq!(
+                !start_date.is_empty(),
+                period.start.is_some(),
+                "Start als Eingabe vorhanden dann auch in Period erwartet"
+            );
 
-                    match end_date.is_empty() {
-                        true => {
-                            assert!(period.as_ref().unwrap().end.is_none())
-                        }
-                        false => {
-                            assert!(period.as_ref().unwrap().end.is_some())
-                        }
-                    }
-                }
-            }
-            _ => {
-                assert!(false, "expecting result - if none error has occured!");
-            }
+            assert_eq!(
+                !end_date.is_empty(),
+                period.end.is_some(),
+                "Ende als Eingabe vorhanden dann auch in Period erwartet"
+            );
         }
     }
 
