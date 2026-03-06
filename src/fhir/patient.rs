@@ -638,14 +638,16 @@ mod tests {
         create_patient_identifiers, create_patient_merge, get_identifier_period, map,
         map_multiple_birth, map_versicherungsdaten,
     };
+    use fhir_model::Date;
+    use fhir_model::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Delete;
+    use fhir_model::r4b::codes::IdentifierUse;
     use fhir_model::r4b::resources::{
         BundleEntryRequest, ParametersParameter, ParametersParameterValue, PatientMultipleBirth,
         ResourceType,
     };
-    use fhir_model::r4b::types::Reference;
-    use fhir_model::time::Month;
-    use fhir_model::{Date, DateTime, time};
+    use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Period, Reference};
+    use fhir_model::time;
     use hl7_parser::Message;
     use rstest::rstest;
 
@@ -840,105 +842,71 @@ PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr.
 IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20020120|20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||A454874316|||||||M| ^^^^^D  |||||A454874316^^^^^^^20150630
 "#, true).unwrap();
 
-        //helper_print_hl7_message(&msg);
-
-        let result = &map_versicherungsdaten(msg.segment("IN1").unwrap(), &test_config())
+        let actual = map_versicherungsdaten(msg.segment("IN1").unwrap(), &test_config())
             .unwrap()
             .unwrap();
-        assert_eq!(result.value.as_ref().unwrap(), "A454874316");
-        assert_eq!(
-            result.system.as_ref().unwrap(),
-            "http://fhir.de/sid/gkv/kvid-10"
-        );
-        assert_eq!(
-            result.r#type.as_ref().unwrap().coding[0]
-                .as_ref()
-                .unwrap()
-                .code,
-            Some("KVZ10".to_string())
-        );
 
-        assert_eq!(
-            result.r#type.as_ref().unwrap().coding[0]
-                .as_ref()
-                .unwrap()
-                .system,
-            Some("http://fhir.de/CodeSystem/identifier-type-de-basis".to_string())
-        );
+        // expected identifier
+        let expected = Identifier::builder()
+            .system("http://fhir.de/sid/gkv/kvid-10".into())
+            .value("A454874316".into())
+            .r#use(IdentifierUse::Official)
+            .r#type(
+                CodeableConcept::builder()
+                    .coding(vec![Some(
+                        Coding::builder()
+                            .system("http://fhir.de/CodeSystem/identifier-type-de-basis".into())
+                            .code("KVZ10".into())
+                            .build()
+                            .unwrap(),
+                    )])
+                    .build()
+                    .unwrap(),
+            )
+            .period(
+                Period::builder()
+                    // IN-12
+                    .start(DateTime::Date(Date::Date(
+                        time::Date::from_calendar_date(2002, time::Month::January, 20).unwrap(),
+                    )))
+                    // IN-13
+                    .end(DateTime::Date(Date::Date(
+                        time::Date::from_calendar_date(2009, time::Month::December, 31).unwrap(),
+                    )))
+                    .build()
+                    .unwrap(),
+            )
+            .assigner(
+                Reference::builder()
+                    .identifier(
+                        Identifier::builder()
+                            .system("http://fhir.de/sid/arge-ik/iknr".into())
+                            .value("555555555".into())
+                            .r#type(
+                                CodeableConcept::builder()
+                                    .coding(vec![Some(
+                                        Coding::builder()
+                                            .system(
+                                                "http://terminology.hl7.org/CodeSystem/v2-0203"
+                                                    .into(),
+                                            )
+                                            .code("XX".into())
+                                            .build()
+                                            .unwrap(),
+                                    )])
+                                    .build()
+                                    .unwrap(),
+                            )
+                            .build()
+                            .unwrap(),
+                    )
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
 
-        // IN-12
-        let expected_start =
-            Date::Date(time::Date::from_calendar_date(2002, Month::January, 20).unwrap());
-        if let DateTime::Date(actual) = result.period.as_ref().unwrap().start.as_ref().unwrap() {
-            assert_eq!(&expected_start, actual);
-        }
-        // IN-13
-        let expected_end =
-            Date::Date(time::Date::from_calendar_date(2009, Month::December, 31).unwrap());
-        if let DateTime::Date(actual) = result.period.as_ref().unwrap().end.as_ref().unwrap() {
-            assert_eq!(&expected_end, actual);
-        }
-
-        match result.assigner.as_ref() {
-            None => assert!(false, "assigner is expected"),
-            Some(assigner_ref) => {
-                assert!(assigner_ref.reference.is_none());
-                assert!(assigner_ref.identifier.is_some());
-                assert_eq!(
-                    "555555555",
-                    assigner_ref
-                        .identifier
-                        .as_ref()
-                        .unwrap()
-                        .value
-                        .as_ref()
-                        .unwrap()
-                );
-                assert_eq!(
-                    "http://fhir.de/sid/arge-ik/iknr",
-                    assigner_ref
-                        .identifier
-                        .as_ref()
-                        .unwrap()
-                        .system
-                        .as_ref()
-                        .unwrap()
-                );
-                assert!(assigner_ref.identifier.as_ref().unwrap().r#type.is_some());
-                assert_eq!(
-                    "http://terminology.hl7.org/CodeSystem/v2-0203",
-                    assigner_ref
-                        .identifier
-                        .as_ref()
-                        .unwrap()
-                        .r#type
-                        .as_ref()
-                        .unwrap()
-                        .coding[0]
-                        .as_ref()
-                        .unwrap()
-                        .system
-                        .as_ref()
-                        .unwrap()
-                );
-                assert_eq!(
-                    "XX",
-                    assigner_ref
-                        .identifier
-                        .as_ref()
-                        .unwrap()
-                        .r#type
-                        .as_ref()
-                        .unwrap()
-                        .coding[0]
-                        .as_ref()
-                        .unwrap()
-                        .code
-                        .as_ref()
-                        .unwrap()
-                );
-            }
-        }
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -966,40 +934,6 @@ IN2|4||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||
         assert_eq!(identifiers.len(), 2);
     }
 
-    ///
-    /// print segments to console for better readability
-    /// # Arguments
-    ///
-    /// * `msg`: parsed Hl7 message
-    ///
-    /// returns: ()
-    fn print_hl7_message(msg: &Message) {
-        let _z = &msg
-            .segments
-            .iter()
-            .map(|s| {
-                println!("Segment {}", s.name);
-                for idx in 0..s.fields.len() {
-                    if s.fields[idx].is_empty() {
-                        println!("{}-{} = ''", s.name, idx + 1);
-                    } else if s.fields[idx].repeats.is_empty() || s.fields[idx].repeats.len() == 1 {
-                        println!("{}-{} = {}", s.name, idx + 1, s.fields[idx].raw_value());
-                    } else {
-                        for i in 0..s.fields[idx].repeats.len() {
-                            println!(
-                                "{}-{}.{} = {}",
-                                s.name,
-                                idx + 1,
-                                i + 1,
-                                s.fields[idx].repeats[i].raw_value()
-                            )
-                        }
-                    }
-                }
-            })
-            .count();
-    }
-
     #[test]
     fn test_patient_multiple_insurance() {
         let msg_full = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
@@ -1013,7 +947,6 @@ IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = test_config();
         let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
-        //print_hl7_message(&msg_full);
         assert_eq!(identifiers.len(), 2);
 
         assert_eq!(
