@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::MessageAccessError::{MissingMessageField, MissingMessageSegment};
+use crate::fhir::mapper::MessageAccessError::MissingMessageSegment;
 use crate::fhir::mapper::MessageType::*;
 use crate::fhir::mapper::MessageTypeError::MissingMessageType;
 use crate::fhir::resources::ResourceMap;
@@ -21,7 +21,7 @@ use fhir_model::{BuilderError, DateFormatError, Instant};
 use fhir_model::{Date, DateTime, time};
 use fmt::Display;
 use hl7_parser::Message;
-use hl7_parser::message::Segment;
+use hl7_parser::message::{Field, Repeat, Segment};
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
@@ -58,8 +58,6 @@ pub enum FormattingError {
 pub enum MessageAccessError {
     #[error("Missing message segment {0}")]
     MissingMessageSegment(String),
-    #[error("Missing message field {0} in segment {1}")]
-    MissingMessageField(String, String),
     #[error(transparent)]
     MessageTypeError(#[from] MessageTypeError),
     #[error(transparent)]
@@ -357,33 +355,25 @@ fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier
     }
 }
 
-pub(crate) fn parse_component(
-    field: &str,
-    component: usize,
-) -> Result<Option<String>, hl7_parser::parser::ParseError> {
-    let comp = hl7_parser::parser::parse_field(field)?
-        .component(component)
-        .map(|c| c.raw_value().to_string())
-        .filter(|s| !s.is_empty());
-
-    Ok(comp)
+pub(crate) fn parse_component(field: &Field, component: usize) -> Option<String> {
+    parse_repeat_component(field.repeats.first()?, component)
 }
 
-pub(crate) fn parse_subcomponents(
-    field: &str,
-    component: usize,
-) -> Result<Option<Vec<String>>, hl7_parser::parser::ParseError> {
-    let comp: Option<Vec<String>> = hl7_parser::parser::parse_field(field)?
+pub(crate) fn parse_repeat_component(repeat: &Repeat, component: usize) -> Option<String> {
+    repeat
         .component(component)
-        .map(|c| {
-            c.subcomponents
-                .iter()
-                .map(|s| s.raw_value().to_string())
-                .filter(|s| !s.is_empty())
-                .collect()
-        });
+        .map(|c| c.raw_value().to_string())
+        .filter(|s| !s.is_empty())
+}
 
-    Ok(comp)
+pub(crate) fn parse_subcomponents(repeat: &Repeat, component: usize) -> Option<Vec<String>> {
+    repeat.component(component).map(|c| {
+        c.subcomponents
+            .iter()
+            .map(|s| s.raw_value().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    })
 }
 
 pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
@@ -417,20 +407,43 @@ pub(crate) fn resource_ref(
         .build()?)
 }
 
-pub(crate) fn parse_field(
+pub(crate) fn parse_field<'a>(
+    msg: &'a Message<'a>,
+    segment: &str,
+    field: usize,
+) -> Result<Option<&'a Field<'a>>, MessageAccessError> {
+    Ok(msg
+        .segment(segment)
+        .ok_or(MissingMessageSegment(segment.to_string()))?
+        .field(field))
+}
+
+pub(crate) fn parse_field_value(
     msg: &Message,
     segment: &str,
     field: usize,
 ) -> Result<Option<String>, MessageAccessError> {
-    Ok(Some(
-        msg.segment(segment)
-            .ok_or(MissingMessageSegment(segment.to_string()))?
-            .field(field)
-            .ok_or(MissingMessageField(field.to_string(), segment.to_string()))?
-            .raw_value()
-            .to_string(),
-    )
-    .filter(|f| !f.is_empty()))
+    Ok(parse_field(msg, segment, field)?.and_then(|f| {
+        if f.is_empty() {
+            None
+        } else {
+            Some(f.raw_value().to_string())
+        }
+    }))
+}
+
+pub(crate) fn parse_repeating_field<'a>(
+    msg: &'a Message,
+    segment: &str,
+    field: usize,
+) -> Result<Option<Vec<Repeat<'a>>>, MessageAccessError> {
+    Ok(parse_field(msg, segment, field)?.and_then(|f| {
+        if f.is_empty() {
+            None
+        } else {
+            Some(f.repeats.clone())
+        }
+    }))
 }
 
 /// Extraktion eines Werts aus einem Segment
@@ -465,6 +478,7 @@ pub(crate) fn get_repeat_value(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::config::{FallConfig, Fhir, PatientConfig};
     use crate::fhir::mapper::Identifier;
     use crate::fhir::mapper::{
@@ -483,6 +497,7 @@ mod tests {
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use fhir_model::{WrongResourceType, time};
     use hl7_parser::Message;
+    use hl7_parser::parser::parse_field;
     use rstest::rstest;
     use std::collections::HashMap;
 
@@ -550,13 +565,13 @@ mod tests {
             .entry
             .iter()
             .flatten()
-            .filter_map(|e| to_patient(e).ok())
+            .filter_map(|e| resource_from(e).ok())
             .collect();
         let encounter: Vec<Encounter> = bundle
             .entry
             .iter()
             .flatten()
-            .filter_map(|e| to_encounter(e).ok())
+            .filter_map(|e| resource_from(e).ok())
             .collect();
 
         // assert profiles set
@@ -587,27 +602,32 @@ mod tests {
         assert_eq!(encounter_profile, config.fall.profile.to_owned());
     }
 
-    fn to_patient(e: &BundleEntry) -> Result<Patient, WrongResourceType> {
+    fn resource_from<T: TryFrom<Resource, Error = WrongResourceType>>(
+        e: &BundleEntry,
+    ) -> Result<T, WrongResourceType> {
         let r = e.resource.clone().unwrap();
-        Patient::try_from(r)
-    }
-
-    fn to_encounter(e: &BundleEntry) -> Result<Encounter, WrongResourceType> {
-        let r = e.resource.clone().unwrap();
-        Encounter::try_from(r)
+        T::try_from(r)
     }
 
     #[test]
     fn test_parse_component() {
-        let comp = parse_component("Talstraße 16&Talstraße&16^^Holzhausen^^67184^DE^L", 3).unwrap();
+        let comp = parse_component(
+            &parse_field("Talstraße 16&Talstraße&16^^Holzhausen^^67184^DE^L").unwrap(),
+            3,
+        );
 
         assert_eq!(comp, Some("Holzhausen".to_string()))
     }
 
     #[test]
     fn test_parse_subcomponent() {
-        let sub =
-            parse_subcomponents("Talstraße 16&Talstraße&16^^Holzhausen^^67184^DE^L", 1).unwrap();
+        let sub = parse_subcomponents(
+            parse_field("Talstraße 16&Talstraße&16^^Holzhausen^^67184^DE^L")
+                .unwrap()
+                .repeat(1)
+                .unwrap(),
+            1,
+        );
 
         assert_eq!(
             sub,
@@ -669,13 +689,21 @@ IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse.
         let segment = msg.segment("IN1").unwrap();
         let result = get_repeat_value(segment, field_number, repeat_index, component_number);
 
-        match expected {
-            None => {
-                assert_eq!(None, result);
-            }
-            Some(expect_value) => {
-                assert_eq!(expect_value, result.unwrap());
-            }
-        }
+        assert_eq!(result.as_deref(), expected);
+    }
+
+    #[test]
+    fn test_parse_repeating_field() {
+        let segment_raw = r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
+IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||000000000001^PRN^PH^^^0800^99900801^^^^^000000000001~1313131331313^PRN^FX^^^00000^00000000^^^^^1313131331313||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U||||||10001|Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||H|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L"#;
+        let msg = Message::parse_with_lenient_newlines(segment_raw, true).unwrap();
+
+        let result = parse_repeating_field(&msg, "IN1", 3).unwrap().unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(
+            result.iter().map(|r| r.raw_value()).collect::<Vec<&str>>(),
+            vec!["777777777^^^^NII", "BG HM HAUPT^^^^XX"]
+        );
     }
 }
