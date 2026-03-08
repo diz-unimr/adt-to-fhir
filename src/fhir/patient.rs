@@ -1,10 +1,13 @@
 use crate::config::Fhir;
+use crate::error::MappingError;
+use crate::error::MessageAccessError;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{
-    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
-    get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
-    parse_field_value, parse_repeat_component, parse_repeating_field, parse_subcomponents,
-    patch_bundle_entry,
+    bundle_entry, conditional_reference, parse_date, parse_datetime, patch_bundle_entry,
+};
+use crate::hl7::parser::{
+    MessageType, get_repeat_value, message_type, parse_component, parse_field, parse_field_value,
+    parse_repeat_component, parse_repeating_field, parse_subcomponents,
 };
 use anyhow::anyhow;
 use fhir_model::BuilderError;
@@ -630,11 +633,6 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 mod tests {
     use super::*;
     use crate::config::{FallConfig, Fhir, PatientConfig};
-    use crate::fhir::mapper::MappingError;
-    use crate::fhir::patient::{
-        create_patient_identifiers, create_patient_merge, get_identifier_period, map,
-        map_multiple_birth, map_versicherungsdaten,
-    };
     use fhir_model::Date;
     use fhir_model::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Delete;

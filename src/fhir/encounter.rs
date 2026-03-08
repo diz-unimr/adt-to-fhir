@@ -1,10 +1,10 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::{
-    EntryRequestType, MappingError, bundle_entry, message_type, parse_component, parse_datetime,
-    parse_field, parse_field_value, resource_ref,
-};
-use crate::fhir::mapper::{MessageAccessError, MessageType};
+use crate::error::{MappingError, MessageAccessError};
+use crate::fhir::mapper::{EntryRequestType, bundle_entry, parse_datetime, resource_ref};
 use crate::fhir::resources::ResourceMap;
+use crate::hl7::parser::{
+    MessageType, message_type, parse_component, parse_field, parse_field_value,
+};
 use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
