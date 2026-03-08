@@ -10,105 +10,82 @@ use std::str::FromStr;
 
 #[derive(PartialEq, Debug)]
 pub enum MessageType {
-    /// ADT A01
-    Admit,
-    /// ADT A02
-    Transfer,
-    /// ADT A03
-    Discharge,
-    /// ADT A04
-    Registration,
-    /// ADT A05
-    PreAdmit,
-    /// ADT A06
-    ChangeOutpatientToInpatient,
-    /// ADT A07
-    ChangeInpatientToOutpatient,
-    /// ADT A08
-    PatientUpdate,
-    /// ADT A11
-    CancelAdmitVisit,
-    /// ADT A12
-    CancelTransfer,
-    /// ADT A13
-    CancelDischarge,
-    /// ADT A14
-    PendingAdmit,
-    /// ADT A27
-    CancelPendingAdmit,
-    /// ADT A28
-    AddPersonInformation,
-    /// ADT A29
-    DeletePersonInformation,
-    /// ADT A31
-    ChangePersonData,
-    /// ADT A34
-    PatientMerge,
-    /// ADT A40
-    MergePatientRecords,
-    /// ADT A45
-    PatientReassignmentToSingleCase,
-    /// ADT A47
-    PatientReassignmentToAllCases,
-    /// ADT A50
-    UpdateEncounterNumber,
+    /// Admit
+    A01,
+    /// Transfer
+    A02,
+    /// Discharge
+    A03,
+    /// Registration
+    A04,
+    /// PreAdmit
+    A05,
+    /// ChangeOutpatientToInpatient
+    A06,
+    /// ChangeInpatientToOutpatient
+    A07,
+    /// PatientUpdate
+    A08,
+    /// CancelAdmitVisit
+    A11,
+    /// CancelTransfer
+    A12,
+    /// CancelDischarge
+    A13,
+    /// PendingAdmit
+    A14,
+    /// CancelPendingAdmit
+    A27,
+    /// AddPersonInformation
+    A28,
+    /// DeletePersonInformation
+    A29,
+    /// ChangePersonData
+    A31,
+    /// PatientMerge
+    A34,
+    /// MergePatientRecords
+    A40,
+    /// PatientReassignmentToSingleCase
+    A45,
+    /// PatientReassignmentToAllCases
+    A47,
+    /// UpdateEncounterNumber
+    A50,
 }
 
 impl Display for MessageType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Admit => write!(f, "A01"),
-            Transfer => write!(f, "A02"),
-            Discharge => write!(f, "A03"),
-            Registration => write!(f, "A04"),
-            PreAdmit => write!(f, "A05"),
-            ChangeOutpatientToInpatient => write!(f, "A06"),
-            ChangeInpatientToOutpatient => write!(f, "A07"),
-            PatientUpdate => write!(f, "A08"),
-            CancelAdmitVisit => write!(f, "A11"),
-            CancelTransfer => write!(f, "A12"),
-            CancelDischarge => write!(f, "A13"),
-            PendingAdmit => write!(f, "A14"),
-            CancelPendingAdmit => write!(f, "A27"),
-            AddPersonInformation => write!(f, "A28"),
-            DeletePersonInformation => write!(f, "A29"),
-            ChangePersonData => write!(f, "A31"),
-            PatientMerge => write!(f, "A34"),
-            MergePatientRecords => write!(f, "A40"),
-            PatientReassignmentToSingleCase => write!(f, "A45"),
-            PatientReassignmentToAllCases => write!(f, "A47"),
-            UpdateEncounterNumber => write!(f, "A50"),
-        }
+        write!(f, "{:?}", self)
     }
 }
 
-// todo refactor
 impl FromStr for MessageType {
     type Err = MessageTypeError;
 
     fn from_str(s: &str) -> Result<Self, MessageTypeError> {
         match s {
-            "A01" => Ok(Admit),
-            "A02" => Ok(Transfer),
-            "A03" => Ok(Discharge),
-            "A04" => Ok(Registration),
-            "A05" => Ok(PreAdmit),
-            "A06" => Ok(ChangeOutpatientToInpatient),
-            "A07" => Ok(ChangeInpatientToOutpatient),
-            "A08" => Ok(PatientUpdate),
-            "A11" => Ok(CancelAdmitVisit),
-            "A12" => Ok(CancelTransfer),
-            "A13" => Ok(CancelDischarge),
-            "A14" => Ok(PendingAdmit),
-            "A27" => Ok(CancelPendingAdmit),
-            "A28" => Ok(AddPersonInformation),
-            "A29" => Ok(DeletePersonInformation),
-            "A31" => Ok(ChangePersonData),
-            "A34" => Ok(PatientMerge),
-            "A40" => Ok(MergePatientRecords),
-            "A45" => Ok(PatientReassignmentToSingleCase),
-            "A47" => Ok(PatientReassignmentToAllCases),
-            "A50" => Ok(UpdateEncounterNumber),
+            "A01" => Ok(A01),
+            "A02" => Ok(A02),
+            "A03" => Ok(A03),
+            "A04" => Ok(A04),
+            "A05" => Ok(A05),
+            "A06" => Ok(A06),
+            "A07" => Ok(A07),
+            "A08" => Ok(A08),
+            "A11" => Ok(A11),
+            "A12" => Ok(A12),
+            "A13" => Ok(A13),
+            "A14" => Ok(A14),
+            "A27" => Ok(A27),
+            "A28" => Ok(A28),
+            "A29" => Ok(A29),
+            "A31" => Ok(A31),
+            "A34" => Ok(A34),
+            "A40" => Ok(A40),
+            "A45" => Ok(A45),
+            "A47" => Ok(A47),
+            "A50" => Ok(A50),
             _ => Err(MessageTypeError::UnknownMessageType(s.to_string())),
         }
     }

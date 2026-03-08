@@ -34,22 +34,22 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
     let msg_type = message_type(msg);
 
     match msg_type.map_err(MessageAccessError::MessageTypeError)? {
-        MessageType::Admit
-        | MessageType::Registration
-        | MessageType::PreAdmit
-        | MessageType::ChangeOutpatientToInpatient
-        | MessageType::ChangeInpatientToOutpatient
-        | MessageType::PatientUpdate => {
+        MessageType::A01
+        | MessageType::A04
+        | MessageType::A05
+        | MessageType::A06
+        | MessageType::A07
+        | MessageType::A08 => {
             let patient = map_patient(msg, &config)?;
             // update-as-create
             Ok(vec![bundle_entry(patient, UpdateAsCreate)?])
         }
-        MessageType::Transfer | MessageType::Discharge | MessageType::ChangePersonData => {
+        MessageType::A02 | MessageType::A03 | MessageType::A31 => {
             let patient = map_patient(msg, &config)?;
             // conditional-create
             Ok(vec![bundle_entry(patient, ConditionalCreate)?])
         }
-        MessageType::PatientMerge | MessageType::MergePatientRecords => {
+        MessageType::A34 | MessageType::A40 => {
             // create fhir-patch
             let (identifier, patch) = create_patient_merge(msg, &config)?;
             Ok(vec![patch_bundle_entry(
@@ -59,15 +59,15 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
             )?])
         }
         // todo error?
-        MessageType::CancelAdmitVisit
-        | MessageType::CancelTransfer
-        | MessageType::CancelDischarge
-        | MessageType::PendingAdmit
-        | MessageType::CancelPendingAdmit => {
+        MessageType::A11
+        | MessageType::A12
+        | MessageType::A13
+        | MessageType::A14
+        | MessageType::A27 => {
             // ignore
             Ok(vec![])
         }
-        MessageType::DeletePersonInformation => {
+        MessageType::A29 => {
             let patient = map_patient(msg, &config)?;
             // delete
             Ok(vec![bundle_entry(patient, Delete)?])
