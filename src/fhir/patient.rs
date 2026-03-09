@@ -3,10 +3,11 @@ use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsC
 use crate::fhir::mapper::{
     MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
     get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
-    parse_subcomponents, patch_bundle_entry, resource_ref,
+    parse_subcomponents, patch_bundle_entry,
 };
 use anyhow::anyhow;
 use fhir_model::BuilderError;
+use fhir_model::r4b::codes::ActionPrecheckBehavior::No;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
     BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased,
@@ -222,13 +223,23 @@ fn create_patient_identifiers(
         .map(|s| map_versicherungsdaten(s, config))
         .collect::<Result<Vec<Option<Identifier>>, MappingError>>()?;
 
-    // pick first without period.end (only one allowed currently)
-    if let Some(id) = insurance_ids
-        .into_iter()
-        .flatten()
-        // pick first without period or without end
-        .find(|v| v.period.clone().map(|p| p.end.clone()).is_none())
-    {
+    let ids: Vec<_> = insurance_ids.into_iter().flatten().collect();
+    // first pick is insurance number of 10 literals without expiration date
+    // second pick is first number without expiration date
+    const GKV10_SYSTEM: &str = "http://fhir.de/sid/gkv/kvid-10";
+    let selected = ids
+        .iter()
+        .find(|v| {
+            v.system.as_deref() == Some(GKV10_SYSTEM)
+                && v.period.as_ref().and_then(|p| p.end.as_ref()).is_none()
+        })
+        .or_else(|| {
+            ids.iter()
+                .find(|v| v.period.as_ref().and_then(|p| p.end.as_ref()).is_none())
+        })
+        .cloned();
+
+    if let Some(id) = selected {
         identifiers.push(Some(id));
     }
 
