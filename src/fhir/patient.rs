@@ -5,11 +5,9 @@ use crate::fhir::mapper::{
     get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
     parse_field_value, parse_repeat_component, parse_repeating_field, parse_subcomponents,
     patch_bundle_entry,
-    parse_subcomponents, patch_bundle_entry,
 };
 use anyhow::anyhow;
 use fhir_model::BuilderError;
-use fhir_model::r4b::codes::ActionPrecheckBehavior::No;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
     BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased,
@@ -958,7 +956,6 @@ IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = test_config();
         let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
 
-        print_hl7_message(&msg_full);
         assert_eq!(identifiers.len(), 2);
 
         assert_eq!(
@@ -1044,7 +1041,6 @@ IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = test_config();
         let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
 
-        print_hl7_message(&msg_full);
         assert_eq!(identifiers.len(), 2);
 
         assert_eq!(
