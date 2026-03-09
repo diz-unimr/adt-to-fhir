@@ -1,7 +1,9 @@
 extern crate core;
 
 mod config;
+mod error;
 mod fhir;
+mod hl7;
 
 use crate::config::{Kafka, Ssl};
 use crate::fhir::mapper::FhirMapper;

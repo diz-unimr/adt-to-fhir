@@ -1,10 +1,10 @@
 use crate::config::Fhir;
-use crate::fhir::mapper::{
-    EntryRequestType, MappingError, bundle_entry, message_type, parse_component, parse_datetime,
-    parse_field, parse_field_value, resource_ref,
-};
-use crate::fhir::mapper::{MessageAccessError, MessageType};
+use crate::error::{MappingError, MessageAccessError};
+use crate::fhir::mapper::{EntryRequestType, bundle_entry, parse_datetime, resource_ref};
 use crate::fhir::resources::ResourceMap;
+use crate::hl7::parser::{
+    MessageType, message_type, parse_component, parse_field, parse_field_value,
+};
 use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
@@ -26,11 +26,11 @@ pub(super) fn map(
 
     let msg_type = message_type(msg);
     match msg_type.map_err(MessageAccessError::MessageTypeError)? {
-        MessageType::Admit
-        | MessageType::Transfer
-        | MessageType::Discharge
-        | MessageType::Registration
-        | MessageType::PreAdmit => {
+        MessageType::A01
+        | MessageType::A02
+        | MessageType::A03
+        | MessageType::A04
+        | MessageType::A05 => {
             let enc_admit = map_einrichtungskontakt(msg, &config, resources)?;
             // todo
             // ...
@@ -40,7 +40,7 @@ pub(super) fn map(
                 EntryRequestType::UpdateAsCreate,
             )?])
         }
-        MessageType::CancelAdmitVisit | MessageType::CancelPendingAdmit => {
+        MessageType::A11 | MessageType::A27 => {
             // todo
             Ok(r)
         }
@@ -259,7 +259,7 @@ fn map_period(msg: &Message) -> Result<Period, MappingError> {
         None => {
             match message_type(msg).map_err(MessageAccessError::MessageTypeError)? {
                 // A04 has no end date is assigned start date instead
-                MessageType::Registration => period.end(start),
+                MessageType::A04 => period.end(start),
                 _ => period,
             }
         }
@@ -284,7 +284,7 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
 
 fn map_visit_number(msg: &Message) -> Result<String, anyhow::Error> {
     match message_type(msg)? {
-        MessageType::PendingAdmit => {
+        MessageType::A14 => {
             Ok(parse_field_value(msg, "PID", 4)?.ok_or(anyhow!("empty visit number in PID.4"))?)
         }
         _ => Ok(parse_field_value(msg, "PV1", 19)?.ok_or(anyhow!("empty visit number in PV1.19"))?),

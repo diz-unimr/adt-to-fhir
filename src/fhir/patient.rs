@@ -1,10 +1,13 @@
 use crate::config::Fhir;
+use crate::error::MappingError;
+use crate::error::MessageAccessError;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{
-    MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
-    get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
-    parse_field_value, parse_repeat_component, parse_repeating_field, parse_subcomponents,
-    patch_bundle_entry,
+    bundle_entry, conditional_reference, parse_date, parse_datetime, patch_bundle_entry,
+};
+use crate::hl7::parser::{
+    MessageType, get_repeat_value, message_type, parse_component, parse_field, parse_field_value,
+    parse_repeat_component, parse_repeating_field, parse_subcomponents,
 };
 use anyhow::anyhow;
 use fhir_model::BuilderError;
@@ -31,22 +34,22 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
     let msg_type = message_type(msg);
 
     match msg_type.map_err(MessageAccessError::MessageTypeError)? {
-        MessageType::Admit
-        | MessageType::Registration
-        | MessageType::PreAdmit
-        | MessageType::ChangeOutpatientToInpatient
-        | MessageType::ChangeInpatientToOutpatient
-        | MessageType::PatientUpdate => {
+        MessageType::A01
+        | MessageType::A04
+        | MessageType::A05
+        | MessageType::A06
+        | MessageType::A07
+        | MessageType::A08 => {
             let patient = map_patient(msg, &config)?;
             // update-as-create
             Ok(vec![bundle_entry(patient, UpdateAsCreate)?])
         }
-        MessageType::Transfer | MessageType::Discharge | MessageType::ChangePersonData => {
+        MessageType::A02 | MessageType::A03 | MessageType::A31 => {
             let patient = map_patient(msg, &config)?;
             // conditional-create
             Ok(vec![bundle_entry(patient, ConditionalCreate)?])
         }
-        MessageType::PatientMerge | MessageType::MergePatientRecords => {
+        MessageType::A34 | MessageType::A40 => {
             // create fhir-patch
             let (identifier, patch) = create_patient_merge(msg, &config)?;
             Ok(vec![patch_bundle_entry(
@@ -56,15 +59,15 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
             )?])
         }
         // todo error?
-        MessageType::CancelAdmitVisit
-        | MessageType::CancelTransfer
-        | MessageType::CancelDischarge
-        | MessageType::PendingAdmit
-        | MessageType::CancelPendingAdmit => {
+        MessageType::A11
+        | MessageType::A12
+        | MessageType::A13
+        | MessageType::A14
+        | MessageType::A27 => {
             // ignore
             Ok(vec![])
         }
-        MessageType::DeletePersonInformation => {
+        MessageType::A29 => {
             let patient = map_patient(msg, &config)?;
             // delete
             Ok(vec![bundle_entry(patient, Delete)?])
@@ -630,11 +633,6 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 mod tests {
     use super::*;
     use crate::config::{FallConfig, Fhir, PatientConfig};
-    use crate::fhir::mapper::MappingError;
-    use crate::fhir::patient::{
-        create_patient_identifiers, create_patient_merge, get_identifier_period, map,
-        map_multiple_birth, map_versicherungsdaten,
-    };
     use fhir_model::Date;
     use fhir_model::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Delete;
