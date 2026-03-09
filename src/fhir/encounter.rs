@@ -1,7 +1,7 @@
 use crate::config::Fhir;
 use crate::fhir::mapper::{
     EntryRequestType, MappingError, bundle_entry, message_type, parse_component, parse_datetime,
-    parse_field, resource_ref,
+    parse_field, parse_field_value, resource_ref,
 };
 use crate::fhir::mapper::{MessageAccessError, MessageType};
 use crate::fhir::resources::ResourceMap;
@@ -49,7 +49,7 @@ pub(super) fn map(
 }
 
 fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
-    Ok(parse_field(msg, "PV1", 2)?.is_some_and(|f| f == "H"))
+    Ok(parse_field_value(msg, "PV1", 2)?.is_some_and(|f| f == "H"))
 }
 
 fn map_einrichtungskontakt(
@@ -141,16 +141,16 @@ fn fab_ref(fab: &str) -> Result<Reference, MappingError> {
 }
 
 fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
-    let pid = parse_field(msg, "PID", 2)?.ok_or(anyhow!("missing pid value in PID.2"))?;
+    let pid = parse_field_value(msg, "PID", 2)?.ok_or(anyhow!("missing pid value in PID.2"))?;
 
     resource_ref(&ResourceType::Patient, &pid, sid)
 }
 
 fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
-    if let Some(assigned_loc) = &parse_field(msg, "PV1", 3)? {
-        let facility = parse_component(assigned_loc, 4)?;
-        let location = parse_component(assigned_loc, 1)?;
-        let loc_status = parse_component(assigned_loc, 5)?;
+    if let Some(assigned_loc) = parse_field(msg, "PV1", 3)? {
+        let facility = parse_component(assigned_loc, 4);
+        let location = parse_component(assigned_loc, 1);
+        let loc_status = parse_component(assigned_loc, 5);
         // let kostenstelle = extract_repeat(assigned_loc, 6)?;
 
         // todo: kostenstelle lookup etc.
@@ -169,8 +169,8 @@ fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
 }
 
 fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
-    if let Some(source) = &parse_field(msg, "PV1", 4)? {
-        let admit = parse_component(source, 1).map_err(MessageAccessError::ParseError)?;
+    if let Some(source) = parse_field(msg, "PV1", 4)? {
+        let admit = parse_component(source, 1);
 
         let coding = match admit.as_deref() {
         Some("E") => Ok(Coding::builder()
@@ -248,13 +248,13 @@ fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, M
 
 fn map_period(msg: &Message) -> Result<Period, MappingError> {
     let start: DateTime = parse_datetime(
-        parse_field(msg, "PV1", 44)?
+        parse_field_value(msg, "PV1", 44)?
             .ok_or(anyhow!("empty datetime in PV1.44"))?
             .as_str(),
     )?;
     let period = Period::builder().start(start.clone());
 
-    let p = match parse_field(msg, "PV1", 45)? {
+    let p = match parse_field_value(msg, "PV1", 45)? {
         Some(end) => period.end(parse_datetime(end.as_str())?),
         None => {
             match message_type(msg).map_err(MessageAccessError::MessageTypeError)? {
@@ -285,9 +285,9 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
 fn map_visit_number(msg: &Message) -> Result<String, anyhow::Error> {
     match message_type(msg)? {
         MessageType::PendingAdmit => {
-            Ok(parse_field(msg, "PID", 4)?.ok_or(anyhow!("empty visit number in PID.4"))?)
+            Ok(parse_field_value(msg, "PID", 4)?.ok_or(anyhow!("empty visit number in PID.4"))?)
         }
-        _ => Ok(parse_field(msg, "PV1", 19)?.ok_or(anyhow!("empty visit number in PV1.19"))?),
+        _ => Ok(parse_field_value(msg, "PV1", 19)?.ok_or(anyhow!("empty visit number in PV1.19"))?),
     }
 }
 
@@ -301,7 +301,7 @@ fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
 
 fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
     let code =
-        parse_field(msg, "PV1", 2)?.ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
+        parse_field_value(msg, "PV1", 2)?.ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
     match code.as_str() {
         "I" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
@@ -324,7 +324,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
 }
 
 fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
-    if let Some(code) = parse_field(msg, "PV1", 2)? {
+    if let Some(code) = parse_field_value(msg, "PV1", 2)? {
         match code.as_str() {
             // todo: the following are missing
             // O ("Ambulantes Operieren") => operation

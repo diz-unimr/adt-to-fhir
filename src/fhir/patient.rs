@@ -3,6 +3,8 @@ use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsC
 use crate::fhir::mapper::{
     MappingError, MessageAccessError, MessageType, bundle_entry, conditional_reference,
     get_repeat_value, message_type, parse_component, parse_date, parse_datetime, parse_field,
+    parse_field_value, parse_repeat_component, parse_repeating_field, parse_subcomponents,
+    patch_bundle_entry,
     parse_subcomponents, patch_bundle_entry,
 };
 use anyhow::anyhow;
@@ -76,28 +78,29 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
 fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
     let mut res = vec![];
 
-    if let Some(addr_field) = &parse_field(msg, "PID", 11)? {
-        // for addr_field in fields {
-        let mut addr = Address::builder().r#type(AddressType::Both).build()?;
+    if let Some(addr_repeats) = parse_repeating_field(msg, "PID", 11)? {
+        for addr_elem in addr_repeats {
+            let mut addr = Address::builder().r#type(AddressType::Both).build()?;
 
-        // line
-        if let Some(lines) = parse_subcomponents(addr_field, 1).ok().flatten() {
-            addr.line = lines.into_iter().map(Some).collect();
-        }
-        // city
-        if let Some(city) = parse_component(addr_field, 3).ok().flatten() {
-            addr.city = Some(city);
-        }
-        // postal code
-        if let Some(postal_code) = parse_component(addr_field, 5).ok().flatten() {
-            addr.postal_code = Some(postal_code);
-        }
-        // country
-        if let Some(country) = parse_component(addr_field, 6).ok().flatten() {
-            addr.country = Some(country);
-        }
+            // line
+            if let Some(lines) = parse_subcomponents(&addr_elem, 1) {
+                addr.line = lines.into_iter().map(Some).collect();
+            }
+            // city
+            if let Some(city) = parse_repeat_component(&addr_elem, 3) {
+                addr.city = Some(city);
+            }
+            // postal code
+            if let Some(postal_code) = parse_repeat_component(&addr_elem, 5) {
+                addr.postal_code = Some(postal_code);
+            }
+            // country
+            if let Some(country) = parse_repeat_component(&addr_elem, 6) {
+                addr.country = Some(country);
+            }
 
-        res.push(Some(addr));
+            res.push(Some(addr));
+        }
     }
 
     Ok(res)
@@ -170,7 +173,7 @@ fn create_patient_merge(
         params,
         Identifier::builder()
             .system(config.person.system.to_string())
-            .value(parse_field(msg, "MRG", 1)?.ok_or(anyhow!(
+            .value(parse_field_value(msg, "MRG", 1)?.ok_or(anyhow!(
                 "Failed to map Patient merge: Missing MRG.1 segment"
             ))?)
             .build()?,
@@ -182,7 +185,7 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         .r#use(IdentifierUse::Usual)
         .system(config.person.system.to_owned())
         .value(
-            parse_field(msg, "PID", 2)?
+            parse_field_value(msg, "PID", 2)?
                 .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
         )
         .assigner(
@@ -261,11 +264,11 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
         .build()?;
 
     // birth_date
-    if let Some(b) = &parse_field(msg, "PID", 7)? {
+    if let Some(b) = &parse_field_value(msg, "PID", 7)? {
         patient.birth_date = Some(parse_date(b)?)
     }
     // gender
-    if let Some(g) = &parse_field(msg, "PID", 8)? {
+    if let Some(g) = &parse_field_value(msg, "PID", 8)? {
         patient.gender = Some(map_gender(g));
     }
     // marital_status
@@ -280,8 +283,8 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
 
 fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
     // patient vital status
-    let death_time = parse_field(msg, "PID", 29)?;
-    let death_confirm = parse_field(msg, "PID", 30)?;
+    let death_time = parse_field_value(msg, "PID", 29)?;
+    let death_confirm = parse_field_value(msg, "PID", 30)?;
 
     match (death_time, death_confirm) {
         (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(
@@ -293,9 +296,9 @@ fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> 
 }
 
 fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, MappingError> {
-    let is_multi_birth = &parse_field(msg, "PID", 24)?;
-    let multi_birth_number = &parse_field(msg, "PID", 25)?;
-    let msg_id = &parse_field(msg, "MSH", 10)?;
+    let is_multi_birth = &parse_field_value(msg, "PID", 24)?;
+    let multi_birth_number = &parse_field_value(msg, "PID", 25)?;
+    let msg_id = &parse_field_value(msg, "MSH", 10)?;
 
     #[derive(Debug, PartialEq, Eq)]
     enum MultiBirthFlags {
@@ -361,9 +364,8 @@ fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, Map
 
 fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingError> {
     // marital status
-    if let Some(status) = &parse_field(msg, "PID", 16)? {
+    if let Some(status) = parse_field(msg, "PID", 16)? {
         parse_component(status, 1)
-            .map_err(MessageAccessError::from)?
             .map(|m| {
                 match m.as_str() {
                     "A" | "E" => Coding::builder()
@@ -465,72 +467,67 @@ fn map_gender(gender: &str) -> AdministrativeGender {
 fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
     let mut names = vec![];
 
-    if let Some(name_field) = &parse_field(v2_msg, "PID", 5)? {
-        let name_use = parse_component(name_field, 7)
-            .map_err(MessageAccessError::from)?
-            .and_then(|u| match u.as_str() {
+    if let Some(name_fields) = parse_repeating_field(v2_msg, "PID", 5)? {
+        for name_field in name_fields {
+            let name_use = parse_repeat_component(&name_field, 7).and_then(|u| match u.as_str() {
                 "L" => Some(NameUse::Official),
                 "M" | "B" => Some(NameUse::Maiden),
                 _ => None,
             });
 
-        let mut name = HumanName::builder()
-            // todo: parse multiple names
-            .given(
-                parse_component(name_field, 2)
-                    .map_err(MessageAccessError::from)?
-                    .map(|e| vec![Some(e)])
-                    .unwrap_or_default(),
-            )
-            .build()?;
+            let mut name = HumanName::builder()
+                .given(
+                    parse_repeat_component(&name_field, 2)
+                        .map(|e| vec![Some(e)])
+                        .unwrap_or_default(),
+                )
+                .build()?;
 
-        name.r#use = name_use;
-        name.family = parse_component(name_field, 1).map_err(MessageAccessError::from)?;
+            name.r#use = name_use;
+            name.family = parse_repeat_component(&name_field, 1);
 
-        // prefix
-        if let Some(prefix) = parse_component(name_field, 6).map_err(MessageAccessError::from)? {
-            name.prefix = vec![Some(prefix)];
-            name.prefix_ext = vec![Some(field_extension(
-                "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
-                ExtensionValue::Code("AC".into()),
-            )?)];
-        }
+            // prefix
+            if let Some(prefix) = parse_repeat_component(&name_field, 6) {
+                name.prefix = vec![Some(prefix)];
+                name.prefix_ext = vec![Some(field_extension(
+                    "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
+                    ExtensionValue::Code("AC".into()),
+                )?)];
+            }
 
-        // namenszusatz
-        if let Some(namenszusatz) =
-            parse_component(name_field, 4).map_err(MessageAccessError::from)?
-        {
-            name.family_ext = Some(field_extension(
-                "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
-                ExtensionValue::String(namenszusatz),
-            )?);
-        }
+            // namenszusatz
+            if let Some(namenszusatz) = parse_repeat_component(&name_field, 4) {
+                name.family_ext = Some(field_extension(
+                    "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
+                    ExtensionValue::String(namenszusatz),
+                )?);
+            }
 
-        // vorsatzwort
-        if let Some(vorsatzwort) =
-            parse_component(name_field, 5).map_err(MessageAccessError::from)?
-        {
-            name.family_ext = Some(field_extension(
-                "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
-                ExtensionValue::String(vorsatzwort),
-            )?);
-        }
+            // vorsatzwort
+            if let Some(vorsatzwort) = parse_repeat_component(&name_field, 5) {
+                name.family_ext = Some(field_extension(
+                    "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
+                    ExtensionValue::String(vorsatzwort),
+                )?);
+            }
 
-        names.push(Some(name));
+            names.push(Some(name));
 
-        // maiden name
-        if let Some(maiden_name) = &parse_field(v2_msg, "PID", 6)? {
-            names.push(Some(
-                HumanName::builder()
-                    .r#use(NameUse::Maiden)
-                    .family(maiden_name.into())
-                    .build()?,
-            ))
+            // maiden name
+            if let Some(maiden_name) = &parse_field_value(v2_msg, "PID", 6)? {
+                names.push(Some(
+                    HumanName::builder()
+                        .r#use(NameUse::Maiden)
+                        .family(maiden_name.into())
+                        .build()?,
+                ))
+            }
         }
     }
 
     Ok(names)
 }
+
 fn is_valid_gkv10(insurance_number: &str) -> bool {
     static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
     RE.is_match(insurance_number)
@@ -644,20 +641,23 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::config::{FallConfig, Fhir, PatientConfig};
     use crate::fhir::mapper::MappingError;
     use crate::fhir::patient::{
         create_patient_identifiers, create_patient_merge, get_identifier_period, map,
         map_multiple_birth, map_versicherungsdaten,
     };
+    use fhir_model::Date;
+    use fhir_model::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Delete;
+    use fhir_model::r4b::codes::IdentifierUse;
     use fhir_model::r4b::resources::{
         BundleEntryRequest, ParametersParameter, ParametersParameterValue, PatientMultipleBirth,
         ResourceType,
     };
-    use fhir_model::r4b::types::Reference;
-    use fhir_model::time::Month;
-    use fhir_model::{Date, DateTime, time};
+    use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Period, Reference};
+    use fhir_model::time;
     use hl7_parser::Message;
     use rstest::rstest;
 
@@ -852,105 +852,71 @@ PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr.
 IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20020120|20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||A454874316|||||||M| ^^^^^D  |||||A454874316^^^^^^^20150630
 "#, true).unwrap();
 
-        //helper_print_hl7_message(&msg);
-
-        let result = &map_versicherungsdaten(msg.segment("IN1").unwrap(), &test_config())
+        let actual = map_versicherungsdaten(msg.segment("IN1").unwrap(), &test_config())
             .unwrap()
             .unwrap();
-        assert_eq!(result.value.as_ref().unwrap(), "A454874316");
-        assert_eq!(
-            result.system.as_ref().unwrap(),
-            "http://fhir.de/sid/gkv/kvid-10"
-        );
-        assert_eq!(
-            result.r#type.as_ref().unwrap().coding[0]
-                .as_ref()
-                .unwrap()
-                .code,
-            Some("KVZ10".to_string())
-        );
 
-        assert_eq!(
-            result.r#type.as_ref().unwrap().coding[0]
-                .as_ref()
-                .unwrap()
-                .system,
-            Some("http://fhir.de/CodeSystem/identifier-type-de-basis".to_string())
-        );
+        // expected identifier
+        let expected = Identifier::builder()
+            .system("http://fhir.de/sid/gkv/kvid-10".into())
+            .value("A454874316".into())
+            .r#use(IdentifierUse::Official)
+            .r#type(
+                CodeableConcept::builder()
+                    .coding(vec![Some(
+                        Coding::builder()
+                            .system("http://fhir.de/CodeSystem/identifier-type-de-basis".into())
+                            .code("KVZ10".into())
+                            .build()
+                            .unwrap(),
+                    )])
+                    .build()
+                    .unwrap(),
+            )
+            .period(
+                Period::builder()
+                    // IN-12
+                    .start(DateTime::Date(Date::Date(
+                        time::Date::from_calendar_date(2002, time::Month::January, 20).unwrap(),
+                    )))
+                    // IN-13
+                    .end(DateTime::Date(Date::Date(
+                        time::Date::from_calendar_date(2009, time::Month::December, 31).unwrap(),
+                    )))
+                    .build()
+                    .unwrap(),
+            )
+            .assigner(
+                Reference::builder()
+                    .identifier(
+                        Identifier::builder()
+                            .system("http://fhir.de/sid/arge-ik/iknr".into())
+                            .value("555555555".into())
+                            .r#type(
+                                CodeableConcept::builder()
+                                    .coding(vec![Some(
+                                        Coding::builder()
+                                            .system(
+                                                "http://terminology.hl7.org/CodeSystem/v2-0203"
+                                                    .into(),
+                                            )
+                                            .code("XX".into())
+                                            .build()
+                                            .unwrap(),
+                                    )])
+                                    .build()
+                                    .unwrap(),
+                            )
+                            .build()
+                            .unwrap(),
+                    )
+                    .build()
+                    .unwrap(),
+            )
+            .build()
+            .unwrap();
 
-        // IN-12
-        let expected_start =
-            Date::Date(time::Date::from_calendar_date(2002, Month::January, 20).unwrap());
-        if let DateTime::Date(actual) = result.period.as_ref().unwrap().start.as_ref().unwrap() {
-            assert_eq!(&expected_start, actual);
-        }
-        // IN-13
-        let expected_end =
-            Date::Date(time::Date::from_calendar_date(2009, Month::December, 31).unwrap());
-        if let DateTime::Date(actual) = result.period.as_ref().unwrap().end.as_ref().unwrap() {
-            assert_eq!(&expected_end, actual);
-        }
-
-        match result.assigner.as_ref() {
-            None => assert!(false, "assigner is expected"),
-            Some(assigner_ref) => {
-                assert!(assigner_ref.reference.is_none());
-                assert!(assigner_ref.identifier.is_some());
-                assert_eq!(
-                    "555555555",
-                    assigner_ref
-                        .identifier
-                        .as_ref()
-                        .unwrap()
-                        .value
-                        .as_ref()
-                        .unwrap()
-                );
-                assert_eq!(
-                    "http://fhir.de/sid/arge-ik/iknr",
-                    assigner_ref
-                        .identifier
-                        .as_ref()
-                        .unwrap()
-                        .system
-                        .as_ref()
-                        .unwrap()
-                );
-                assert!(assigner_ref.identifier.as_ref().unwrap().r#type.is_some());
-                assert_eq!(
-                    "http://terminology.hl7.org/CodeSystem/v2-0203",
-                    assigner_ref
-                        .identifier
-                        .as_ref()
-                        .unwrap()
-                        .r#type
-                        .as_ref()
-                        .unwrap()
-                        .coding[0]
-                        .as_ref()
-                        .unwrap()
-                        .system
-                        .as_ref()
-                        .unwrap()
-                );
-                assert_eq!(
-                    "XX",
-                    assigner_ref
-                        .identifier
-                        .as_ref()
-                        .unwrap()
-                        .r#type
-                        .as_ref()
-                        .unwrap()
-                        .coding[0]
-                        .as_ref()
-                        .unwrap()
-                        .code
-                        .as_ref()
-                        .unwrap()
-                );
-            }
-        }
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -976,40 +942,6 @@ IN2|4||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||
         let config = test_config();
         let identifiers = create_patient_identifiers(&msg, &config).unwrap();
         assert_eq!(identifiers.len(), 2);
-    }
-
-    ///
-    /// print segments to console for better readability
-    /// # Arguments
-    ///
-    /// * `msg`: parsed Hl7 message
-    ///
-    /// returns: ()
-    fn print_hl7_message(msg: &Message) {
-        let _z = &msg
-            .segments
-            .iter()
-            .map(|s| {
-                println!("Segment {}", s.name);
-                for idx in 0..s.fields.len() {
-                    if s.fields[idx].is_empty() {
-                        println!("{}-{} = ''", s.name, idx + 1);
-                    } else if s.fields[idx].repeats.is_empty() || s.fields[idx].repeats.len() == 1 {
-                        println!("{}-{} = {}", s.name, idx + 1, s.fields[idx].raw_value());
-                    } else {
-                        for i in 0..s.fields[idx].repeats.len() {
-                            println!(
-                                "{}-{}.{} = {}",
-                                s.name,
-                                idx + 1,
-                                i + 1,
-                                s.fields[idx].repeats[i].raw_value()
-                            )
-                        }
-                    }
-                }
-            })
-            .count();
     }
 
     #[test]
@@ -1069,8 +1001,6 @@ IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = test_config();
         let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
-
-        print_hl7_message(&msg_full);
         assert_eq!(identifiers.len(), 2);
 
         assert_eq!(
@@ -1202,5 +1132,64 @@ IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Mus
             get_identifier_period(in1),
             Err(MappingError::FormattingError(_))
         ));
+    }
+
+    #[test]
+    fn test_map_addresses() {
+        let msg = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|202208200651||ADT^A04^ADT_A04|65298857|P|2.5||640340718|NE|NE||8859/1
+PID|1|1212121|1212121|21600000|Sokolovski, Malina||19820101101139|F|||Hexengasse 1^^Traumstadt^^12345^D^L~Wettergasse 42^^Wetter^^54321^D^L||012345/1234^^PH~0123451234^^CP~max-muster.mann@web.de^^X.400|||S|ev||||12345~23456|||||D||||N"#;
+        let msg = Message::parse_with_lenient_newlines(msg, true).unwrap();
+
+        // two addresses
+        let expected = vec![
+            Address::builder()
+                .r#type(AddressType::Both)
+                .line(vec![Some("Hexengasse 1".into())])
+                .city("Traumstadt".into())
+                .postal_code("12345".into())
+                .country("D".into())
+                .build()
+                .unwrap(),
+            Address::builder()
+                .r#type(AddressType::Both)
+                .line(vec![Some("Wettergasse 42".into())])
+                .city("Wetter".into())
+                .postal_code("54321".into())
+                .country("D".into())
+                .build()
+                .unwrap(),
+        ];
+        let addresses: Vec<Address> = map_addresses(&msg).unwrap().into_iter().flatten().collect();
+
+        assert_eq!(addresses, expected);
+    }
+
+    #[test]
+    fn test_map_names() {
+        let msg = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|202208200651||ADT^A04^ADT_A04|65298857|P|2.5||640340718|NE|NE||8859/1
+PID|||||Schuster^Regine^^^^^L~Musterfrau^Regine^^^^^M|||||||||||||||||||||||||"#;
+        let msg = Message::parse_with_lenient_newlines(msg, true).unwrap();
+
+        let expected = vec![
+            HumanName::builder()
+                .r#use(NameUse::Official)
+                .given(vec![Some("Regine".into())])
+                .family("Schuster".into())
+                .build()
+                .unwrap(),
+            HumanName::builder()
+                .r#use(NameUse::Maiden)
+                .given(vec![Some("Regine".into())])
+                .family("Musterfrau".into())
+                .build()
+                .unwrap(),
+        ];
+        let names = map_name(&msg)
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<HumanName>>();
+
+        assert_eq!(names, expected);
     }
 }
