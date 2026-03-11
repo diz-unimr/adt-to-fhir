@@ -435,12 +435,18 @@ fn map_versorgungsstellenkontakt(
             Some(map_official_enc_identifier(msg, config)?),
         ])
         .period(map_period(msg, EncounterLevel::CareSite)?)
+        .subject(subject_ref(msg, &config.person.system)?)
+        .part_of(resource_ref(
+            &ResourceType::Encounter,
+            parse_field_value(msg, "ZBE", 1)?
+                .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?
+                .as_str(),
+            &config.fall.abteilungskontakt.system,
+        )?)
         .build()?;
 
     // TODO:
-    // location, E, ref auf location
-
-    // do at basis: pat ref, enc class, type, period
+    // location,  ref auf location, typ
 
     Ok(versorgungskontakt)
 }
