@@ -3,7 +3,7 @@ use crate::error::{MappingError, MessageAccessError};
 use crate::fhir::mapper::{EntryRequestType, bundle_entry, parse_datetime, resource_ref};
 use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{
-    MessageType, message_type, parse_component, parse_field, parse_field_value,
+    EncounterLevel, MessageType, message_type, parse_component, parse_field, parse_field_value,
 };
 use anyhow::anyhow;
 use fhir_model::DateTime;
@@ -32,13 +32,14 @@ pub(super) fn map(
         | MessageType::A04
         | MessageType::A05 => {
             let enc_admit = map_einrichtungskontakt(msg, &config, resources)?;
+            let care_site_enc = map_versorgungsstellenkontakt(msg, &config, resources)?;
             // todo
             // ...
 
-            Ok(vec![bundle_entry(
-                enc_admit,
-                EntryRequestType::UpdateAsCreate,
-            )?])
+            Ok(vec![
+                bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?,
+                bundle_entry(care_site_enc, EntryRequestType::UpdateAsCreate)?,
+            ])
         }
         MessageType::A11 | MessageType::A27 => {
             // todo
@@ -62,40 +63,19 @@ fn map_einrichtungskontakt(
     let mut admit = Encounter::builder()
         .meta(map_meta(config)?)
         .identifier(vec![
-            Some(
-                Identifier::builder()
-                    .system(config.fall.einrichtungskontakt.system.clone())
-                    .value(map_visit_number(msg)?)
-                    .r#use(IdentifierUse::Usual)
-                    .build()?,
-            ),
+            Some(map_enc_identifier(msg, config, EncounterLevel::Facility)?),
             // common identifier is last
-            Some(
-                Identifier::builder()
-                    .system(config.fall.system.clone())
-                    .value(map_visit_number(msg)?)
-                    .r#use(IdentifierUse::Official)
-                    .r#type(
-                        CodeableConcept::builder()
-                            .coding(vec![Some(
-                                Coding::builder()
-                                    .system(
-                                        "http://terminology.hl7.org/CodeSystem/v2-0203".to_string(),
-                                    )
-                                    .code("VN".to_string())
-                                    .build()?,
-                            )])
-                            .build()?,
-                    )
-                    .build()?,
-            ),
+            Some(map_official_enc_identifier(msg, config)?),
         ])
         .class(map_encounter_class(msg)?)
         .r#type(map_encounter_type(msg)?)
         .subject(subject_ref(msg, &config.person.system)?)
-        .period(map_period(msg)?)
+        .period(map_period(msg, EncounterLevel::Facility)?)
         // set status depends on period.start / period.end
-        .status(map_encounter_status(&map_period(msg)?))
+        .status(map_encounter_status(&map_period(
+            msg,
+            EncounterLevel::Facility,
+        )?))
         .build()?;
 
     // fab related
@@ -110,6 +90,58 @@ fn map_einrichtungskontakt(
     admit.hospitalization = map_admit_source(msg)?;
 
     Ok(admit)
+}
+
+fn map_official_enc_identifier(msg: &Message, config: &Fhir) -> Result<Identifier, MappingError> {
+    Identifier::builder()
+        .system(config.fall.system.clone())
+        .value(map_visit_number(msg)?)
+        .r#use(IdentifierUse::Official)
+        .r#type(
+            CodeableConcept::builder()
+                .coding(vec![Some(
+                    Coding::builder()
+                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
+                        .code("VN".to_string())
+                        .build()?,
+                )])
+                .build()?,
+        )
+        .build()
+        .map_err(Into::into)
+}
+
+fn map_enc_identifier(
+    msg: &Message,
+    config: &Fhir,
+    level: EncounterLevel,
+) -> Result<Identifier, MappingError> {
+    let value: String;
+    let system: String;
+
+    match level {
+        EncounterLevel::Facility => {
+            system = config.fall.einrichtungskontakt.system.clone();
+            value = map_visit_number(msg)?;
+        }
+        EncounterLevel::Department => {
+            system = config.fall.abteilungskontakt.system.clone();
+            value = parse_field_value(msg, "ZBE", 1)?
+                .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?;
+        }
+        EncounterLevel::CareSite => {
+            system = config.fall.versorgungsstellenkontakt.system.clone();
+            value = parse_field_value(msg, "ZBE", 1)?
+                .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?;
+        }
+    }
+
+    Identifier::builder()
+        .system(system)
+        .value(value)
+        .r#use(IdentifierUse::Usual)
+        .build()
+        .map_err(Into::into)
 }
 
 fn map_encounter_type(msg: &Message) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
@@ -246,26 +278,48 @@ fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, M
     Ok(None)
 }
 
-fn map_period(msg: &Message) -> Result<Period, MappingError> {
-    let start: DateTime = parse_datetime(
-        parse_field_value(msg, "PV1", 44)?
-            .ok_or(anyhow!("empty datetime in PV1.44"))?
-            .as_str(),
-    )?;
-    let period = Period::builder().start(start.clone());
+fn map_period(msg: &Message, lvl: EncounterLevel) -> Result<Period, MappingError> {
+    let start: DateTime;
+    let end: Option<DateTime>;
+    match lvl {
+        EncounterLevel::Facility => {
+            start = parse_datetime(
+                parse_field_value(msg, "PV1", 44)?
+                    .ok_or(anyhow!("empty datetime in PV1.44"))?
+                    .as_str(),
+            )?;
 
-    let p = match parse_field_value(msg, "PV1", 45)? {
-        Some(end) => period.end(parse_datetime(end.as_str())?),
-        None => {
-            match message_type(msg).map_err(MessageAccessError::MessageTypeError)? {
-                // A04 has no end date is assigned start date instead
-                MessageType::A04 => period.end(start),
-                _ => period,
-            }
+            end = match parse_field_value(msg, "PV1", 45)? {
+                Some(end) => Some(parse_datetime(end.as_str())?),
+                None => None,
+            };
         }
-    };
+        EncounterLevel::Department | EncounterLevel::CareSite => {
+            start = parse_datetime(
+                parse_field_value(msg, "ZBE", 2)?
+                    .ok_or(anyhow!("empty datetime in ZBE-2"))?
+                    .as_str(),
+            )?;
+            end = match parse_field_value(msg, "ZBE", 3)? {
+                Some(end) => Some(parse_datetime(end.as_str())?),
+                None => {
+                    // A04 get never an end date form source system - therefore we use start date here as well
+                    if MessageType::A04 == message_type(msg).map_err(MessageAccessError::from)? {
+                        Some(start.clone())
+                    } else {
+                        None
+                    }
+                }
+            };
+        }
+    }
 
-    Ok(p.build()?)
+    let mut period: Period = Period::builder().start(start).build()?;
+    if end.is_some() {
+        period.end = end;
+    }
+
+    Ok(period)
 }
 
 fn map_encounter_status(period: &Period) -> EncounterStatus {
@@ -366,4 +420,27 @@ fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
     } else {
         Ok(None)
     }
+}
+
+fn map_versorgungsstellenkontakt(
+    msg: &Message,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Encounter, MappingError> {
+    let versorgungskontakt = Encounter::builder()
+        .class(map_encounter_class(msg)?)
+        .identifier(vec![
+            Some(map_enc_identifier(msg, config, EncounterLevel::CareSite)?),
+            // common identifier is last
+            Some(map_official_enc_identifier(msg, config)?),
+        ])
+        .period(map_period(msg, EncounterLevel::CareSite)?)
+        .build()?;
+
+    // TODO:
+    // location, E, ref auf location
+
+    // do at basis: pat ref, enc class, type, period
+
+    Ok(versorgungskontakt)
 }
