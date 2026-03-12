@@ -470,6 +470,7 @@ fn map_versorgungsstellenkontakt(
 ) -> Result<Encounter, MappingError> {
     let versorgungskontakt = Encounter::builder()
         .class(map_encounter_class(msg)?)
+        .r#type(map_encounter_type(msg, EncounterLevel::Department)?)
         .identifier(vec![
             Some(map_enc_identifier(msg, config, EncounterLevel::CareSite)?),
             // common identifier is last
@@ -484,10 +485,14 @@ fn map_versorgungsstellenkontakt(
                 .as_str(),
             &config.fall.abteilungskontakt.system,
         )?)
+        .service_provider(
+            parse_fab(msg)?
+                .and_then(|f| fab_ref(&f).ok())
+                .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
+        )
         .build()?;
 
     // TODO:
-    // location,  ref auf location, typ
-
+    // location,  ref auf location,
     Ok(versorgungskontakt)
 }
