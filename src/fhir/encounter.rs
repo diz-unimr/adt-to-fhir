@@ -4,13 +4,16 @@ use crate::fhir::mapper::{EntryRequestType, bundle_entry, parse_datetime, resour
 use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{
     EncounterLevel, MessageType, message_type, parse_component, parse_field, parse_field_value,
+    parse_repeating_field_value,
 };
 use anyhow::anyhow;
-use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
-use fhir_model::r4b::resources::{BundleEntry, Encounter, EncounterHospitalization, ResourceType};
+use fhir_model::r4b::resources::{
+    BundleEntry, Encounter, EncounterHospitalization, EncounterLocation, ResourceType,
+};
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period, Reference};
 use fhir_model::time::OffsetDateTime;
+use fhir_model::{BuilderError, DateTime};
 use hl7_parser::Message;
 
 pub(super) fn map(
@@ -126,12 +129,12 @@ fn map_enc_identifier(
         }
         EncounterLevel::Department => {
             system = config.fall.abteilungskontakt.system.clone();
-            value = parse_field_value(msg, "ZBE", 1)?
+            value = parse_repeating_field_value(msg, "ZBE", 1)?
                 .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?;
         }
         EncounterLevel::CareSite => {
             system = config.fall.versorgungsstellenkontakt.system.clone();
-            value = parse_field_value(msg, "ZBE", 1)?
+            value = parse_repeating_field_value(msg, "ZBE", 1)?
                 .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?;
         }
     }
@@ -470,6 +473,7 @@ fn map_versorgungsstellenkontakt(
 ) -> Result<Encounter, MappingError> {
     let versorgungskontakt = Encounter::builder()
         .class(map_encounter_class(msg)?)
+        .meta(map_meta(config)?)
         .r#type(map_encounter_type(msg, EncounterLevel::Department)?)
         .identifier(vec![
             Some(map_enc_identifier(msg, config, EncounterLevel::CareSite)?),
@@ -490,9 +494,121 @@ fn map_versorgungsstellenkontakt(
                 .and_then(|f| fab_ref(&f).ok())
                 .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
         )
+        .location(map_lvl_3_locations(msg, config)?)
+        .status(map_encounter_status(&map_period(
+            msg,
+            EncounterLevel::CareSite,
+        )?))
+        .period(map_period(msg, EncounterLevel::CareSite)?)
         .build()?;
 
-    // TODO:
-    // location,  ref auf location,
     Ok(versorgungskontakt)
+}
+
+fn map_lvl_3_locations(
+    msg: &Message,
+    config: &Fhir,
+) -> Result<Vec<Option<EncounterLocation>>, MappingError> {
+    let mut locations: Vec<Option<EncounterLocation>> = vec![];
+    const LOCATION_TYPE_SYSTEM: &str =
+        "http://terminology.hl7.org/CodeSystem/location-physical-type";
+    if let Some(department) = parse_fab(msg)? {
+        // department location should be always available
+        locations.push(Some(
+            EncounterLocation::builder()
+                .physical_type(get_cc_with_one_code(
+                    "wa".to_string(),
+                    LOCATION_TYPE_SYSTEM.to_string(),
+                )?)
+                .location(
+                    Reference::builder()
+                        .identifier(
+                            Identifier::builder()
+                                .value(department)
+                                .system(config.location.system_caresite.to_string())
+                                .build()?,
+                        )
+                        .build()?,
+                )
+                .build()?,
+        ));
+        if parse_field(msg, "PV1", 2)?
+            .map(|s| s.raw_value() == "I")
+            .is_some()
+        {
+            locations.push(None);
+        }
+        Ok(locations)
+    } else {
+        Err(MappingError::Other(anyhow!(
+            "could not determinate patient location"
+        )))
+    }
+}
+
+fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConcept, BuilderError> {
+    CodeableConcept::builder()
+        .coding(vec![Some(
+            Coding::builder()
+                .code(code.to_string())
+                .system(system.to_string())
+                .build()?,
+        )])
+        .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
+    use crate::fhir::resources::Department;
+    use std::collections::HashMap;
+
+    //noinspection DuplicatedCode
+    fn get_test_config() -> Fhir {
+        Fhir {
+            facility_id: "260620431".to_string(),
+            person: PatientConfig {
+                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
+                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
+                other_insurance_system: "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id".to_string()
+            },
+            fall: FallConfig {
+                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0".to_string(),
+                system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
+                einrichtungskontakt: Default::default(),
+                abteilungskontakt: Default::default(),
+                versorgungsstellenkontakt: Default::default(),
+            },
+            location: LocationConfig {
+                system_caresite: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
+                system_room: "https://fhir.diz.uni-marburg.de/sid/location-room-id".to_string(),
+                system_bed: "https://fhir.diz.uni-marburg.de/sid/location-bed-id".to_string(),
+            },
+        }
+    }
+    #[test]
+    fn map_lvl_3_locations_test() {
+        let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|I|POL1234^BSP-2-2^^POL^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||0800|9||||202511022120|202511022120||||||A
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+"#, true).unwrap();
+        let actual = map_versorgungsstellenkontakt(
+            &msg,
+            &get_test_config(),
+            &ResourceMap {
+                department_map: HashMap::from([(
+                    "POL".to_string(),
+                    Department {
+                        abteilungs_bezeichnung: "Pneumologie".to_string(),
+                        fachabteilungs_schluessel: "0800".to_string(),
+                    },
+                )]),
+                location_map: Default::default(),
+            },
+        );
+        assert!(actual.is_ok());
+    }
 }

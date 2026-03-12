@@ -643,7 +643,7 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FallConfig, Fhir, PatientConfig};
+    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
     use fhir_model::Date;
     use fhir_model::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Delete;
@@ -823,6 +823,7 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
                     "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id".to_string(),
             },
             fall: FallConfig::default(),
+            location: LocationConfig::default(),
         }
     }
 

@@ -28,3 +28,7 @@ fhir:
       system: https://fhir.diz.uni-marburg.de/sid/encounter-department-id
     versorgungsstellenkontakt:
       system: https://fhir.diz.uni-marburg.de/sid/encounter-caresite-id
+  location:
+    system_caresite: https://fhir.diz.uni-marburg.de/sid/location-caresite-id
+    system_room: https://fhir.diz.uni-marburg.de/sid/location-room-id
+    system_bed: https://fhir.diz.uni-marburg.de/sid/location-bed-id
