@@ -4,7 +4,7 @@ use crate::fhir::mapper::{EntryRequestType, bundle_entry, parse_datetime, resour
 use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{
     EncounterLevel, MessageType, message_type, parse_component, parse_field, parse_field_value,
-    parse_repeating_field_value,
+    parse_repeating_field_component_value, parse_repeating_field_value,
 };
 use anyhow::anyhow;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
@@ -81,11 +81,11 @@ fn map_einrichtungskontakt(
         )?))
         .build()?;
 
-    // fab related fixme: this block belong to lvl2 encounter
+    // fab related TODO: check if this block is correct belong to lvl2 encounter - may be lvl2
     if let Some(f) = fab {
         // fab schluessel
         admit.service_type = resources.map_fab_schluessel(&f)?;
-        // service provider fixme: service provider is the hospital not department
+        // service provider
         admit.service_provider = Some(fab_ref(&f)?);
     }
 
@@ -535,8 +535,58 @@ fn map_lvl_3_locations(
         if parse_field(msg, "PV1", 2)?
             .map(|s| s.raw_value() == "I")
             .is_some()
+            && parse_repeating_field_component_value(msg, "PV1", 3, 5)?
+                .map(|v| v == "KLINIKUM")
+                .is_some()
         {
-            locations.push(None);
+            let pv1_3_1 = parse_repeating_field_component_value(msg, "PV1", 3, 1)?;
+            let pv1_3_2 = parse_repeating_field_component_value(msg, "PV1", 3, 2)?;
+            let pv1_3_3 = parse_repeating_field_component_value(msg, "PV1", 3, 3)?;
+
+            if let (Some(pv1_3_1), Some(pv1_3_2)) = (pv1_3_1.clone(), pv1_3_2.clone()) {
+                locations.push(Some(
+                    EncounterLocation::builder()
+                        .physical_type(get_cc_with_one_code(
+                            "ro".to_string(),
+                            LOCATION_TYPE_SYSTEM.to_string(),
+                        )?)
+                        .location(
+                            Reference::builder()
+                                .identifier(
+                                    Identifier::builder()
+                                        .value(format!("{}_{}", pv1_3_1, pv1_3_2).to_string())
+                                        .system(config.location.system_room.to_string())
+                                        .build()?,
+                                )
+                                .build()?,
+                        )
+                        .build()?,
+                ));
+            }
+
+            if let (Some(pv1_3_1), Some(pv1_3_2), Some(pv1_3_3)) = (pv1_3_1, pv1_3_2, pv1_3_3) {
+                locations.push(Some(
+                    EncounterLocation::builder()
+                        .physical_type(get_cc_with_one_code(
+                            "bd".to_string(),
+                            LOCATION_TYPE_SYSTEM.to_string(),
+                        )?)
+                        .location(
+                            Reference::builder()
+                                .identifier(
+                                    Identifier::builder()
+                                        .value(
+                                            format!("{}_{}_{}", pv1_3_1, pv1_3_2, pv1_3_3)
+                                                .to_string(),
+                                        )
+                                        .system(config.location.system_bed.to_string())
+                                        .build()?,
+                                )
+                                .build()?,
+                        )
+                        .build()?,
+                ));
+            }
         }
         Ok(locations)
     } else {
@@ -592,7 +642,7 @@ mod tests {
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
 PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
-PV1|1|I|POL1234^BSP-2-2^^POL^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||0800|9||||202511022120|202511022120||||||A
+PV1|1|I|POL1234^BSP-2-2^2^POL^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||0800|9||||202511022120|202511022120||||||A
 ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#, true).unwrap();
         let actual = map_versorgungsstellenkontakt(
@@ -610,5 +660,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             },
         );
         assert!(actual.is_ok());
+
+        assert_eq!(actual.unwrap().location.len(), 3);
     }
 }
