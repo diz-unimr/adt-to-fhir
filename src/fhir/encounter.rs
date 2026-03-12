@@ -68,7 +68,7 @@ fn map_einrichtungskontakt(
             Some(map_official_enc_identifier(msg, config)?),
         ])
         .class(map_encounter_class(msg)?)
-        .r#type(map_encounter_type(msg)?)
+        .r#type(map_encounter_type(msg, EncounterLevel::Facility)?)
         .subject(subject_ref(msg, &config.person.system)?)
         .period(map_period(msg, EncounterLevel::Facility)?)
         // set status depends on period.start / period.end
@@ -78,11 +78,11 @@ fn map_einrichtungskontakt(
         )?))
         .build()?;
 
-    // fab related
+    // fab related fixme: this block belong to lvl2 encounter
     if let Some(f) = fab {
         // fab schluessel
         admit.service_type = resources.map_fab_schluessel(&f)?;
-        // service provider
+        // service provider fixme: service provider is the hospital not department
         admit.service_provider = Some(fab_ref(&f)?);
     }
 
@@ -144,15 +144,45 @@ fn map_enc_identifier(
         .map_err(Into::into)
 }
 
-fn map_encounter_type(msg: &Message) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
-    let mut coding = vec![Some(
-        // Kontaktebene
-        Coding::builder()
-            .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
-            .code("einrichtungskontakt".to_string())
-            .display("Einrichtungskontakt".to_string())
-            .build()?,
-    )];
+fn map_encounter_type(
+    msg: &Message,
+    level: EncounterLevel,
+) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
+    let mut coding = vec![];
+
+    // Kontaktebene
+    match level {
+        EncounterLevel::Facility => {
+            coding.push(Some(
+                // Kontaktebene
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
+                    .code("einrichtungskontakt".to_string())
+                    .display("Einrichtungskontakt".to_string())
+                    .build()?,
+            ));
+        }
+        EncounterLevel::Department => {
+            coding.push(Some(
+                // Kontaktebene
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
+                    .code("abteilungskontakt".to_string())
+                    .display("Abteilungskontakt".to_string())
+                    .build()?,
+            ));
+        }
+        EncounterLevel::CareSite => {
+            coding.push(Some(
+                // Kontaktebene
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
+                    .code("versorgungsstellenkontakt".to_string())
+                    .display("Versorgungsstellenkontakt".to_string())
+                    .build()?,
+            ));
+        }
+    }
 
     if let Some(c) = map_kontaktart(msg)? {
         // Kontaktart
@@ -384,8 +414,19 @@ fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
             // O ("Ambulantes Operieren") => operation
             // I ("Normalstationär") => normalstationaer
             // I ("Intensivstationär") => intensivstationaer
-            "I" => Ok(None),
-            "O" => Ok(None),
+            "I" | "O" => {
+                if message_type(msg).ok() == Some(MessageType::A04) {
+                    Ok(Some(
+                        Coding::builder()
+                            .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                            .code("ub".to_string())
+                            .display("Untersuchung und Behandlung".to_string())
+                            .build()?,
+                    ))
+                } else {
+                    Ok(None)
+                }
+            }
             "H" => Ok(Some(
                 Coding::builder()
                     .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
