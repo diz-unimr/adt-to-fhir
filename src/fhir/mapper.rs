@@ -289,7 +289,7 @@ mod tests {
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
-        assert_eq!(bundle.entry.len(), 2);
+        assert_eq!(bundle.entry.len(), 3);
 
         let patient: Vec<Patient> = bundle
             .entry

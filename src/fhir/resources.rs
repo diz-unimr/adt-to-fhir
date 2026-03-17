@@ -122,6 +122,46 @@ where
     match s {
         "1" => Ok(true),
         "" | "0" => Ok(false),
-        _ => Err(de::Error::unknown_variant(s, &["", "1"])),
+        _ => Err(de::Error::unknown_variant(s, &["", "0", "1"])),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fhir::resources::{Department, ResourceMap};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_deserialize_bool() {
+        let resources = ResourceMap {
+            department_map: HashMap::from([(
+                "POL".to_string(),
+                Department {
+                    abteilungs_bezeichnung: "Pneumologie".to_string(),
+                    fachabteilungs_schluessel: "0800".to_string(),
+                },
+            )]),
+            location_map: Default::default(),
+        };
+
+        let expected = Coding::builder()
+            .system("http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert".into())
+            .code("0800".into())
+            .display("Pneumologie".into())
+            .build()
+            .unwrap();
+
+        let actual = resources
+            .map_fab_schluessel("POL")
+            .unwrap()
+            .unwrap()
+            .coding
+            .first()
+            .unwrap()
+            .clone()
+            .unwrap();
+
+        assert_eq!(actual, expected);
     }
 }
