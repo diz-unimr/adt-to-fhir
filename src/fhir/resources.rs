@@ -12,29 +12,46 @@ use std::path::PathBuf;
 #[derive(Clone)]
 pub(crate) struct Location {
     desc: String,
+    /// Fachabteilungskürzel
     fachabteilungs_kuerzel: String,
+    /// Abteilungsbezeichnung
     abteilungs_bezeichnung: String,
+    /// Fachabteilungsschlüssel
     fachabteilungs_schluessel: String,
+    // Kennzeichen Intensivstation (ICU)
     #[serde(deserialize_with = "deserialize_bool")]
     ist_intensiv_station: bool,
 }
 
-// todo: might be derived from Location
+/// Fachabteilung
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone)]
 pub(crate) struct Department {
+    /// Fachabteilungsschlüssel
     pub(crate) fachabteilungs_schluessel: String,
+    /// Abteilungsbezeichnung
     pub(crate) abteilungs_bezeichnung: String,
 }
 
+/// Mappings for Fachabteilung (encounter department and location)
 #[derive(Clone)]
 pub(crate) struct ResourceMap {
+    /// Map with key: Fachabteilungsschlüssel
     pub(crate) department_map: HashMap<String, Department>,
+    /// Map with key: Kostenstelle
     pub(crate) location_map: HashMap<String, Location>,
 }
 
 impl ResourceMap {
+    /// Creates a new [`ResourceMap`] instance.
+    ///
+    /// The instance is initialized with data from external json files from
+    /// `resources/mapping`:
+    ///
+    /// [department_map](ResourceMap::department_map): `InfoByAbteilungskuerzel.json`
+    ///
+    /// [location_map](ResourceMap::location_map): `InfoByKostenstelle.json`
     pub(crate) fn new() -> Result<Self, anyhow::Error> {
         Ok(ResourceMap {
             department_map: init_department_map()?,
@@ -42,6 +59,12 @@ impl ResourceMap {
         })
     }
 
+    /// Maps a given Fachabteilungsschlüssel to a Department
+    /// by doing a lookup on the department data map.
+    ///
+    /// If the lookup is successfull a single [`Coding`] from
+    /// [FachabteilungsschluesselErweitert ValueSet](https://simplifier.net/resolve?scope=de.basisprofil.r4@1.5.4&canonical=http://fhir.de/ValueSet/dkgev/Fachabteilungsschluessel-erweitert)
+    /// is returned as part of the [`CodeableConcept`].
     pub(crate) fn map_fab_schluessel(
         &self,
         code: &str,
