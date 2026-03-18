@@ -81,16 +81,14 @@ fn map_einrichtungskontakt(
         )?))
         .build()?;
 
-    // fab related TODO: check if this block is correct belong to lvl2 encounter - may be lvl2
-    if let Some(f) = fab {
-        // fab schluessel
-        admit.service_type = resources.map_fab_schluessel(&f)?;
-        // service provider
-        admit.service_provider = Some(fab_ref(&f)?);
-    }
-
     // hospitalization admit source
     admit.hospitalization = map_admit_source(msg)?;
+
+    admit.service_provider = Some(resource_ref(
+        &ResourceType::Organization,
+        &config.fall.institut_kennzeichen,
+        &config.fall.institut_kennzeichen_system,
+    )?);
 
     Ok(admit)
 }
@@ -629,6 +627,8 @@ mod tests {
                 einrichtungskontakt: Default::default(),
                 abteilungskontakt: Default::default(),
                 versorgungsstellenkontakt: Default::default(),
+                institut_kennzeichen: "123456789".to_string(),
+                institut_kennzeichen_system: "http://fhir.de/sid/encounter-id".to_string(),
             },
             location: LocationConfig {
                 system_caresite: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),

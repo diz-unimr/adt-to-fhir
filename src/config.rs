@@ -45,6 +45,8 @@ pub(crate) struct FallConfig {
     pub(crate) einrichtungskontakt: SystemConfig,
     pub(crate) abteilungskontakt: SystemConfig,
     pub(crate) versorgungsstellenkontakt: SystemConfig,
+    pub(crate) institut_kennzeichen: String,
+    pub(crate) institut_kennzeichen_system: String,
 }
 #[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct LocationConfig {
