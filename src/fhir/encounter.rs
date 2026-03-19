@@ -1,6 +1,9 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError};
-use crate::fhir::mapper::{EntryRequestType, bundle_entry, parse_datetime, resource_ref};
+use crate::fhir::mapper::{
+    EntryRequestType, build_identifier, bundle_entry, parse_datetime, resource_ref,
+};
+use crate::fhir::misc::is_inpatient_location;
 use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{
     EncounterLevel, MessageType, message_type, parse_component, parse_field, parse_field_value,
@@ -530,13 +533,7 @@ fn map_lvl_3_locations(
                 )
                 .build()?,
         ));
-        if parse_field(msg, "PV1", 2)?
-            .map(|s| s.raw_value() == "I")
-            .is_some()
-            && parse_repeating_field_component_value(msg, "PV1", 3, 5)?
-                .map(|v| v == "KLINIKUM")
-                .is_some()
-        {
+        if is_inpatient_location(msg)? {
             let pv1_3_1 = parse_repeating_field_component_value(msg, "PV1", 3, 1)?;
             let pv1_3_2 = parse_repeating_field_component_value(msg, "PV1", 3, 2)?;
             let pv1_3_3 = parse_repeating_field_component_value(msg, "PV1", 3, 3)?;
@@ -550,12 +547,10 @@ fn map_lvl_3_locations(
                         )?)
                         .location(
                             Reference::builder()
-                                .identifier(
-                                    Identifier::builder()
-                                        .value(format!("{}_{}", pv1_3_1, pv1_3_2).to_string())
-                                        .system(config.location.system_room.to_string())
-                                        .build()?,
-                                )
+                                .identifier(build_identifier(
+                                    vec![pv1_3_1, pv1_3_2],
+                                    config.location.system_room.to_string(),
+                                )?)
                                 .build()?,
                         )
                         .build()?,
@@ -571,15 +566,10 @@ fn map_lvl_3_locations(
                         )?)
                         .location(
                             Reference::builder()
-                                .identifier(
-                                    Identifier::builder()
-                                        .value(
-                                            format!("{}_{}_{}", pv1_3_1, pv1_3_2, pv1_3_3)
-                                                .to_string(),
-                                        )
-                                        .system(config.location.system_bed.to_string())
-                                        .build()?,
-                                )
+                                .identifier(build_identifier(
+                                    vec![pv1_3_1, pv1_3_2, pv1_3_3],
+                                    config.location.system_bed.to_string(),
+                                )?)
                                 .build()?,
                         )
                         .build()?,

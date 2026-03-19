@@ -1,12 +1,11 @@
 use crate::config::Fhir;
 use crate::error::{FormattingError, MappingError};
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::{encounter, patient};
+use crate::fhir::{encounter, location, patient};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use fhir_model::DateFormatError::InvalidDate;
-use fhir_model::Instant;
 use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
@@ -15,6 +14,7 @@ use fhir_model::r4b::resources::{
 };
 use fhir_model::r4b::types::{Identifier, Reference};
 use fhir_model::time::{Month, OffsetDateTime};
+use fhir_model::{BuilderError, Instant};
 use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 
@@ -57,8 +57,9 @@ impl FhirMapper {
     fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>, MappingError> {
         let p = patient::map(v2_msg, self.config.clone())?;
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
+        let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
         // TODO map observation
-        let res = p.into_iter().chain(e).map(Some).collect();
+        let res = p.into_iter().chain(e).chain(l).map(Some).collect();
 
         Ok(res)
     }
@@ -212,6 +213,18 @@ pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
         dt.day() as u8,
     )?;
     Ok(Date::Date(date))
+}
+
+pub(crate) fn build_identifier(
+    value_components: Vec<String>,
+    system: String,
+) -> Result<Identifier, BuilderError> {
+    let identifier_value = value_components.join("_");
+
+    Identifier::builder()
+        .system(system.to_string())
+        .value(identifier_value.to_string())
+        .build()
 }
 
 #[cfg(test)]
