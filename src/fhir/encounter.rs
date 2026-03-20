@@ -1,22 +1,22 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError};
 use crate::fhir::mapper::{
-    EntryRequestType, build_identifier, bundle_entry, parse_datetime, resource_ref,
+    EntryRequestType, build_usual_identifier, bundle_entry, parse_datetime, resource_ref,
 };
-use crate::fhir::misc::is_inpatient_location;
 use crate::fhir::resources::ResourceMap;
+use crate::fhir::sharded_functions::{get_cc_with_one_code, is_inpatient_location, parse_fab};
 use crate::hl7::parser::{
     EncounterLevel, MessageType, message_type, parse_component, parse_field, parse_field_value,
     parse_repeating_field_component_value, parse_repeating_field_value,
 };
 use anyhow::anyhow;
+use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterHospitalization, EncounterLocation, ResourceType,
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period, Reference};
 use fhir_model::time::OffsetDateTime;
-use fhir_model::{BuilderError, DateTime};
 use hl7_parser::Message;
 
 pub(super) fn map(
@@ -212,28 +212,6 @@ fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
     resource_ref(&ResourceType::Patient, &pid, sid)
 }
 
-fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
-    if let Some(assigned_loc) = parse_field(msg, "PV1", 3)? {
-        let facility = parse_component(assigned_loc, 4);
-        let location = parse_component(assigned_loc, 1);
-        let loc_status = parse_component(assigned_loc, 5);
-        // let kostenstelle = extract_repeat(assigned_loc, 6)?;
-
-        // todo: kostenstelle lookup etc.
-        return match (facility, location, loc_status) {
-            // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
-            (Some(f), Some(_), _) => Ok(Some(f)),
-            // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
-            (None, Some(l), _) => Ok(Some(l)),
-            // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
-            (Some(_), None, Some(st)) => Ok(Some(st)),
-            _ => Ok(None),
-        };
-    }
-
-    Ok(None)
-}
-
 fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
     if let Some(source) = parse_field(msg, "PV1", 4)? {
         let admit = parse_component(source, 1);
@@ -382,8 +360,7 @@ fn map_visit_number(msg: &Message) -> Result<String, anyhow::Error> {
 fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
     Ok(Meta::builder()
         .profile(vec![Some(config.fall.profile.clone())])
-        // todo hl7 / orbis adt?
-        .source("#orbis".to_string())
+        .source(config.meta_source.to_string())
         .build()?)
 }
 
@@ -513,6 +490,7 @@ fn map_lvl_3_locations(
     let mut locations: Vec<Option<EncounterLocation>> = vec![];
     const LOCATION_TYPE_SYSTEM: &str =
         "http://terminology.hl7.org/CodeSystem/location-physical-type";
+
     if let Some(department) = parse_fab(msg)? {
         // department location should be always available
         locations.push(Some(
@@ -526,7 +504,7 @@ fn map_lvl_3_locations(
                         .identifier(
                             Identifier::builder()
                                 .value(department)
-                                .system(config.location.system_caresite.to_string())
+                                .system(config.location.system_ward.to_string())
                                 .build()?,
                         )
                         .build()?,
@@ -547,7 +525,7 @@ fn map_lvl_3_locations(
                         )?)
                         .location(
                             Reference::builder()
-                                .identifier(build_identifier(
+                                .identifier(build_usual_identifier(
                                     vec![pv1_3_1, pv1_3_2],
                                     config.location.system_room.to_string(),
                                 )?)
@@ -566,7 +544,7 @@ fn map_lvl_3_locations(
                         )?)
                         .location(
                             Reference::builder()
-                                .identifier(build_identifier(
+                                .identifier(build_usual_identifier(
                                     vec![pv1_3_1, pv1_3_2, pv1_3_3],
                                     config.location.system_bed.to_string(),
                                 )?)
@@ -584,17 +562,6 @@ fn map_lvl_3_locations(
     }
 }
 
-fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConcept, BuilderError> {
-    CodeableConcept::builder()
-        .coding(vec![Some(
-            Coding::builder()
-                .code(code.to_string())
-                .system(system.to_string())
-                .build()?,
-        )])
-        .build()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,6 +573,7 @@ mod tests {
     fn get_test_config() -> Fhir {
         Fhir {
             facility_id: "260620431".to_string(),
+            meta_source: "test".to_string(),
             person: PatientConfig {
                 profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
@@ -621,7 +589,7 @@ mod tests {
                 institut_kennzeichen_system: "http://fhir.de/sid/encounter-id".to_string(),
             },
             location: LocationConfig {
-                system_caresite: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
+                system_ward: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
                 system_room: "https://fhir.diz.uni-marburg.de/sid/location-room-id".to_string(),
                 system_bed: "https://fhir.diz.uni-marburg.de/sid/location-bed-id".to_string(),
             },

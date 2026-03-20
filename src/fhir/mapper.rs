@@ -215,13 +215,14 @@ pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
     Ok(Date::Date(date))
 }
 
-pub(crate) fn build_identifier(
+pub(crate) fn build_usual_identifier(
     value_components: Vec<String>,
     system: String,
 ) -> Result<Identifier, BuilderError> {
     let identifier_value = value_components.join("_");
 
     Identifier::builder()
+        .r#use(IdentifierUse::Usual)
         .system(system.to_string())
         .value(identifier_value.to_string())
         .build()
@@ -288,7 +289,7 @@ mod tests {
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
-        assert_eq!(bundle.entry.len(), 3);
+        assert_eq!(bundle.entry.len(), 4);
 
         let patient: Vec<Patient> = bundle
             .entry
@@ -330,6 +331,7 @@ mod tests {
     fn get_test_config() -> Fhir {
         Fhir {
             facility_id: "260620431".to_string(),
+            meta_source: "test".to_string(),
             person: PatientConfig {
                 profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
@@ -345,7 +347,7 @@ mod tests {
                 institut_kennzeichen_system: "http://fhir.de/sid/arge-ik/iknr".to_string()
             },
             location: LocationConfig {
-                system_caresite: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
+                system_ward: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
                 system_room: "https://fhir.diz.uni-marburg.de/sid/location-room-id".to_string(),
                 system_bed: "https://fhir.diz.uni-marburg.de/sid/location-bed-id".to_string(),
             },

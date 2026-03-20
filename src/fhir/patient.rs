@@ -816,6 +816,7 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
     fn test_config() -> Fhir {
         Fhir {
             facility_id: "260620431".to_string(),
+            meta_source: "test".to_string(),
             person: PatientConfig {
                 profile: Default::default(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
