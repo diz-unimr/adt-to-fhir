@@ -3,4 +3,4 @@ pub(crate) mod location;
 pub(crate) mod mapper;
 pub(crate) mod patient;
 pub(crate) mod resources;
-pub(crate) mod sharded_functions;
+pub mod sharded_fhir_functions;

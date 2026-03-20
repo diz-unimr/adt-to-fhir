@@ -231,8 +231,6 @@ pub(crate) fn build_usual_identifier(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
-    use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
@@ -241,9 +239,9 @@ mod tests {
         ResourceType,
     };
 
+    use crate::fhir::sharded_fhir_functions::{get_dummy_resources, get_test_config};
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use fhir_model::{WrongResourceType, time};
-    use std::collections::HashMap;
 
     #[test]
     fn test_parse_datetime() {
@@ -271,16 +269,7 @@ mod tests {
         let config = get_test_config();
         let mapper = FhirMapper {
             config: config.clone(),
-            resources: ResourceMap {
-                department_map: HashMap::from([(
-                    "POL".to_string(),
-                    Department {
-                        abteilungs_bezeichnung: "Pneumologie".to_string(),
-                        fachabteilungs_schluessel: "0800".to_string(),
-                    },
-                )]),
-                location_map: Default::default(),
-            },
+            resources: get_dummy_resources(),
         };
 
         // act
@@ -325,33 +314,6 @@ mod tests {
                 .find(|&pr| pr.as_str() == config.fall.profile)
                 .is_some()
         }));
-    }
-
-    //noinspection DuplicatedCode
-    fn get_test_config() -> Fhir {
-        Fhir {
-            facility_id: "260620431".to_string(),
-            meta_source: "test".to_string(),
-            person: PatientConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
-                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
-                other_insurance_system: "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id".to_string()
-            },
-            fall: FallConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0".to_string(),
-                system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
-                einrichtungskontakt: Default::default(),
-                abteilungskontakt: Default::default(),
-                versorgungsstellenkontakt: Default::default(),
-                institut_kennzeichen: "123456789".to_string(),
-                institut_kennzeichen_system: "http://fhir.de/sid/arge-ik/iknr".to_string()
-            },
-            location: LocationConfig {
-                system_ward: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
-                system_room: "https://fhir.diz.uni-marburg.de/sid/location-room-id".to_string(),
-                system_bed: "https://fhir.diz.uni-marburg.de/sid/location-bed-id".to_string(),
-            },
-        }
     }
 
     fn resource_from<T: TryFrom<Resource, Error = WrongResourceType>>(

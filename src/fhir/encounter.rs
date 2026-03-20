@@ -4,7 +4,7 @@ use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, parse_datetime, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::sharded_functions::{get_cc_with_one_code, is_inpatient_location, parse_fab};
+use crate::fhir::sharded_fhir_functions::{get_cc_with_one_code, is_inpatient_location, parse_fab};
 use crate::hl7::parser::{
     EncounterLevel, MessageType, message_type, parse_component, parse_field, parse_field_value,
     parse_repeating_field_component_value, parse_repeating_field_value,
@@ -565,36 +565,8 @@ fn map_lvl_3_locations(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
-    use crate::fhir::resources::Department;
-    use std::collections::HashMap;
+    use crate::fhir::sharded_fhir_functions::{get_dummy_resources, get_test_config};
 
-    //noinspection DuplicatedCode
-    fn get_test_config() -> Fhir {
-        Fhir {
-            facility_id: "260620431".to_string(),
-            meta_source: "test".to_string(),
-            person: PatientConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
-                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
-                other_insurance_system: "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id".to_string()
-            },
-            fall: FallConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0".to_string(),
-                system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
-                einrichtungskontakt: Default::default(),
-                abteilungskontakt: Default::default(),
-                versorgungsstellenkontakt: Default::default(),
-                institut_kennzeichen: "123456789".to_string(),
-                institut_kennzeichen_system: "http://fhir.de/sid/encounter-id".to_string(),
-            },
-            location: LocationConfig {
-                system_ward: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
-                system_room: "https://fhir.diz.uni-marburg.de/sid/location-room-id".to_string(),
-                system_bed: "https://fhir.diz.uni-marburg.de/sid/location-bed-id".to_string(),
-            },
-        }
-    }
     #[test]
     fn map_lvl_3_locations_test() {
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
@@ -603,20 +575,8 @@ PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&S
 PV1|1|I|POL1234^BSP-2-2^2^POL^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||0800|9||||202511022120|202511022120||||||A
 ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#, true).unwrap();
-        let actual = map_versorgungsstellenkontakt(
-            &msg,
-            &get_test_config(),
-            &ResourceMap {
-                department_map: HashMap::from([(
-                    "POL".to_string(),
-                    Department {
-                        abteilungs_bezeichnung: "Pneumologie".to_string(),
-                        fachabteilungs_schluessel: "0800".to_string(),
-                    },
-                )]),
-                location_map: Default::default(),
-            },
-        );
+        let actual =
+            map_versorgungsstellenkontakt(&msg, &get_test_config(), &get_dummy_resources());
         assert!(actual.is_ok());
 
         assert_eq!(actual.unwrap().location.len(), 3);
