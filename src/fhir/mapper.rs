@@ -278,8 +278,8 @@ mod tests {
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
-        Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
-        ResourceType,
+        Bundle, BundleEntry, BundleEntryRequest, Encounter, Location, Parameters, Patient,
+        Resource, ResourceType,
     };
 
     use crate::test_utils::tests::{get_dummy_resources, get_test_config};
@@ -321,7 +321,7 @@ mod tests {
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
-        assert_eq!(bundle.entry.len(), 4);
+        assert_eq!(bundle.entry.len(), 5);
 
         let patient: Vec<Patient> = bundle
             .entry
@@ -330,6 +330,13 @@ mod tests {
             .filter_map(|e| resource_from(e).ok())
             .collect();
         let encounter: Vec<Encounter> = bundle
+            .entry
+            .iter()
+            .flatten()
+            .filter_map(|e| resource_from(e).ok())
+            .collect();
+
+        let location: Vec<Location> = bundle
             .entry
             .iter()
             .flatten()
