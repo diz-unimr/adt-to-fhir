@@ -1,10 +1,11 @@
 use crate::config::Fhir;
 use crate::error::MappingError;
+use crate::fhir::mapper::{
+    EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code,
+    is_inpatient_location, parse_fab,
+};
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::sharded_fhir_functions::{get_cc_with_one_code, is_inpatient_location, parse_fab};
 use crate::hl7::parser::{MessageType, message_type, parse_repeating_field_component_value};
-
-use crate::fhir::mapper::{EntryRequestType, build_usual_identifier, bundle_entry};
 use fhir_model::r4b::resources::{BundleEntry, Location};
 use fhir_model::r4b::types::{CodeableConcept, Meta};
 use hl7_parser::Message;
@@ -143,7 +144,7 @@ pub(super) fn map(
 #[cfg(test)]
 mod tests {
     use crate::fhir::location::map;
-    use crate::fhir::sharded_fhir_functions::{get_dummy_resources, get_test_config};
+    use crate::fhir::test_utils::tests::{get_dummy_resources, get_test_config};
     use hl7_parser::Message;
     use rstest::rstest;
 

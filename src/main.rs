@@ -4,10 +4,12 @@ mod config;
 mod error;
 mod fhir;
 mod hl7;
+pub mod utils {
+    pub mod test_utils {}
+}
 
 use crate::config::{Kafka, Ssl};
 use crate::fhir::mapper::FhirMapper;
-// use crate::fhir::Mapper;
 use config::AppConfig;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};

@@ -1,10 +1,10 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError};
 use crate::fhir::mapper::{
-    EntryRequestType, build_usual_identifier, bundle_entry, parse_datetime, resource_ref,
+    EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code,
+    is_inpatient_location, parse_datetime, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::sharded_fhir_functions::{get_cc_with_one_code, is_inpatient_location, parse_fab};
 use crate::hl7::parser::{
     EncounterLevel, MessageType, message_type, parse_component, parse_field, parse_field_value,
     parse_repeating_field_component_value, parse_repeating_field_value,
@@ -565,8 +565,7 @@ fn map_lvl_3_locations(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fhir::sharded_fhir_functions::{get_dummy_resources, get_test_config};
-
+    use crate::fhir::test_utils::tests::{get_dummy_resources, get_test_config};
     #[test]
     fn map_lvl_3_locations_test() {
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
