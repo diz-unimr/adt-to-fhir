@@ -298,7 +298,7 @@ mod tests {
             let b: Bundle = serde_json::from_value(raw).unwrap();
 
             // assert resources
-            assert_eq!(b.entry.len(), 2);
+            assert_eq!(b.entry.len(), 3);
             assert!(
                 b.entry
                     .iter()
