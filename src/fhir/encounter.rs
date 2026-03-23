@@ -96,7 +96,7 @@ fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
 
 fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, MappingError> {
     // base encounter
-    let mut enc = base_encounter(msg, config, EncounterType::Einrichtungskontakt)?;
+    let mut enc = base_encounter(msg, config, &EncounterType::Einrichtungskontakt)?;
 
     // hospitalization admit source
     enc.hospitalization = map_admit_source(msg)?;
@@ -234,7 +234,7 @@ fn map_abteilungskontakt(
     resources: &ResourceMap,
 ) -> Result<Encounter, MappingError> {
     // base encounter
-    let mut enc = base_encounter(msg, config, EncounterType::Fachabteilungskontakt)?;
+    let mut enc = base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?;
 
     let fab = parse_fab(msg)?;
     // fab related
@@ -251,36 +251,22 @@ fn map_abteilungskontakt(
 fn base_encounter(
     msg: &Message,
     config: &Fhir,
-    enc_type: EncounterType,
+    enc_type: &EncounterType,
 ) -> Result<Encounter, MappingError> {
-    let visit_number = map_visit_number(msg)?;
-
     let admit = Encounter::builder()
         .meta(map_meta(config)?)
         .identifier(vec![
-            // identifier for Einrichtungskontakt
-            Some(
-                Identifier::builder()
-                    .system(config.fall.einrichtungskontakt.system.clone())
-                    .value(map_visit_number(msg)?)
-                    .r#use(IdentifierUse::Usual)
-                    .build()?,
-            ),
-            // common identifier is last
-            Some(map_default_identifier(
-                config.fall.system.clone(),
-                visit_number,
-            )?),
+            // identifier identifies this resources
+            Some(map_usual_identifier(msg, config, enc_type)?),
+            // official identifier from admission number is shared by all instances
+            Some(map_official_enc_identifier(msg, config)?),
         ])
         .class(map_encounter_class(msg)?)
         .r#type(map_encounter_type(msg, enc_type)?)
         .subject(subject_ref(msg, &config.person.system)?)
-        .period(map_period(msg, EncounterType::Einrichtungskontakt)?)
+        .period(map_period(msg, enc_type)?)
         // set status depends on period.start / period.end
-        .status(map_encounter_status(&map_period(
-            msg,
-            EncounterType::Einrichtungskontakt,
-        )?))
+        .status(map_encounter_status(&map_period(msg, enc_type)?))
         .build()?;
 
     Ok(admit)
@@ -305,10 +291,10 @@ fn map_official_enc_identifier(msg: &Message, config: &Fhir) -> Result<Identifie
         .map_err(Into::into)
 }
 
-fn map_enc_identifier(
+fn map_usual_identifier(
     msg: &Message,
     config: &Fhir,
-    level: EncounterType,
+    level: &EncounterType,
 ) -> Result<Identifier, MappingError> {
     let value: String;
     let system: String;
@@ -338,27 +324,9 @@ fn map_enc_identifier(
         .map_err(Into::into)
 }
 
-fn map_default_identifier(system: String, value: String) -> Result<Identifier, MappingError> {
-    Ok(Identifier::builder()
-        .system(system)
-        .value(value)
-        .r#use(IdentifierUse::Official)
-        .r#type(
-            CodeableConcept::builder()
-                .coding(vec![Some(
-                    Coding::builder()
-                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
-                        .code("VN".to_string())
-                        .build()?,
-                )])
-                .build()?,
-        )
-        .build()?)
-}
-
 fn map_encounter_type(
     msg: &Message,
-    level: EncounterType,
+    level: &EncounterType,
 ) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
     let mut coding = vec![];
 
@@ -498,7 +466,7 @@ fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, M
     Ok(None)
 }
 
-fn map_period(msg: &Message, lvl: EncounterType) -> Result<Period, MappingError> {
+fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError> {
     let start: DateTime;
     let end: Option<DateTime>;
     match lvl {
@@ -657,43 +625,24 @@ fn map_versorgungsstellenkontakt(
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Encounter, MappingError> {
-    let versorgungskontakt = Encounter::builder()
-        .class(map_encounter_class(msg)?)
-        .meta(map_meta(config)?)
-        .r#type(map_encounter_type(
-            msg,
-            EncounterType::Fachabteilungskontakt,
-        )?)
-        .identifier(vec![
-            Some(map_enc_identifier(
-                msg,
-                config,
-                EncounterType::Versorgungsstellenkontakt,
-            )?),
-            // common identifier is last
-            Some(map_official_enc_identifier(msg, config)?),
-        ])
-        .period(map_period(msg, EncounterType::Versorgungsstellenkontakt)?)
-        .subject(subject_ref(msg, &config.person.system)?)
-        .part_of(resource_ref(
-            &ResourceType::Encounter,
-            parse_field_value(msg, "ZBE", 1)?
-                .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?
-                .as_str(),
-            &config.fall.abteilungskontakt.system,
-        )?)
-        .service_provider(
-            parse_fab(msg)?
-                .and_then(|f| fab_ref(&f).ok())
-                .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
-        )
-        .location(map_lvl_3_locations(msg, config)?)
-        .status(map_encounter_status(&map_period(
-            msg,
-            EncounterType::Versorgungsstellenkontakt,
-        )?))
-        .period(map_period(msg, EncounterType::Versorgungsstellenkontakt)?)
-        .build()?;
+    let mut versorgungskontakt =
+        base_encounter(msg, config, &EncounterType::Versorgungsstellenkontakt)?;
+
+    versorgungskontakt.part_of = Some(resource_ref(
+        &ResourceType::Encounter,
+        parse_field_value(msg, "ZBE", 1)?
+            .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?
+            .as_str(),
+        &config.fall.abteilungskontakt.system,
+    )?);
+    versorgungskontakt.service_provider = Some(
+        parse_fab(msg)?
+            .and_then(|f| fab_ref(&f).ok())
+            .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
+    );
+    versorgungskontakt.location = map_lvl_3_locations(msg, config)?;
+    versorgungskontakt.status =
+        map_encounter_status(&map_period(msg, &EncounterType::Versorgungsstellenkontakt)?);
 
     Ok(versorgungskontakt)
 }

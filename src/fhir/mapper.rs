@@ -166,7 +166,7 @@ fn identifier_search(system: &str, value: &str) -> String {
     format!("identifier={system}|{value}")
 }
 
-fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier> {
+fn usual_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier> {
     if identifiers.iter().flatten().count() == 1 {
         identifiers.into_iter().next()?
     } else {
