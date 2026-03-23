@@ -282,7 +282,7 @@ mod tests {
         ResourceType,
     };
 
-    use crate::fhir::test_utils::tests::{get_dummy_resources, get_test_config};
+    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use fhir_model::{WrongResourceType, time};
 

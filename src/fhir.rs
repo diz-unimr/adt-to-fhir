@@ -3,4 +3,3 @@ pub(crate) mod location;
 pub(crate) mod mapper;
 pub(crate) mod patient;
 pub(crate) mod resources;
-pub mod test_utils;

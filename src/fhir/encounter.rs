@@ -565,7 +565,7 @@ fn map_lvl_3_locations(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fhir::test_utils::tests::{get_dummy_resources, get_test_config};
+    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
     #[test]
     fn map_lvl_3_locations_test() {
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1

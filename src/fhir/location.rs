@@ -144,7 +144,7 @@ pub(super) fn map(
 #[cfg(test)]
 mod tests {
     use crate::fhir::location::map;
-    use crate::fhir::test_utils::tests::{get_dummy_resources, get_test_config};
+    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
     use hl7_parser::Message;
     use rstest::rstest;
 
