@@ -6,7 +6,7 @@ use crate::fhir::mapper::{
 };
 use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{
-    EncounterLevel, MessageType, message_type, parse_component, parse_field, parse_field_value,
+    MessageType, message_type, parse_component, parse_field, parse_field_value,
     parse_repeating_field_component_value, parse_repeating_field_value,
 };
 use anyhow::anyhow;
@@ -15,7 +15,9 @@ use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterHospitalization, EncounterLocation, ResourceType,
 };
-use fhir_model::r4b::types::{CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference};
+use fhir_model::r4b::types::{
+    CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
+};
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 
@@ -121,6 +123,7 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
 fn map_aufnahme_entlassung(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     let mut result = vec![];
 
+    // todo: 3.und 4. Stelle
     // Aufnahmegrund
     if let Some(erste_und_zweite) = parse_field(msg, "PV2", 3)?
         .and_then(|f| parse_component(f, 1))
@@ -305,22 +308,22 @@ fn map_official_enc_identifier(msg: &Message, config: &Fhir) -> Result<Identifie
 fn map_enc_identifier(
     msg: &Message,
     config: &Fhir,
-    level: EncounterLevel,
+    level: EncounterType,
 ) -> Result<Identifier, MappingError> {
     let value: String;
     let system: String;
 
     match level {
-        EncounterLevel::Facility => {
+        EncounterType::Einrichtungskontakt => {
             system = config.fall.einrichtungskontakt.system.clone();
             value = map_visit_number(msg)?;
         }
-        EncounterLevel::Department => {
+        EncounterType::Fachabteilungskontakt => {
             system = config.fall.abteilungskontakt.system.clone();
             value = parse_repeating_field_value(msg, "ZBE", 1)?
                 .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?;
         }
-        EncounterLevel::CareSite => {
+        EncounterType::Versorgungsstellenkontakt => {
             system = config.fall.versorgungsstellenkontakt.system.clone();
             value = parse_repeating_field_value(msg, "ZBE", 1)?
                 .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?;
@@ -511,7 +514,7 @@ fn map_period(msg: &Message, lvl: EncounterType) -> Result<Period, MappingError>
                 None => None,
             };
         }
-        EncounterType::Fachabteilungskontakt | EncounterType::Versorgungsstellenkontakt=> {
+        EncounterType::Fachabteilungskontakt | EncounterType::Versorgungsstellenkontakt => {
             start = parse_datetime(
                 parse_field_value(msg, "ZBE", 2)?
                     .ok_or(anyhow!("empty datetime in ZBE-2"))?
@@ -657,13 +660,20 @@ fn map_versorgungsstellenkontakt(
     let versorgungskontakt = Encounter::builder()
         .class(map_encounter_class(msg)?)
         .meta(map_meta(config)?)
-        .r#type(map_encounter_type(msg, EncounterType::Fachabteilungskontakt)?)
+        .r#type(map_encounter_type(
+            msg,
+            EncounterType::Fachabteilungskontakt,
+        )?)
         .identifier(vec![
-            Some(map_enc_identifier(msg, config, EncounterType::Versorgungsstellenkontakt)?),
+            Some(map_enc_identifier(
+                msg,
+                config,
+                EncounterType::Versorgungsstellenkontakt,
+            )?),
             // common identifier is last
             Some(map_official_enc_identifier(msg, config)?),
         ])
-        .period(map_period(msg, EncounterLevel::CareSite)?)
+        .period(map_period(msg, EncounterType::Versorgungsstellenkontakt)?)
         .subject(subject_ref(msg, &config.person.system)?)
         .part_of(resource_ref(
             &ResourceType::Encounter,
