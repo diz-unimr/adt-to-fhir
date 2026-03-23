@@ -1,9 +1,9 @@
+#[cfg(test)]
 pub(crate) mod tests {
     use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
     use crate::fhir::resources::{Department, ResourceMap};
     use std::collections::HashMap;
 
-    #[cfg(test)]
     pub fn get_test_config() -> Fhir {
         Fhir {
             facility_id: "260620431".to_string(),
@@ -29,7 +29,6 @@ pub(crate) mod tests {
             },
         }
     }
-    #[cfg(test)]
     pub fn get_dummy_resources() -> ResourceMap {
         ResourceMap {
             department_map: HashMap::from([
