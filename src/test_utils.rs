@@ -2,6 +2,8 @@
 pub(crate) mod tests {
     use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
     use crate::fhir::resources::{Department, ResourceMap};
+    use fhir_model::WrongResourceType;
+    use fhir_model::r4b::resources::{BundleEntry, Resource};
     use std::collections::HashMap;
 
     pub fn get_test_config() -> Fhir {
@@ -49,5 +51,12 @@ pub(crate) mod tests {
             ]),
             location_map: Default::default(),
         }
+    }
+
+    pub(crate) fn resource_from<T: TryFrom<Resource, Error = WrongResourceType>>(
+        e: &BundleEntry,
+    ) -> Result<T, WrongResourceType> {
+        let r = e.resource.clone().unwrap();
+        T::try_from(r)
     }
 }

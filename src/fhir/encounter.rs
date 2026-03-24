@@ -1,8 +1,8 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError};
 use crate::fhir::mapper::{
-    EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code,
-    is_inpatient_location, parse_datetime, parse_fab, resource_ref,
+    EntryRequestType, bundle_entry, is_inpatient_location, map_bed_location, map_room_location,
+    map_ward_location, parse_datetime, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{
@@ -13,7 +13,7 @@ use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
-    BundleEntry, Encounter, EncounterHospitalization, EncounterLocation, ResourceType,
+    BundleEntry, Encounter, EncounterHospitalization, EncounterLocation, Location, ResourceType,
 };
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
@@ -640,7 +640,7 @@ fn map_versorgungsstellenkontakt(
             .and_then(|f| fab_ref(&f).ok())
             .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
     );
-    versorgungskontakt.location = map_lvl_3_locations(msg, config)?;
+    versorgungskontakt.location = map_lvl_3_locations(msg, config, resources)?;
     versorgungskontakt.status =
         map_encounter_status(&map_period(msg, &EncounterType::Versorgungsstellenkontakt)?);
 
@@ -650,71 +650,29 @@ fn map_versorgungsstellenkontakt(
 fn map_lvl_3_locations(
     msg: &Message,
     config: &Fhir,
+    resources: &ResourceMap,
 ) -> Result<Vec<Option<EncounterLocation>>, MappingError> {
     let mut locations: Vec<Option<EncounterLocation>> = vec![];
-    const LOCATION_TYPE_SYSTEM: &str =
-        "http://terminology.hl7.org/CodeSystem/location-physical-type";
 
     if let Some(department) = parse_fab(msg)? {
         // department location should be always available
         locations.push(Some(
-            EncounterLocation::builder()
-                .physical_type(get_cc_with_one_code(
-                    "wa".to_string(),
-                    LOCATION_TYPE_SYSTEM.to_string(),
-                )?)
-                .location(
-                    Reference::builder()
-                        .identifier(
-                            Identifier::builder()
-                                .value(department)
-                                .system(config.location.system_ward.to_string())
-                                .build()?,
-                        )
-                        .build()?,
-                )
-                .build()?,
+            map_ward_location(msg, department, config, resources)?.to_encounter_location()?,
         ));
-        if is_inpatient_location(msg)? {
-            let pv1_3_1 = parse_repeating_field_component_value(msg, "PV1", 3, 1)?;
-            let pv1_3_2 = parse_repeating_field_component_value(msg, "PV1", 3, 2)?;
-            let pv1_3_3 = parse_repeating_field_component_value(msg, "PV1", 3, 3)?;
 
-            if let (Some(pv1_3_1), Some(pv1_3_2)) = (pv1_3_1.clone(), pv1_3_2.clone()) {
+        if is_inpatient_location(msg)? {
+            let ward = parse_repeating_field_component_value(msg, "PV1", 3, 1)?;
+            let room = parse_repeating_field_component_value(msg, "PV1", 3, 2)?;
+            let bed = parse_repeating_field_component_value(msg, "PV1", 3, 3)?;
+            if let (Some(ward), Some(room)) = (ward.clone(), room.clone()) {
                 locations.push(Some(
-                    EncounterLocation::builder()
-                        .physical_type(get_cc_with_one_code(
-                            "ro".to_string(),
-                            LOCATION_TYPE_SYSTEM.to_string(),
-                        )?)
-                        .location(
-                            Reference::builder()
-                                .identifier(build_usual_identifier(
-                                    vec![pv1_3_1, pv1_3_2],
-                                    config.location.system_room.to_string(),
-                                )?)
-                                .build()?,
-                        )
-                        .build()?,
+                    map_room_location(config, ward, room)?.to_encounter_location()?,
                 ));
             }
 
-            if let (Some(pv1_3_1), Some(pv1_3_2), Some(pv1_3_3)) = (pv1_3_1, pv1_3_2, pv1_3_3) {
+            if let (Some(ward), Some(room), Some(bed)) = (ward, room, bed) {
                 locations.push(Some(
-                    EncounterLocation::builder()
-                        .physical_type(get_cc_with_one_code(
-                            "bd".to_string(),
-                            LOCATION_TYPE_SYSTEM.to_string(),
-                        )?)
-                        .location(
-                            Reference::builder()
-                                .identifier(build_usual_identifier(
-                                    vec![pv1_3_1, pv1_3_2, pv1_3_3],
-                                    config.location.system_bed.to_string(),
-                                )?)
-                                .build()?,
-                        )
-                        .build()?,
+                    map_bed_location(config, ward, room, bed)?.to_encounter_location()?,
                 ));
             }
         }
@@ -723,6 +681,33 @@ fn map_lvl_3_locations(
         Err(MappingError::Other(anyhow!(
             "could not determinate patient location"
         )))
+    }
+}
+
+trait ToEncounterLocation<EncounterLocation> {
+    fn to_encounter_location(self) -> EncounterLocation;
+}
+
+impl ToEncounterLocation<Result<EncounterLocation, MappingError>> for Location {
+    fn to_encounter_location(self) -> Result<EncounterLocation, MappingError> {
+        if let Some(identifier) = self
+            .identifier
+            .first()
+            .ok_or(MappingError::Other(anyhow!("failed to access identifier")))?
+            .clone()
+        {
+            return Ok(EncounterLocation::builder()
+                .physical_type(
+                    self.physical_type
+                        .clone()
+                        .ok_or(MappingError::Other(anyhow!(
+                            "physical type ist missing".to_string()
+                        )))?,
+                )
+                .location(Reference::builder().identifier(identifier).build()?)
+                .build()?);
+        };
+        Err(MappingError::Other(anyhow!("failed to access identifier")))
     }
 }
 
