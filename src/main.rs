@@ -303,7 +303,8 @@ mod tests {
                 b.entry
                     .iter()
                     .map(|e| e.clone().unwrap().resource.unwrap().resource_type())
-                    .all(|t| t == ResourceType::Patient || t == ResourceType::Encounter)
+                    .all(|t| t == ResourceType::Patient
+                        || t == ResourceType::Encounter || t == ResourceType::Location)
             );
             }
 
