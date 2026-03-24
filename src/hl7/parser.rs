@@ -107,6 +107,17 @@ pub(crate) fn parse_component(field: &Field, component: usize) -> Option<String>
     parse_repeat_component(field.repeats.first()?, component)
 }
 
+pub(crate) fn component(
+    msg: &Message,
+    segment: &str,
+    field: usize,
+    component: usize,
+) -> Result<Option<String>, MessageAccessError> {
+    Ok(parse_field(msg, segment, field)?
+        .and_then(|f| f.repeats.first())
+        .and_then(|r| parse_repeat_component(r, component)))
+}
+
 pub(crate) fn parse_repeat_component(repeat: &Repeat, component: usize) -> Option<String> {
     repeat
         .component(component)
@@ -135,16 +146,16 @@ pub(crate) fn parse_field<'a>(
         .field(field))
 }
 
-pub(crate) fn parse_field_value(
-    msg: &Message,
+pub(crate) fn parse_field_value<'a>(
+    msg: &'a Message,
     segment: &str,
     field: usize,
-) -> Result<Option<String>, MessageAccessError> {
+) -> Result<Option<&'a str>, MessageAccessError> {
     Ok(parse_field(msg, segment, field)?.and_then(|f| {
         if f.is_empty() {
             None
         } else {
-            Some(f.raw_value().to_string())
+            Some(f.raw_value())
         }
     }))
 }

@@ -174,9 +174,13 @@ fn create_patient_merge(
         params,
         Identifier::builder()
             .system(config.person.system.to_string())
-            .value(parse_field_value(msg, "MRG", 1)?.ok_or(anyhow!(
-                "Failed to map Patient merge: Missing MRG.1 segment"
-            ))?)
+            .value(
+                parse_field_value(msg, "MRG", 1)?
+                    .ok_or(anyhow!(
+                        "Failed to map Patient merge: Missing MRG.1 segment"
+                    ))?
+                    .into(),
+            )
             .build()?,
     ))
 }
@@ -187,7 +191,8 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         .system(config.person.system.to_owned())
         .value(
             parse_field_value(msg, "PID", 2)?
-                .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
+                .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?
+                .into(),
         )
         .assigner(
             Reference::builder()
@@ -277,18 +282,16 @@ fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> 
     let death_confirm = parse_field_value(msg, "PID", 30)?;
 
     match (death_time, death_confirm) {
-        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(
-            death_time.as_str(),
-        )?))),
+        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(death_time)?))),
         (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm == "Y"))),
         _ => Ok(None),
     }
 }
 
 fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, MappingError> {
-    let is_multi_birth = &parse_field_value(msg, "PID", 24)?;
+    let is_multi_birth = parse_field_value(msg, "PID", 24)?;
     let multi_birth_number = &parse_field_value(msg, "PID", 25)?;
-    let msg_id = &parse_field_value(msg, "MSH", 10)?;
+    let msg_id = parse_field_value(msg, "MSH", 10)?;
 
     #[derive(Debug, PartialEq, Eq)]
     enum MultiBirthFlags {
@@ -299,7 +302,7 @@ fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, Map
     }
 
     let multi_birth_flag: MultiBirthFlags = match is_multi_birth {
-        Some(is_multi_birth) => match is_multi_birth.as_str() {
+        Some(is_multi_birth) => match is_multi_birth {
             "J" => MultiBirthFlags::Yes,
             "N" => MultiBirthFlags::No,
             _ => MultiBirthFlags::Unsupported(is_multi_birth.to_string()),
@@ -504,11 +507,11 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
             names.push(Some(name));
 
             // maiden name
-            if let Some(maiden_name) = &parse_field_value(v2_msg, "PID", 6)? {
+            if let Some(maiden_name) = parse_field_value(v2_msg, "PID", 6)? {
                 names.push(Some(
                     HumanName::builder()
                         .r#use(NameUse::Maiden)
-                        .family(maiden_name.into())
+                        .family(maiden_name.to_string())
                         .build()?,
                 ))
             }
