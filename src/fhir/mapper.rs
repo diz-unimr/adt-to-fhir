@@ -306,7 +306,7 @@ pub(crate) fn create_locations(
             }
         }
     }
-    if (result.is_empty()) {
+    if result.is_empty() {
         return Ok(None);
     }
 
@@ -314,8 +314,8 @@ pub(crate) fn create_locations(
 }
 
 fn map_location_icu(
-    msg: &Message,
-    resources: &ResourceMap,
+    _msg: &Message,
+    _resources: &ResourceMap,
 ) -> Result<Option<Vec<Option<CodeableConcept>>>, MappingError> {
     // todo
     // if true return: vec![get_cc_with_one_code("ICU".to_string(),"http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string())];

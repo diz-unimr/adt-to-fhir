@@ -54,13 +54,6 @@ pub enum MessageType {
     A50,
 }
 
-#[derive(PartialEq, Debug)]
-pub enum EncounterLevel {
-    Facility,
-    Department,
-    CareSite,
-}
-
 impl Display for MessageType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
