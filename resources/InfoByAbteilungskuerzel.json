@@ -1,0 +1,14 @@
+{
+  "ACH": {
+    "abteilungsBezeichnung": "Visceral-, Thorax- und Gefäßchirurgie",
+    "fachabteilungsSchluessel": "1500"
+  },
+  "AUG": {
+    "abteilungsBezeichnung": "Augenheilkunde",
+    "fachabteilungsSchluessel": "2700"
+  },
+  "DER": {
+    "abteilungsBezeichnung": "Dermatologie und Allergologie",
+    "fachabteilungsSchluessel": "3400"
+  }
+}
