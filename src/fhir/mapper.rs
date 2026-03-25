@@ -376,7 +376,7 @@ pub(crate) fn map_bed_location(
     Location::builder()
         .meta(get_meta()?)
         .physical_type(get_cc_with_one_code(
-            "ro".to_string(),
+            "bd".to_string(),
             LOCATION_TYPE_SYSTEM.to_string(),
         )?)
         .identifier(vec![Some(build_usual_identifier(
