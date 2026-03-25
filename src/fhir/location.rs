@@ -86,7 +86,7 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
             "A01" => {
                 for i in 0..expected_number_locations {
                     let loca: Location =
-                        resource_from(&result.get(i).expect("one element expected"))
+                        resource_from(result.get(i).expect("one element expected"))
                             .expect("location expected");
                     let x = loca
                         .physical_type
@@ -125,7 +125,7 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
                 }
             }
             "A04" => {
-                let loca: Location = resource_from(&result.first().expect("one element expected"))
+                let loca: Location = resource_from(result.first().expect("one element expected"))
                     .expect("location expected");
                 let x = loca
                     .physical_type

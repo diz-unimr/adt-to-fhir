@@ -21,7 +21,6 @@ pub(crate) mod tests {
                 einrichtungskontakt: Default::default(),
                 abteilungskontakt: Default::default(),
                 versorgungsstellenkontakt: Default::default(),
-                institut_kennzeichen: "123456789".to_string(),
                 institut_kennzeichen_system: "http://fhir.de/sid/arge-ik/iknr".to_string()
             },
             location: LocationConfig {

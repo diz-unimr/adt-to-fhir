@@ -24,7 +24,6 @@ fhir:
   fall:
     profile: https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0
     system: https://fhir.diz.uni-marburg.de/sid/encounter-id
-    institut_kennzeichen: 260620431
     institut_kennzeichen_system: http://fhir.de/sid/arge-ik/iknr
     einrichtungskontakt:
       system: https://fhir.diz.uni-marburg.de/sid/encounter-admit-id
