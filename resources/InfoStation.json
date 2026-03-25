@@ -1,0 +1,14 @@
+{
+  "ANA": {
+    "display": "Aneasthesie u. Intensivtherapie",
+    "isICU": true
+  },
+  "IDIST1I": {
+    "display": "Interdis. Station 1 Intensiv",
+    "isIcu": true
+  },
+  "INTERDIST121": {
+    "display": "Iterdisziplinaere Station 121",
+    "isIcu": false
+  }
+}

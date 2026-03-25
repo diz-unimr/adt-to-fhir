@@ -1,20 +1,21 @@
 use crate::config::Fhir;
-use crate::error::{FormattingError, MappingError};
+use crate::error::{FormattingError, MappingError, MessageAccessError};
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::{encounter, patient};
+use crate::fhir::{encounter, location, patient};
+use crate::hl7::parser::{parse_component, parse_field, parse_repeating_field_component_value};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use fhir_model::DateFormatError::InvalidDate;
-use fhir_model::Instant;
 use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
-    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Parameters, Resource,
+    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Location, Parameters, Resource,
     ResourceType,
 };
-use fhir_model::r4b::types::{Identifier, Reference};
+use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
 use fhir_model::time::{Month, OffsetDateTime};
+use fhir_model::{BuilderError, Instant};
 use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 
@@ -57,8 +58,9 @@ impl FhirMapper {
     fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>, MappingError> {
         let p = patient::map(v2_msg, self.config.clone())?;
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
+        let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
         // TODO map observation
-        let res = p.into_iter().chain(e).map(Some).collect();
+        let res = p.into_iter().chain(e).chain(l).map(Some).collect();
 
         Ok(res)
     }
@@ -164,7 +166,7 @@ fn identifier_search(system: &str, value: &str) -> String {
     format!("identifier={system}|{value}")
 }
 
-fn default_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier> {
+fn usual_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier> {
     if identifiers.iter().flatten().count() == 1 {
         identifiers.into_iter().next()?
     } else {
@@ -214,22 +216,198 @@ pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
     Ok(Date::Date(date))
 }
 
+pub(crate) fn build_usual_identifier(
+    value_components: Vec<String>,
+    system: String,
+) -> Result<Identifier, BuilderError> {
+    let identifier_value = value_components.join("_");
+
+    Identifier::builder()
+        .r#use(IdentifierUse::Usual)
+        .system(system.to_string())
+        .value(identifier_value.to_string())
+        .build()
+}
+
+pub fn is_inpatient_location(msg: &Message) -> Result<bool, MappingError> {
+    Ok(parse_field(msg, "PV1", 2)?
+        .map(|s| s.raw_value() == "I")
+        .is_some()
+        && parse_repeating_field_component_value(msg, "PV1", 3, 5)?
+            .map(|v| v == "KLINIKUM")
+            .is_some())
+}
+
+pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConcept, BuilderError> {
+    CodeableConcept::builder()
+        .coding(vec![Some(
+            Coding::builder()
+                .code(code.to_string())
+                .system(system.to_string())
+                .build()?,
+        )])
+        .build()
+}
+
+pub fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
+    if let Some(assigned_loc) = parse_field(msg, "PV1", 3)? {
+        let facility = parse_component(assigned_loc, 4);
+        let location = parse_component(assigned_loc, 1);
+        let loc_status = parse_component(assigned_loc, 5);
+        // let kostenstelle = extract_repeat(assigned_loc, 6)?;
+
+        // todo: kostenstelle lookup etc.
+        return match (facility, location, loc_status) {
+            // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
+            (Some(f), Some(_), _) => Ok(Some(f)),
+            // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
+            (None, Some(l), _) => Ok(Some(l)),
+            // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
+            (Some(_), None, Some(st)) => Ok(Some(st)),
+            _ => Ok(None),
+        };
+    }
+
+    Ok(None)
+}
+
+pub(crate) fn get_meta() -> Result<Meta, MappingError> {
+    Ok(Meta::builder().source("#orbis".to_string()).build()?)
+}
+
+static LOCATION_TYPE_SYSTEM: &str = "http://terminology.hl7.org/CodeSystem/location-physical-type";
+
+pub(crate) fn create_locations(
+    msg: &Message,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Option<Vec<Location>>, MappingError> {
+    let mut result: Vec<Location> = vec![];
+    if is_inpatient_location(msg)? {
+        let pv1_3_1 = parse_repeating_field_component_value(msg, "PV1", 3, 1)?;
+        let pv1_3_2 = parse_repeating_field_component_value(msg, "PV1", 3, 2)?;
+        let pv1_3_3 = parse_repeating_field_component_value(msg, "PV1", 3, 3)?;
+
+        if let Some(department) = parse_fab(msg)? {
+            match (pv1_3_1, pv1_3_2, pv1_3_3) {
+                (Some(_), None, None) => {
+                    result.push(map_ward_location(msg, department, config, resources)?)
+                }
+                (Some(pv1_3_1), Some(pv1_3_2), None) => {
+                    result.push(map_ward_location(msg, department, config, resources)?);
+                    result.push(map_room_location(config, pv1_3_1, pv1_3_2)?)
+                }
+                (Some(pv1_3_1), Some(pv1_3_2), Some(pv1_3_3)) => {
+                    result.push(map_ward_location(msg, department, config, resources)?);
+                    result.push(map_room_location(config, pv1_3_1.clone(), pv1_3_2.clone())?);
+                    result.push(map_bed_location(config, pv1_3_1, pv1_3_2, pv1_3_3)?);
+                }
+                (_, _, _) => {}
+            }
+        }
+    }
+    if result.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(result))
+}
+
+fn map_location_type_icu(
+    pv1_3_1_value: &String,
+    resources: &ResourceMap,
+) -> Result<Option<Vec<Option<CodeableConcept>>>, MappingError> {
+    if let Some(ward_entry) = resources.ward_map.get(pv1_3_1_value)
+        && ward_entry.is_icu
+    {
+        Ok(Some(vec![Some(get_cc_with_one_code(
+            "ICU".to_string(),
+            "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
+        )?)]))
+    } else {
+        Ok(None)
+    }
+}
+
+pub(crate) fn map_ward_location(
+    msg: &Message,
+    department: String,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Location, MappingError> {
+    let mut location = Location::builder()
+        .meta(get_meta()?)
+        .physical_type(get_cc_with_one_code(
+            "wa".to_string(),
+            config.location.system_ward.to_string(),
+        )?)
+        .identifier(vec![Some(build_usual_identifier(
+            vec![department],
+            config.location.system_ward.to_string(),
+        )?)])
+        .build()
+        .map_err(MappingError::BuilderError)?;
+    if let Some(icu_coding) = parse_repeating_field_component_value(msg, "PV1", 3, 1)?
+        .and_then(|field_value| map_location_type_icu(&field_value, resources).transpose())
+    {
+        location.r#type = icu_coding?;
+    }
+    Ok(location)
+}
+
+pub(crate) fn map_room_location(
+    config: &Fhir,
+    pv1_3_1: String,
+    pv1_3_2: String,
+) -> Result<Location, MappingError> {
+    Location::builder()
+        .meta(get_meta()?)
+        .physical_type(get_cc_with_one_code(
+            "ro".to_string(),
+            LOCATION_TYPE_SYSTEM.to_string(),
+        )?)
+        .identifier(vec![Some(build_usual_identifier(
+            vec![pv1_3_1, pv1_3_2],
+            config.location.system_room.to_string(),
+        )?)])
+        .build()
+        .map_err(MappingError::BuilderError)
+}
+
+pub(crate) fn map_bed_location(
+    config: &Fhir,
+    pv1_3_1: String,
+    pv1_3_2: String,
+    pv1_3_3: String,
+) -> Result<Location, MappingError> {
+    Location::builder()
+        .meta(get_meta()?)
+        .physical_type(get_cc_with_one_code(
+            "bd".to_string(),
+            LOCATION_TYPE_SYSTEM.to_string(),
+        )?)
+        .identifier(vec![Some(build_usual_identifier(
+            vec![pv1_3_1, pv1_3_2, pv1_3_3],
+            config.location.system_bed.to_string(),
+        )?)])
+        .build()
+        .map_err(MappingError::BuilderError)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FallConfig, Fhir, PatientConfig};
-    use crate::fhir::resources::{Department, ResourceMap};
     use crate::tests::read_test_resource;
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
-        Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
-        ResourceType,
+        Bundle, BundleEntry, BundleEntryRequest, Encounter, Location, Parameters, Patient,
+        Resource, ResourceType,
     };
 
+    use crate::test_utils::tests::{get_dummy_resources, get_test_config, resource_from};
+    use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};
-    use fhir_model::{WrongResourceType, time};
-    use std::collections::HashMap;
 
     #[test]
     fn test_parse_datetime() {
@@ -254,33 +432,10 @@ mod tests {
     fn map_test() {
         let hl7 = read_test_resource("a01_test.hl7");
 
-        let config = Fhir {
-            facility_id: "260620431".to_string(),
-            person: PatientConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
-                system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
-                other_insurance_system: "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id".to_string()
-            },
-            fall: FallConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0".to_string(),
-                system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
-                einrichtungskontakt: Default::default(),
-                abteilungskontakt: Default::default(),
-                versorgungsstellenkontakt: Default::default(),
-            },
-        };
+        let config = get_test_config();
         let mapper = FhirMapper {
             config: config.clone(),
-            resources: ResourceMap {
-                department_map: HashMap::from([(
-                    "POL".to_string(),
-                    Department {
-                        abteilungs_bezeichnung: "Pneumologie".to_string(),
-                        fachabteilungs_schluessel: "0800".to_string(),
-                    },
-                )]),
-                location_map: Default::default(),
-            },
+            resources: get_dummy_resources(),
         };
 
         // act
@@ -289,7 +444,7 @@ mod tests {
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
-        assert_eq!(bundle.entry.len(), 2);
+        assert_eq!(bundle.entry.len(), 5);
 
         let patient: Vec<Patient> = bundle
             .entry
@@ -298,6 +453,13 @@ mod tests {
             .filter_map(|e| resource_from(e).ok())
             .collect();
         let encounter: Vec<Encounter> = bundle
+            .entry
+            .iter()
+            .flatten()
+            .filter_map(|e| resource_from(e).ok())
+            .collect();
+
+        let location: Vec<Location> = bundle
             .entry
             .iter()
             .flatten()
@@ -325,13 +487,6 @@ mod tests {
                 .find(|&pr| pr.as_str() == config.fall.profile)
                 .is_some()
         }));
-    }
-
-    fn resource_from<T: TryFrom<Resource, Error = WrongResourceType>>(
-        e: &BundleEntry,
-    ) -> Result<T, WrongResourceType> {
-        let r = e.resource.clone().unwrap();
-        T::try_from(r)
     }
 
     #[test]

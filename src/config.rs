@@ -22,6 +22,8 @@ pub(crate) struct Fhir {
     pub(crate) facility_id: String,
     pub(crate) person: PatientConfig,
     pub(crate) fall: FallConfig,
+    pub(crate) location: LocationConfig,
+    pub(crate) meta_source: String,
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]
@@ -44,6 +46,14 @@ pub(crate) struct FallConfig {
     pub(crate) einrichtungskontakt: SystemConfig,
     pub(crate) abteilungskontakt: SystemConfig,
     pub(crate) versorgungsstellenkontakt: SystemConfig,
+    pub(crate) institut_kennzeichen_system: String,
+}
+#[derive(Default, Debug, Deserialize, Clone)]
+pub(crate) struct LocationConfig {
+    //    pub(crate) profile: String,
+    pub(crate) system_ward: String,
+    pub(crate) system_room: String,
+    pub(crate) system_bed: String,
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]
