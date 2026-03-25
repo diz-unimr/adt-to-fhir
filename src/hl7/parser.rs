@@ -107,17 +107,6 @@ pub(crate) fn parse_component(field: &Field, component: usize) -> Option<String>
     parse_repeat_component(field.repeats.first()?, component)
 }
 
-pub(crate) fn component(
-    msg: &Message,
-    segment: &str,
-    field: usize,
-    component: usize,
-) -> Result<Option<String>, MessageAccessError> {
-    Ok(parse_field(msg, segment, field)?
-        .and_then(|f| f.repeats.first())
-        .and_then(|r| parse_repeat_component(r, component)))
-}
-
 pub(crate) fn parse_repeat_component(repeat: &Repeat, component: usize) -> Option<String> {
     repeat
         .component(component)

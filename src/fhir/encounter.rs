@@ -30,19 +30,19 @@ impl From<&EncounterType> for Coding {
                 .code("einrichtungskontakt".to_string())
                 .display("Einrichtungskontakt".to_string())
                 .build()
-                .expect("Kontakebene coding"),
+                .expect("Kontaktebene coding"),
             EncounterType::Fachabteilungskontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("abteilungskontakt".to_string())
                 .display("Abteilungskontakt".to_string())
                 .build()
-                .expect("Kontakebene coding"),
+                .expect("Kontaktebene coding"),
             EncounterType::Versorgungsstellenkontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("versorgungsstellenkontakt".to_string())
                 .display("Versorgungsstellenkontakt".to_string())
                 .build()
-                .expect("Kontakebene coding"),
+                .expect("Kontaktebene coding"),
         }
     }
 }
