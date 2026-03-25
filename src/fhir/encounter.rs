@@ -2,8 +2,9 @@ use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError};
 use crate::fhir::mapper::{EntryRequestType, bundle_entry, parse_datetime, resource_ref};
 use crate::fhir::resources::ResourceMap;
+use crate::fhir::terminology::AufnahmeGrundStelle;
 use crate::hl7::parser::{
-    MessageType, component, message_type, parse_component, parse_field, parse_field_value,
+    MessageType, message_type, parse_component, parse_field, parse_field_value,
 };
 use anyhow::anyhow;
 use fhir_model::DateTime;
@@ -109,6 +110,8 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
         enc.extension = ext;
     }
 
+    // todo: Entlassgrund
+
     Ok(enc)
 }
 
@@ -116,9 +119,14 @@ fn map_aufnahme_entlassung(msg: &Message) -> Result<Vec<Extension>, MappingError
     let mut result = vec![];
 
     // Aufnahmegrund
-    if let Some(erste_und_zweite) = parse_field(msg, "PV2", 3)?
+    // 1. und 2. Stelle
+    if let Some(erste_und_zweite) = parse_field(msg, "PV2", 3)
+        .ok()
+        .flatten()
         .and_then(|f| parse_component(f, 1))
-        .and_then(|aufnahme| map_aufnahmegrund_coding(aufnahme.as_str()))
+        .as_ref()
+        .map(|c| AufnahmeGrundStelle::ErsteUndZweite(c))
+        .and_then(Option::<Coding>::from)
         .map(|c| {
             Extension::builder()
                 .url("ErsteUndZweiteStelle".to_string())
@@ -129,94 +137,45 @@ fn map_aufnahme_entlassung(msg: &Message) -> Result<Vec<Extension>, MappingError
         result.push(erste_und_zweite?);
     }
 
-    // Entlassgrund
-    // todo
-    Ok(result)
-}
-
-fn map_aufnahmegrund_coding(value: &str) -> Option<Coding> {
-    match value {
-        "01" => Coding::builder()
-            .system(
-                "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                    .to_string(),
+    // 3. und 4. Stelle
+    if let Some((Some(dritte), Some(vierte))) = msg
+        .query("PV1.4[2].1")
+        .filter(|r| r.raw_value().chars().count() == 2)
+        .map(|r| {
+            let mut chars = r.raw_value().chars().take(2);
+            (
+                Option::<Coding>::from(AufnahmeGrundStelle::Dritte(
+                    chars
+                        .next()
+                        .expect("Aufnahmegrund 3. Stelle")
+                        .to_string()
+                        .as_str(),
+                )),
+                Option::<Coding>::from(AufnahmeGrundStelle::Vierte(
+                    chars
+                        .next()
+                        .expect("Aufnahmegrund 4. Stelle")
+                        .to_string()
+                        .as_str(),
+                )),
             )
-            .code("01".to_string())
-            .display("Krankenhausbehandlung, vollstationär".to_string())
-            .build().ok(),
-        "02" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("02".to_string())
-                .display("Krankenhausbehandlung, vollstationär mit vorausgegangener vorstationärer Behandlung".to_string())
-                .build().ok(),
-        "03" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("03".to_string())
-                .display("Krankenhausbehandlung, teilstationär".to_string())
-                .build().ok(),
-        "04" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("04".to_string())
-                .display("vorstationäre Behandlung ohne anschließende vollstationäre Behandlung".to_string())
-                .build().ok(),
-        "05" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("05".to_string())
-                .display("Stationäre Entbindung".to_string())
-                .build().ok(),
-        "06" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("06".to_string())
-                .display("Geburt".to_string())
-                .build().ok(),
-        "07" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("07".to_string())
-                .display("Wiederaufnahme wegen Komplikationen (Fallpauschale) nach KFPV 2003".to_string())
-                .build().ok(),
-        "08" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("08".to_string())
-                .display("Stationäre Aufnahme zur Organentnahme".to_string())
-                .build().ok(),
-        "10" => Coding::builder()
-            .system(
-                "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                    .to_string(),
-            )
-            .code("10".to_string())
-            .display("Stationsäquivalente Behandlung".to_string())
-            .build().ok(),
-        _ => None
+        })
+    {
+        result.push(
+            Extension::builder()
+                .url("DritteStelle".to_string())
+                .value(ExtensionValue::Coding(dritte))
+                .build()?,
+        );
+        result.push(
+            Extension::builder()
+                .url("VierteStelle".to_string())
+                .value(ExtensionValue::Coding(vierte))
+                .build()?,
+        );
     }
+
+    Ok(result)
 }
 
 fn map_abteilungskontakt(
@@ -369,8 +328,6 @@ fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
 
 fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
     let admit = msg.query("PV1.4.1").map(|r| r.raw_value());
-    // let admit = hl7_parser::query::LocationQuery::parse("PV1.4.1")?.component;
-    // let admit = hl7_parser::parser.query(msg, "PV1.4.1")?;
 
     let coding = match admit.as_deref() {
         Some("E") => Ok(Coding::builder()

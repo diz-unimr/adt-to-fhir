@@ -25,12 +25,6 @@ pub(crate) struct Fhir {
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]
-pub(crate) struct ResourceConfig {
-    pub(crate) profile: String,
-    pub(crate) system: String,
-}
-
-#[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct PatientConfig {
     pub(crate) profile: String,
     pub(crate) system: String,
