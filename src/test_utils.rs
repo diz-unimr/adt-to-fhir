@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
-    use crate::fhir::resources::{Department, ResourceMap};
+    use crate::fhir::resources::{Department, ResourceMap, Ward};
     use fhir_model::WrongResourceType;
     use fhir_model::r4b::resources::{BundleEntry, Resource};
     use std::collections::HashMap;
@@ -49,6 +49,29 @@ pub(crate) mod tests {
                 ),
             ]),
             location_map: Default::default(),
+            ward_map: HashMap::from([
+                (
+                    "ANA".to_string(),
+                    Ward {
+                        display: "Aneasthesie u. Intensivtherapie".to_string(),
+                        is_icu: true,
+                    },
+                ),
+                (
+                    "IDIST1I".to_string(),
+                    Ward {
+                        display: "IDIST1I".to_string(),
+                        is_icu: true,
+                    },
+                ),
+                (
+                    "IDIST121".to_string(),
+                    Ward {
+                        display: "Iterdisziplinaere Station 121".to_string(),
+                        is_icu: false,
+                    },
+                ),
+            ]),
         }
     }
 

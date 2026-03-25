@@ -18,9 +18,6 @@ pub(crate) struct Location {
     abteilungs_bezeichnung: String,
     /// Fachabteilungsschlüssel
     fachabteilungs_schluessel: String,
-    // Kennzeichen Intensivstation (ICU)
-    #[serde(deserialize_with = "deserialize_bool")]
-    ist_intensiv_station: bool,
 }
 
 /// Fachabteilung
@@ -34,6 +31,15 @@ pub(crate) struct Department {
     pub(crate) abteilungs_bezeichnung: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
+pub(crate) struct Ward {
+    pub(crate) display: String,
+    #[serde(deserialize_with = "deserialize_bool")]
+    pub(crate) is_icu: bool,
+}
+
 /// Mappings for Fachabteilung (encounter department and location)
 #[derive(Clone)]
 pub(crate) struct ResourceMap {
@@ -41,6 +47,8 @@ pub(crate) struct ResourceMap {
     pub(crate) department_map: HashMap<String, Department>,
     /// Map with key: Kostenstelle
     pub(crate) location_map: HashMap<String, Location>,
+    /// Map with key: Stationskürzel
+    pub(crate) ward_map: HashMap<String, Ward>,
 }
 
 impl ResourceMap {
@@ -52,17 +60,20 @@ impl ResourceMap {
     /// [department_map](ResourceMap::department_map): `InfoByAbteilungskuerzel.json`
     ///
     /// [location_map](ResourceMap::location_map): `InfoByKostenstelle.json`
+    ///
+    /// [ward_map](ResourceMap::ward_map): `InfoStation.json`
     pub(crate) fn new() -> Result<Self, anyhow::Error> {
         Ok(ResourceMap {
             department_map: init_department_map()?,
             location_map: init_location_map()?,
+            ward_map: init_ward_map()?,
         })
     }
 
     /// Maps a given Fachabteilungsschlüssel to a Department
     /// by doing a lookup on the department data map.
     ///
-    /// If the lookup is successfull a single [`Coding`] from
+    /// If the lookup is successful a single [`Coding`] from
     /// [FachabteilungsschluesselErweitert ValueSet](https://simplifier.net/resolve?scope=de.basisprofil.r4@1.5.4&canonical=http://fhir.de/ValueSet/dkgev/Fachabteilungsschluessel-erweitert)
     /// is returned as part of the [`CodeableConcept`].
     pub(crate) fn map_fab_schluessel(
@@ -106,6 +117,12 @@ fn init_department_map() -> Result<HashMap<String, Department>, anyhow::Error> {
     Ok(serde_json::from_str(&resource_data)?)
 }
 
+fn init_ward_map() -> Result<HashMap<String, Ward>, anyhow::Error> {
+    let resource_data = read_mapping_resource("InfoStation.json")?;
+
+    Ok(serde_json::from_str(&resource_data)?)
+}
+
 fn read_mapping_resource(file_name: &str) -> Result<String, anyhow::Error> {
     let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file_path.push("resources/mapping");
@@ -143,6 +160,7 @@ mod tests {
                 },
             )]),
             location_map: Default::default(),
+            ward_map: Default::default(),
         };
 
         let expected = Coding::builder()

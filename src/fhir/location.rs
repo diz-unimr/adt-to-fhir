@@ -141,4 +141,43 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
             _ => {}
         }
     }
+
+    #[rstest]
+    #[case("INTERDIST121^^^POL^KLINIKUM^123445", false)]
+    #[case("INTERDIST121^room_1^bet_1^KJM^KLINIKUM^123445", false)]
+    #[case("ANA^room_1^bet_1^KJM^KLINIKUM^123445", true)]
+    fn test_map_location_type(#[case] pv1_3_value: String, #[case] expect_icu_type: bool) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.3|||||D||DE
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
+PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331
+"#,
+            pv1_3_value
+        );
+        let msg = Message::parse_with_lenient_newlines(&input, true).expect("parse hl7 failed");
+
+        let result = map(&msg, get_test_config(), &get_dummy_resources()).expect("map failed");
+
+        let loca: Location = resource_from(result.first().expect("one element expected"))
+            .expect("location expected");
+
+        if expect_icu_type {
+            let type_code = loca
+                .r#type
+                .first()
+                .expect("location type is expected")
+                .clone()
+                .expect("codable concept expected")
+                .coding
+                .first()
+                .expect("one code element expected")
+                .clone();
+            assert!(type_code.is_some());
+            assert_eq!("ICU", type_code.unwrap().code.as_ref().unwrap());
+        } else {
+            assert!(loca.r#type.is_empty())
+        }
+    }
 }

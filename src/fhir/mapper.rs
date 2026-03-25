@@ -313,18 +313,24 @@ pub(crate) fn create_locations(
     Ok(Some(result))
 }
 
-fn map_location_icu(
-    _msg: &Message,
-    _resources: &ResourceMap,
+fn map_location_type_icu(
+    pv1_3_1_value: &String,
+    resources: &ResourceMap,
 ) -> Result<Option<Vec<Option<CodeableConcept>>>, MappingError> {
-    // todo
-    // if true return: vec![get_cc_with_one_code("ICU".to_string(),"http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string())];
-    Ok(None)
+    if let Some(ward_entry) = resources.ward_map.get(pv1_3_1_value)
+        && ward_entry.is_icu
+    {
+        Ok(Some(vec![Some(get_cc_with_one_code(
+            "ICU".to_string(),
+            "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
+        )?)]))
+    } else {
+        Ok(None)
+    }
 }
 
 pub(crate) fn map_ward_location(
     msg: &Message,
-
     department: String,
     config: &Fhir,
     resources: &ResourceMap,
@@ -341,9 +347,10 @@ pub(crate) fn map_ward_location(
         )?)])
         .build()
         .map_err(MappingError::BuilderError)?;
-
-    if let Some(icu_coding) = map_location_icu(msg, resources)? {
-        location.r#type = icu_coding;
+    if let Some(icu_coding) = parse_repeating_field_component_value(msg, "PV1", 3, 1)?
+        .and_then(|field_value| map_location_type_icu(&field_value, resources).transpose())
+    {
+        location.r#type = icu_coding?;
     }
     Ok(location)
 }
