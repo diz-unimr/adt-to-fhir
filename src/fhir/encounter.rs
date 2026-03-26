@@ -5,6 +5,7 @@ use crate::fhir::mapper::{
     map_ward_location, parse_datetime, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
+use crate::fhir::terminology::AufnahmeGrundStelle;
 use crate::hl7::parser::{
     MessageType, message_type, parse_component, parse_field, parse_field_value,
     parse_repeating_field_component_value, parse_repeating_field_value,
@@ -27,27 +28,27 @@ enum EncounterType {
     Versorgungsstellenkontakt,
 }
 
-impl From<EncounterType> for Coding {
-    fn from(t: EncounterType) -> Self {
+impl From<&EncounterType> for Coding {
+    fn from(t: &EncounterType) -> Self {
         match t {
             EncounterType::Einrichtungskontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("einrichtungskontakt".to_string())
                 .display("Einrichtungskontakt".to_string())
                 .build()
-                .expect("Kontakebene coding"),
+                .expect("Kontaktebene coding"),
             EncounterType::Fachabteilungskontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("abteilungskontakt".to_string())
                 .display("Abteilungskontakt".to_string())
                 .build()
-                .expect("Kontakebene coding"),
+                .expect("Kontaktebene coding"),
             EncounterType::Versorgungsstellenkontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("versorgungsstellenkontakt".to_string())
                 .display("Versorgungsstellenkontakt".to_string())
                 .build()
-                .expect("Kontakebene coding"),
+                .expect("Kontaktebene coding"),
         }
     }
 }
@@ -117,17 +118,23 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
         enc.extension = ext;
     }
 
+    // todo: Entlassgrund
+
     Ok(enc)
 }
 
 fn map_aufnahme_entlassung(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     let mut result = vec![];
 
-    // todo: 3.und 4. Stelle
     // Aufnahmegrund
-    if let Some(erste_und_zweite) = parse_field(msg, "PV2", 3)?
+    // 1. und 2. Stelle
+    if let Some(erste_und_zweite) = parse_field(msg, "PV2", 3)
+        .ok()
+        .flatten()
         .and_then(|f| parse_component(f, 1))
-        .and_then(|aufnahme| map_aufnahmegrund_coding(aufnahme.as_str()))
+        .as_ref()
+        .map(|c| AufnahmeGrundStelle::ErsteUndZweite(c))
+        .and_then(Option::<Coding>::from)
         .map(|c| {
             Extension::builder()
                 .url("ErsteUndZweiteStelle".to_string())
@@ -138,94 +145,45 @@ fn map_aufnahme_entlassung(msg: &Message) -> Result<Vec<Extension>, MappingError
         result.push(erste_und_zweite?);
     }
 
-    // Entlassgrund
-    // todo
-    Ok(result)
-}
-
-fn map_aufnahmegrund_coding(value: &str) -> Option<Coding> {
-    match value {
-        "01" => Coding::builder()
-            .system(
-                "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                    .to_string(),
+    // 3. und 4. Stelle
+    if let Some((Some(dritte), Some(vierte))) = msg
+        .query("PV1.4[2].1")
+        .filter(|r| r.raw_value().chars().count() == 2)
+        .map(|r| {
+            let mut chars = r.raw_value().chars().take(2);
+            (
+                Option::<Coding>::from(AufnahmeGrundStelle::Dritte(
+                    chars
+                        .next()
+                        .expect("Aufnahmegrund 3. Stelle")
+                        .to_string()
+                        .as_str(),
+                )),
+                Option::<Coding>::from(AufnahmeGrundStelle::Vierte(
+                    chars
+                        .next()
+                        .expect("Aufnahmegrund 4. Stelle")
+                        .to_string()
+                        .as_str(),
+                )),
             )
-            .code("01".to_string())
-            .display("Krankenhausbehandlung, vollstationär".to_string())
-            .build().ok(),
-        "02" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("02".to_string())
-                .display("Krankenhausbehandlung, vollstationär mit vorausgegangener vorstationärer Behandlung".to_string())
-                .build().ok(),
-        "03" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("03".to_string())
-                .display("Krankenhausbehandlung, teilstationär".to_string())
-                .build().ok(),
-        "04" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("04".to_string())
-                .display("vorstationäre Behandlung ohne anschließende vollstationäre Behandlung".to_string())
-                .build().ok(),
-        "05" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("05".to_string())
-                .display("Stationäre Entbindung".to_string())
-                .build().ok(),
-        "06" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("06".to_string())
-                .display("Geburt".to_string())
-                .build().ok(),
-        "07" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("07".to_string())
-                .display("Wiederaufnahme wegen Komplikationen (Fallpauschale) nach KFPV 2003".to_string())
-                .build().ok(),
-        "08" =>
-            Coding::builder()
-                .system(
-                    "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                        .to_string(),
-                )
-                .code("08".to_string())
-                .display("Stationäre Aufnahme zur Organentnahme".to_string())
-                .build().ok(),
-        "10" => Coding::builder()
-            .system(
-                "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle"
-                    .to_string(),
-            )
-            .code("10".to_string())
-            .display("Stationsäquivalente Behandlung".to_string())
-            .build().ok(),
-        _ => None
+        })
+    {
+        result.push(
+            Extension::builder()
+                .url("DritteStelle".to_string())
+                .value(ExtensionValue::Coding(dritte))
+                .build()?,
+        );
+        result.push(
+            Extension::builder()
+                .url("VierteStelle".to_string())
+                .value(ExtensionValue::Coding(vierte))
+                .build()?,
+        );
     }
+
+    Ok(result)
 }
 
 fn map_abteilungskontakt(
@@ -253,13 +211,18 @@ fn base_encounter(
     config: &Fhir,
     enc_type: &EncounterType,
 ) -> Result<Encounter, MappingError> {
+    let visit_number = map_visit_number(msg)?;
+
     let admit = Encounter::builder()
         .meta(map_meta(config)?)
         .identifier(vec![
-            // identifier identifies this resources
-            Some(map_usual_identifier(msg, config, enc_type)?),
-            // official identifier from admission number is shared by all instances
-            Some(map_official_enc_identifier(msg, config)?),
+            // identifier for Einrichtungskontakt
+            Some(map_level_identifier(enc_type, config, msg)?),
+            // common identifier is last
+            Some(map_default_identifier(
+                config.fall.system.clone(),
+                visit_number.to_string(),
+            )?),
         ])
         .class(map_encounter_class(msg)?)
         .r#type(map_encounter_type(msg, enc_type)?)
@@ -272,10 +235,28 @@ fn base_encounter(
     Ok(admit)
 }
 
+fn map_default_identifier(system: String, value: String) -> Result<Identifier, MappingError> {
+    Ok(Identifier::builder()
+        .system(system)
+        .value(value)
+        .r#use(IdentifierUse::Official)
+        .r#type(
+            CodeableConcept::builder()
+                .coding(vec![Some(
+                    Coding::builder()
+                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
+                        .code("VN".to_string())
+                        .build()?,
+                )])
+                .build()?,
+        )
+        .build()?)
+}
+
 fn map_official_enc_identifier(msg: &Message, config: &Fhir) -> Result<Identifier, MappingError> {
     Identifier::builder()
         .system(config.fall.system.clone())
-        .value(map_visit_number(msg)?)
+        .value(map_visit_number(msg)?.to_string())
         .r#use(IdentifierUse::Official)
         .r#type(
             CodeableConcept::builder()
@@ -302,7 +283,7 @@ fn map_usual_identifier(
     match level {
         EncounterType::Einrichtungskontakt => {
             system = config.fall.einrichtungskontakt.system.clone();
-            value = map_visit_number(msg)?;
+            value = map_visit_number(msg)?.to_string();
         }
         EncounterType::Fachabteilungskontakt => {
             system = config.fall.abteilungskontakt.system.clone();
@@ -324,45 +305,40 @@ fn map_usual_identifier(
         .map_err(Into::into)
 }
 
+/// Maps the [`IdentifierUse::Usual`] identifier depending on the [`EncounterType`].
+fn map_level_identifier(
+    encounter_type: &EncounterType,
+    config: &Fhir,
+    msg: &Message,
+) -> Result<Identifier, MappingError> {
+    let zbe_id = msg.query("ZBE.1.1").map(|r| r.raw_value()).ok_or(anyhow!(
+        "Failed to create Identifier: ZBE-1.1 is missing or empty"
+    ));
+    let visit_number = map_visit_number(msg)?;
+
+    let (system, value) = match encounter_type {
+        EncounterType::Einrichtungskontakt => {
+            (&config.fall.einrichtungskontakt.system, visit_number)
+        }
+        EncounterType::Fachabteilungskontakt => (&config.fall.abteilungskontakt.system, zbe_id?),
+        EncounterType::Versorgungsstellenkontakt => {
+            (&config.fall.versorgungsstellenkontakt.system, zbe_id?)
+        }
+    };
+
+    Ok(Identifier::builder()
+        .system(system.clone())
+        .value(value.to_string())
+        .r#use(IdentifierUse::Usual)
+        .build()?)
+}
+
 fn map_encounter_type(
     msg: &Message,
-    level: &EncounterType,
+    enc_type: &EncounterType,
 ) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
-    let mut coding = vec![];
-
     // Kontaktebene
-    match level {
-        EncounterType::Einrichtungskontakt => {
-            coding.push(Some(
-                // Kontaktebene
-                Coding::builder()
-                    .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
-                    .code("einrichtungskontakt".to_string())
-                    .display("Einrichtungskontakt".to_string())
-                    .build()?,
-            ));
-        }
-        EncounterType::Fachabteilungskontakt => {
-            coding.push(Some(
-                // Kontaktebene
-                Coding::builder()
-                    .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
-                    .code("abteilungskontakt".to_string())
-                    .display("Abteilungskontakt".to_string())
-                    .build()?,
-            ));
-        }
-        EncounterType::Versorgungsstellenkontakt => {
-            coding.push(Some(
-                // Kontaktebene
-                Coding::builder()
-                    .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
-                    .code("versorgungsstellenkontakt".to_string())
-                    .display("Versorgungsstellenkontakt".to_string())
-                    .build()?,
-            ));
-        }
-    }
+    let mut coding = vec![Some(enc_type.into())];
 
     if let Some(c) = map_kontaktart(msg)? {
         // Kontaktart
@@ -389,10 +365,9 @@ fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
 }
 
 fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
-    if let Some(source) = parse_field(msg, "PV1", 4)? {
-        let admit = parse_component(source, 1);
+    let admit = msg.query("PV1.4.1").map(|r| r.raw_value());
 
-        let coding = match admit.as_deref() {
+    let coding = match admit.as_deref() {
         Some("E") => Ok(Coding::builder()
             .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
             .code("E".to_string())
@@ -452,18 +427,15 @@ fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, M
         ))),
     }?;
 
-        return Ok(Some(
-            EncounterHospitalization::builder()
-                .admit_source(
-                    CodeableConcept::builder()
-                        .coding(vec![Some(coding)])
-                        .build()?,
-                )
-                .build()?,
-        ));
-    }
-
-    Ok(None)
+    Ok(Some(
+        EncounterHospitalization::builder()
+            .admit_source(
+                CodeableConcept::builder()
+                    .coding(vec![Some(coding)])
+                    .build()?,
+            )
+            .build()?,
+    ))
 }
 
 fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError> {
@@ -472,24 +444,20 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     match lvl {
         EncounterType::Einrichtungskontakt => {
             start = parse_datetime(
-                parse_field_value(msg, "PV1", 44)?
-                    .ok_or(anyhow!("empty datetime in PV1.44"))?
-                    .as_str(),
+                parse_field_value(msg, "PV1", 44)?.ok_or(anyhow!("empty datetime in PV1.44"))?,
             )?;
 
             end = match parse_field_value(msg, "PV1", 45)? {
-                Some(end) => Some(parse_datetime(end.as_str())?),
+                Some(end) => Some(parse_datetime(end)?),
                 None => None,
             };
         }
         EncounterType::Fachabteilungskontakt | EncounterType::Versorgungsstellenkontakt => {
             start = parse_datetime(
-                parse_field_value(msg, "ZBE", 2)?
-                    .ok_or(anyhow!("empty datetime in ZBE-2"))?
-                    .as_str(),
+                parse_field_value(msg, "ZBE", 2)?.ok_or(anyhow!("empty datetime in ZBE-2"))?,
             )?;
             end = match parse_field_value(msg, "ZBE", 3)? {
-                Some(end) => Some(parse_datetime(end.as_str())?),
+                Some(end) => Some(parse_datetime(end)?),
                 None => {
                     // A04 get never an end date form source system - therefore we use start date here as well
                     if MessageType::A04 == message_type(msg).map_err(MessageAccessError::from)? {
@@ -524,7 +492,7 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
     }
 }
 
-fn map_visit_number(msg: &Message) -> Result<String, anyhow::Error> {
+fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> {
     match message_type(msg)? {
         MessageType::A14 => {
             Ok(parse_field_value(msg, "PID", 4)?.ok_or(anyhow!("empty visit number in PID.4"))?)
@@ -543,7 +511,7 @@ fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
 fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
     let code =
         parse_field_value(msg, "PV1", 2)?.ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
-    match code.as_str() {
+    match code {
         "I" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
             .code("IMP".to_string())
@@ -566,7 +534,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
 
 fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
     if let Some(code) = parse_field_value(msg, "PV1", 2)? {
-        match code.as_str() {
+        match code {
             // todo: the following are missing
             // O ("Ambulantes Operieren") => operation
             // I ("Normalstationär") => normalstationaer
@@ -631,8 +599,7 @@ fn map_versorgungsstellenkontakt(
     versorgungskontakt.part_of = Some(resource_ref(
         &ResourceType::Encounter,
         parse_field_value(msg, "ZBE", 1)?
-            .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?
-            .as_str(),
+            .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
         &config.fall.abteilungskontakt.system,
     )?);
     versorgungskontakt.service_provider = Some(
@@ -714,7 +681,57 @@ impl ToEncounterLocation<Result<EncounterLocation, MappingError>> for Location {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use crate::test_utils::tests::{get_dummy_resources, get_test_config};
+    use hl7_parser::Message;
+    use rstest::rstest;
+    use std::default::Default;
+
+    #[rstest]
+    #[case(EncounterType::Einrichtungskontakt, ("einrichtungskontakt","admit_id"))]
+    #[case(EncounterType::Fachabteilungskontakt, ("abteilungskontakt","zbe_id"))]
+    #[case(EncounterType::Versorgungsstellenkontakt, ("versorgungsstellenkontakt","zbe_id"))]
+    fn test_map_level_identifier(#[case] level: EncounterType, #[case] expected: (&str, &str)) {
+        let msg = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|202208200651||ADT^A04^ADT_A04|65298857|P|2.5||640340718|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|||||Schuster^Regine^^^^^L~Musterfrau^Regine^^^^^M|||||||||||||||||||||||||
+PV1|1|I|^^^^KLINIKUM^|R^^HL7~01^Normalfall^301||||||N||||||N|||admit_id||K||||||||||||||||||2500|||||202208200618|||||||A
+ZBE|zbe_id^SAP-ISH~615^MEDOS|20030901163000||UPDATE"#;
+        let msg = Message::parse_with_lenient_newlines(msg, true).unwrap();
+
+        let config = Fhir {
+            fall: FallConfig {
+                einrichtungskontakt: SystemConfig {
+                    system: "einrichtungskontakt".into(),
+                },
+                abteilungskontakt: SystemConfig {
+                    system: "abteilungskontakt".into(),
+                },
+                versorgungsstellenkontakt: SystemConfig {
+                    system: "versorgungsstellenkontakt".into(),
+                },
+                profile: String::default(),
+                system: String::default(),
+                institut_kennzeichen_system: String::default(),
+            },
+            person: PatientConfig::default(),
+            facility_id: String::default(),
+            location: LocationConfig::default(),
+            meta_source: String::default(),
+        };
+
+        let expected = Identifier::builder()
+            .system(expected.0.into())
+            .value(expected.1.into())
+            .r#use(IdentifierUse::Usual)
+            .build()
+            .unwrap();
+
+        let identifier = map_level_identifier(&level, &config, &msg).unwrap();
+
+        assert_eq!(identifier, expected);
+    }
+
     #[test]
     fn map_lvl_3_locations_test() {
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1

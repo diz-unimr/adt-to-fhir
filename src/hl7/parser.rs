@@ -135,16 +135,16 @@ pub(crate) fn parse_field<'a>(
         .field(field))
 }
 
-pub(crate) fn parse_field_value(
-    msg: &Message,
+pub(crate) fn parse_field_value<'a>(
+    msg: &'a Message,
     segment: &str,
     field: usize,
-) -> Result<Option<String>, MessageAccessError> {
+) -> Result<Option<&'a str>, MessageAccessError> {
     Ok(parse_field(msg, segment, field)?.and_then(|f| {
         if f.is_empty() {
             None
         } else {
-            Some(f.raw_value().to_string())
+            Some(f.raw_value())
         }
     }))
 }

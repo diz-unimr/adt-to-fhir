@@ -150,7 +150,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn test_deserialize_bool() {
+    fn test_map_fab_schluessel() {
         let resources = ResourceMap {
             department_map: HashMap::from([(
                 "POL".to_string(),
