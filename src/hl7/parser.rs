@@ -163,6 +163,18 @@ pub(crate) fn parse_repeating_field<'a>(
     }))
 }
 
+pub(crate) fn parse_repeating_field_component_value<'a>(
+    msg: &'a Message<'a>,
+    segment: &str,
+    field: usize,
+    component: usize,
+) -> Result<Option<String>, MessageAccessError> {
+    let f_extracted = msg
+        .segment(segment)
+        .ok_or(MissingMessageSegment(segment.to_string()))?;
+    Ok(get_repeat_value(f_extracted, field, 0, component))
+}
+
 /// Extraktion eines Werts aus einem Segment
 /// # Arguments
 /// * `segment` - Referenz des Segments aus dem wir Informationen lesen wollen
@@ -266,5 +278,54 @@ IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse.
             result.iter().map(|r| r.raw_value()).collect::<Vec<&str>>(),
             vec!["777777777^^^^NII", "BG HM HAUPT^^^^XX"]
         );
+    }
+    #[test]
+    fn test_parse_repeating_field_component_value() {
+        let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.3|||||D||DE
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
+PV1|1|I|WARD_1^room_1^bed_1^KJM^KLINIKUM^123445|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331
+"#;
+        let msg = Message::parse_with_lenient_newlines(&input, true).expect("parse hl7 failed");
+
+        let v1 = parse_repeating_field_component_value(&msg, "PV1", 3, 1)
+            .expect("parse hl7 failed")
+            .unwrap();
+        assert_eq!("WARD_1".to_string(), v1);
+        let v2 = parse_repeating_field_component_value(&msg, "PV1", 3, 2)
+            .expect("parse hl7 failed")
+            .unwrap();
+        assert_eq!("room_1".to_string(), v2);
+        let v3 = parse_repeating_field_component_value(&msg, "PV1", 3, 3)
+            .expect("parse hl7 failed")
+            .unwrap();
+        assert_eq!("bed_1".to_string(), v3);
+    }
+
+    #[test]
+    fn test_parse_repeating_field_component_value_empty() {
+        let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.3|||||D||DE
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
+PV1|1|I|^^^KJM^KLINIKUM^123445|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331
+"#;
+        let msg = Message::parse_with_lenient_newlines(&input, true).expect("parse hl7 failed");
+
+        let v1 =
+            parse_repeating_field_component_value(&msg, "PV1", 3, 1).expect("parse hl7 failed");
+        assert_eq!(None, v1);
+    }
+
+    #[test]
+    fn test_parse_repeating_field_component_value_segment_missing() {
+        let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.3|||||D||DE
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
+"#;
+        let msg = Message::parse_with_lenient_newlines(&input, true).expect("parse hl7 failed");
+        let _actual = parse_repeating_field_component_value(&msg, "PV1", 3, 1).expect_err("PV1");
     }
 }

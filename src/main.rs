@@ -4,10 +4,10 @@ mod config;
 mod error;
 mod fhir;
 mod hl7;
+pub mod test_utils;
 
 use crate::config::{Kafka, Ssl};
 use crate::fhir::mapper::FhirMapper;
-// use crate::fhir::Mapper;
 use config::AppConfig;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryStreamExt};
@@ -207,6 +207,7 @@ fn deserialize_message(m: &BorrowedMessage) -> (String, Option<String>) {
 mod tests {
     use crate::config::AppConfig;
     use crate::fhir::mapper::FhirMapper;
+    use crate::test_utils::tests::get_dummy_resources;
     use crate::{deserialize_message, run};
     use fhir_model::r4b::resources::{Bundle, ResourceType};
     use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -214,7 +215,6 @@ mod tests {
     use rdkafka::producer::future_producer::OwnedDeliveryResult;
     use rdkafka::producer::{FutureProducer, FutureRecord};
     use serde_json::Value;
-    use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -266,16 +266,7 @@ mod tests {
         // mapper
         let mapper = FhirMapper {
             config: config.fhir,
-            resources: crate::fhir::resources::ResourceMap {
-                department_map: HashMap::from([(
-                    "POL".to_string(),
-                    crate::fhir::resources::Department {
-                        abteilungs_bezeichnung: "Pneumologie".to_string(),
-                        fachabteilungs_schluessel: "0800".to_string(),
-                    },
-                )]),
-                location_map: Default::default(),
-            },
+            resources: get_dummy_resources(),
         };
 
         // run processor
@@ -298,12 +289,13 @@ mod tests {
             let b: Bundle = serde_json::from_value(raw).unwrap();
 
             // assert resources
-            assert_eq!(b.entry.len(), 3);
+            assert_eq!(b.entry.len(), 5);
             assert!(
                 b.entry
                     .iter()
                     .map(|e| e.clone().unwrap().resource.unwrap().resource_type())
-                    .all(|t| t == ResourceType::Patient || t == ResourceType::Encounter)
+                    .all(|t| t == ResourceType::Patient
+                        || t == ResourceType::Encounter || t == ResourceType::Location)
             );
             }
 
