@@ -685,11 +685,11 @@ fn map_lvl_3_locations(
 }
 
 trait ToEncounterLocation<EncounterLocation> {
-    fn to_encounter_location(self) -> EncounterLocation;
+    fn to_encounter_location(&self) -> EncounterLocation;
 }
 
 impl ToEncounterLocation<Result<EncounterLocation, MappingError>> for Location {
-    fn to_encounter_location(self) -> Result<EncounterLocation, MappingError> {
+    fn to_encounter_location(&self) -> Result<EncounterLocation, MappingError> {
         if let Some(identifier) = self
             .identifier
             .first()
