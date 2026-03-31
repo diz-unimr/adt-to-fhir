@@ -5,10 +5,10 @@ use crate::fhir::mapper::{
     map_ward_location, parse_datetime, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::terminology::AufnahmeGrundStelle;
+use crate::fhir::terminology::{AufnahmeGrundStelle, EntlassgrundStelle};
 use crate::hl7::parser::{
     MessageType, message_type, parse_component, parse_field, parse_field_value,
-    parse_repeating_field_component_value, parse_repeating_field_value,
+    parse_repeating_field_component_value,
 };
 use anyhow::anyhow;
 use fhir_model::DateTime;
@@ -17,7 +17,8 @@ use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterHospitalization, EncounterLocation, Location, ResourceType,
 };
 use fhir_model::r4b::types::{
-    CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
+    CodeableConcept, Coding, Extension, ExtensionValue, FieldExtension, Identifier, Meta, Period,
+    Reference,
 };
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
@@ -99,10 +100,10 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
     // base encounter
     let mut enc = base_encounter(msg, config, &EncounterType::Einrichtungskontakt)?;
 
-    // hospitalization admit source
-    enc.hospitalization = map_admit_source(msg)?;
-
-    // TODO map Aufnahmegrund (reasonCode)?
+    // hospitalization admit source & discharge disposition (Entlassgrund)
+    if let Some(hospitalization) = map_hospitalization(msg)? {
+        enc.hospitalization = Some(hospitalization);
+    }
 
     // serviceProvider -> Hospital
     enc.service_provider = Some(
@@ -114,16 +115,14 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
             .build()?,
     );
     // Aufnahmegrund
-    if let Ok(ext) = map_aufnahme_entlassung(msg) {
+    if let Ok(ext) = map_aufnahmegrund(msg) {
         enc.extension = ext;
     }
-
-    // todo: Entlassgrund
 
     Ok(enc)
 }
 
-fn map_aufnahme_entlassung(msg: &Message) -> Result<Vec<Extension>, MappingError> {
+fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     let mut result = vec![];
 
     // Aufnahmegrund
@@ -181,6 +180,42 @@ fn map_aufnahme_entlassung(msg: &Message) -> Result<Vec<Extension>, MappingError
                 .value(ExtensionValue::Coding(vierte))
                 .build()?,
         );
+    }
+
+    Ok(result)
+}
+
+fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
+    let mut result = vec![];
+
+    // 1. und 2. Stelle
+    if let Some(erste_und_zweite) = msg
+        .query("PV1.36.1")
+        .map(|c| EntlassgrundStelle::ErsteUndZweite(c.raw_value()))
+        .and_then(Option::<Coding>::from)
+        .map(|c| {
+            Extension::builder()
+                .url("ErsteUndZweiteStelle".to_string())
+                .value(ExtensionValue::Coding(c))
+                .build()
+        })
+    {
+        result.push(erste_und_zweite?);
+    }
+
+    // 3. Stelle
+    if let Some(dritte) = msg
+        .query("PV1.40.1")
+        .map(|c| EntlassgrundStelle::ErsteUndZweite(c.raw_value()))
+        .and_then(Option::<Coding>::from)
+        .map(|c| {
+            Extension::builder()
+                .url("ErsteUndZweiteStelle".to_string())
+                .value(ExtensionValue::Coding(c))
+                .build()
+        })
+    {
+        result.push(dritte?);
     }
 
     Ok(result)
@@ -253,67 +288,18 @@ fn map_default_identifier(system: String, value: String) -> Result<Identifier, M
         .build()?)
 }
 
-fn map_official_enc_identifier(msg: &Message, config: &Fhir) -> Result<Identifier, MappingError> {
-    Identifier::builder()
-        .system(config.fall.system.clone())
-        .value(map_visit_number(msg)?.to_string())
-        .r#use(IdentifierUse::Official)
-        .r#type(
-            CodeableConcept::builder()
-                .coding(vec![Some(
-                    Coding::builder()
-                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
-                        .code("VN".to_string())
-                        .build()?,
-                )])
-                .build()?,
-        )
-        .build()
-        .map_err(Into::into)
-}
-
-fn map_usual_identifier(
-    msg: &Message,
-    config: &Fhir,
-    level: &EncounterType,
-) -> Result<Identifier, MappingError> {
-    let value: String;
-    let system: String;
-
-    match level {
-        EncounterType::Einrichtungskontakt => {
-            system = config.fall.einrichtungskontakt.system.clone();
-            value = map_visit_number(msg)?.to_string();
-        }
-        EncounterType::Fachabteilungskontakt => {
-            system = config.fall.abteilungskontakt.system.clone();
-            value = parse_repeating_field_value(msg, "ZBE", 1)?
-                .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?;
-        }
-        EncounterType::Versorgungsstellenkontakt => {
-            system = config.fall.versorgungsstellenkontakt.system.clone();
-            value = parse_repeating_field_value(msg, "ZBE", 1)?
-                .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?;
-        }
-    }
-
-    Identifier::builder()
-        .system(system)
-        .value(value)
-        .r#use(IdentifierUse::Usual)
-        .build()
-        .map_err(Into::into)
-}
-
 /// Maps the [`IdentifierUse::Usual`] identifier depending on the [`EncounterType`].
 fn map_level_identifier(
     encounter_type: &EncounterType,
     config: &Fhir,
     msg: &Message,
 ) -> Result<Identifier, MappingError> {
-    let zbe_id = msg.query("ZBE.1.1").map(|r| r.raw_value()).ok_or(anyhow!(
-        "Failed to create Identifier: ZBE-1.1 is missing or empty"
-    ));
+    let zbe_id = msg
+        .query("ZBE.1.1")
+        .map(|r| r.raw_value())
+        .ok_or(MessageAccessError::Other(anyhow!(
+            "Failed to create Identifier: ZBE-1.1 is missing or empty"
+        )));
     let visit_number = map_visit_number(msg)?;
 
     let (system, value) = match encounter_type {
@@ -364,76 +350,53 @@ fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
     resource_ref(&ResourceType::Patient, &pid, sid)
 }
 
-fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
-    let admit = msg.query("PV1.4.1").map(|r| r.raw_value());
+fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
+    let discharge = map_entlassgrund(msg)?;
 
-    let coding = match admit.as_deref() {
-        Some("E") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("E".to_string())
-            .display("Einweisung durch einen Arzt".to_string())
-            .build()?),
-        Some("Z") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("Z".to_string())
-            .display("Einweisung durch einen Zahnarzt".to_string())
-            .build()?),
-        Some("N") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("N".to_string())
-            .display("Notfall".to_string())
-            .build()?),
-        Some("R") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("R".to_string())
-            .display(
-                "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
-                    .to_string(),
-            )
-            .build()?),
-        Some("V") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("V".to_string())
-            .display(
-                "Verlegung mit Behandlungsdauer im verlegenden Krankenhaus länger als 24 Stunden"
-                    .to_string(),
-            )
-            .build()?),
-        Some("A") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("A".to_string())
-            .display(
-                "Verlegung mit Behandlungsdauer im verlegenden Krankenhaus bis zu 24 Stunden"
-                    .to_string(),
-            )
-            .build()?),
-        Some("G") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("G".to_string())
-            .display("Geburt".to_string())
-            .build()?),
-        Some("B") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("B".to_string())
-            .display("Begleitperson oder mitaufgenommene Pflegekraft".to_string())
-            .build()?),
+    let hospitalization = EncounterHospitalization::builder()
+        .discharge_disposition_ext(FieldExtension::builder().extension(discharge).build()?);
 
-        Some(other) => Err(MappingError::Other(anyhow!(
+    if let Some(admit_source) = map_admit_source(msg)? {
+        hospitalization.admit_source(
+            CodeableConcept::builder()
+                .coding(vec![Some(admit_source)])
+                .build()?,
+        );
+    }
+
+    Ok(None)
+}
+
+fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
+    let code = msg
+        .query("PV1.4.1")
+        .map(|r| r.raw_value())
+        .ok_or(MappingError::Other(anyhow!(
+            "Missing PV1-4.1 field / component for Encounter.hospitalization.admitSource"
+        )))?;
+
+    let display = match code {
+        "E" => Ok("Einweisung durch einen Arzt"),
+        "Z" => Ok("Einweisung durch einen Zahnarzt"),
+        "N" => Ok("Notfall"),
+        "R" => Ok("Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"),
+        "V" => {
+            Ok("Verlegung mit Behandlungsdauer im verlegenden Krankenhaus länger als 24 Stunden")
+        }
+        "A" => Ok("Verlegung mit Behandlungsdauer im verlegenden Krankenhaus bis zu 24 Stunden"),
+        "G" => Ok("Geburt"),
+        "B" => Ok("Begleitperson oder mitaufgenommene Pflegekraft"),
+        other => Err(MappingError::Other(anyhow!(
             "Unknown code {} in PV1-4.1 for Encounter.hospitalization.admitSource",
             other
-        ))),
-        None => Err(MappingError::Other(anyhow!(
-            "Missing PV1-4.1 field / component for Encounter.hospitalization.admitSource"
         ))),
     }?;
 
     Ok(Some(
-        EncounterHospitalization::builder()
-            .admit_source(
-                CodeableConcept::builder()
-                    .coding(vec![Some(coding)])
-                    .build()?,
-            )
+        Coding::builder()
+            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+            .code(code.to_string())
+            .display(display.to_string())
             .build()?,
     ))
 }
@@ -479,7 +442,7 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
 }
 
 fn map_encounter_status(period: &Period) -> EncounterStatus {
-    match (period.start.clone(), period.end.clone()) {
+    match (period.start.as_ref(), period.end.as_ref()) {
         (None, None) => EncounterStatus::Unknown,
         (_, Some(_)) => EncounterStatus::Finished,
         (Some(start), _) => {
@@ -742,8 +705,10 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#, true).unwrap();
         let actual =
             map_versorgungsstellenkontakt(&msg, &get_test_config(), &get_dummy_resources());
-        assert!(actual.is_ok());
 
         assert_eq!(actual.unwrap().location.len(), 3);
     }
+
+    #[test]
+    fn bla() {}
 }

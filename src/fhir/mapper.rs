@@ -166,25 +166,6 @@ fn identifier_search(system: &str, value: &str) -> String {
     format!("identifier={system}|{value}")
 }
 
-fn usual_identifier(identifiers: Vec<Option<Identifier>>) -> Option<Identifier> {
-    if identifiers.iter().flatten().count() == 1 {
-        identifiers.into_iter().next()?
-    } else {
-        identifiers
-            .iter()
-            .flatten()
-            .filter_map(|i| {
-                // use USUAL identifier for now
-                if i.r#use? == IdentifierUse::Usual {
-                    Some(i.clone())
-                } else {
-                    None
-                }
-            })
-            .next()
-    }
-}
-
 pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, FormattingError> {
     let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
     let dt_with_tz = Berlin

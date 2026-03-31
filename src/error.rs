@@ -39,6 +39,8 @@ pub(crate) enum MessageAccessError {
     MessageTypeError(#[from] MessageTypeError),
     #[error(transparent)]
     ParseError(#[from] hl7_parser::parser::ParseError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 #[derive(Debug, Error)]

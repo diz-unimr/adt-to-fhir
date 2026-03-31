@@ -175,14 +175,6 @@ pub(crate) fn parse_repeating_field_component_value<'a>(
     Ok(get_repeat_value(f_extracted, field, 0, component))
 }
 
-pub(crate) fn parse_repeating_field_value<'a>(
-    msg: &'a Message<'a>,
-    segment: &str,
-    field: usize,
-) -> Result<Option<String>, MessageAccessError> {
-    parse_repeating_field_component_value(msg, segment, field, 1)
-}
-
 /// Extraktion eines Werts aus einem Segment
 /// # Arguments
 /// * `segment` - Referenz des Segments aus dem wir Informationen lesen wollen
