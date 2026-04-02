@@ -1,5 +1,5 @@
 use config::{Config, ConfigError, Environment, File};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 #[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct App {

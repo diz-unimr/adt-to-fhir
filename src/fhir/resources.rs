@@ -1,7 +1,7 @@
 use crate::error::MappingError;
 use anyhow::anyhow;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;

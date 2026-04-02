@@ -19,7 +19,6 @@ dependencies = [
  "regex",
  "rstest",
  "serde",
- "serde_derive",
  "serde_json",
  "thiserror",
  "tokio",
