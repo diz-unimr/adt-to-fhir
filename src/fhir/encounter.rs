@@ -347,21 +347,25 @@ fn fab_ref(fab: &str) -> Result<Reference, MappingError> {
 fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
     let pid = parse_field_value(msg, "PID", 2)?.ok_or(anyhow!("missing pid value in PID.2"))?;
 
-    resource_ref(&ResourceType::Patient, &pid, sid)
+    resource_ref(&ResourceType::Patient, pid, sid)
 }
 
 fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
     let discharge = map_entlassgrund(msg)?;
 
     let hospitalization = EncounterHospitalization::builder()
-        .discharge_disposition_ext(FieldExtension::builder().extension(discharge).build()?);
+        .discharge_disposition(CodeableConcept::builder().extension(discharge).build()?);
 
     if let Some(admit_source) = map_admit_source(msg)? {
-        hospitalization.admit_source(
-            CodeableConcept::builder()
-                .coding(vec![Some(admit_source)])
+        return Ok(Some(
+            hospitalization
+                .admit_source(
+                    CodeableConcept::builder()
+                        .coding(vec![Some(admit_source)])
+                        .build()?,
+                )
                 .build()?,
-        );
+        ));
     }
 
     Ok(None)
