@@ -196,7 +196,7 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         )
         .assigner(
             Reference::builder()
-                .display("UKGM -Universitätsklinikum Marburg".to_string())
+                .display("UKGM - Universitätsklinikum Marburg".to_string())
                 .identifier(
                     Identifier::builder()
                         .value(config.facility_id.to_string())

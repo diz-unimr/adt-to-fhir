@@ -206,11 +206,11 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     // 3. Stelle
     if let Some(dritte) = msg
         .query("PV1.40.1")
-        .map(|c| EntlassgrundStelle::ErsteUndZweite(c.raw_value()))
+        .map(|c| EntlassgrundStelle::Dritte(c.raw_value()))
         .and_then(Option::<Coding>::from)
         .map(|c| {
             Extension::builder()
-                .url("ErsteUndZweiteStelle".to_string())
+                .url("DritteStelle".to_string())
                 .value(ExtensionValue::Coding(c))
                 .build()
         })
@@ -710,5 +710,48 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     }
 
     #[test]
-    fn bla() {}
+    fn map_entlassgrund_test() {
+        let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|I|POL1234^BSP-2-2^2^POL^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||0800|9||||202511022120|202511022120||||||A
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+"#, true).unwrap();
+
+        let expected = vec![
+            Extension::builder()
+                .url("ErsteUndZweiteStelle".to_string())
+                .value(ExtensionValue::Coding(
+                    Coding::builder()
+                        .system(
+                            "http://fhir.de/CodeSystem/dkgev/EntlassungsgrundErsteUndZweiteStelle"
+                                .into(),
+                        )
+                        .code("01".into())
+                        .display("Behandlung regulär beendet".into())
+                        .build()
+                        .unwrap(),
+                ))
+                .build()
+                .unwrap(),
+            Extension::builder()
+                .url("DritteStelle".to_string())
+                .value(ExtensionValue::Coding(
+                    Coding::builder()
+                        .system(
+                            "http://fhir.de/CodeSystem/dkgev/EntlassungsgrundDritteStelle".into(),
+                        )
+                        .code("9".into())
+                        .display("keine Angabe".into())
+                        .build()
+                        .unwrap(),
+                ))
+                .build()
+                .unwrap(),
+        ];
+
+        let actual = map_entlassgrund(&msg).unwrap();
+
+        assert_eq!(actual, expected);
+    }
 }

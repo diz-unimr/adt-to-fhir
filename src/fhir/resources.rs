@@ -1,7 +1,6 @@
 use crate::error::MappingError;
 use anyhow::anyhow;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
-use serde::de;
 use serde_derive::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -36,7 +35,6 @@ pub(crate) struct Department {
 #[derive(Clone)]
 pub(crate) struct Ward {
     pub(crate) display: String,
-    #[serde(deserialize_with = "deserialize_bool")]
     pub(crate) is_icu: bool,
 }
 
@@ -129,18 +127,6 @@ fn read_mapping_resource(file_name: &str) -> Result<String, anyhow::Error> {
     file_path.push(file_name);
 
     Ok(fs::read_to_string(file_path.display().to_string())?)
-}
-
-fn deserialize_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    let s: &str = de::Deserialize::deserialize(deserializer)?;
-    match s {
-        "1" => Ok(true),
-        "" | "0" => Ok(false),
-        _ => Err(de::Error::unknown_variant(s, &["", "0", "1"])),
-    }
 }
 
 #[cfg(test)]

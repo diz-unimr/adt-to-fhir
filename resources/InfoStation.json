@@ -1,7 +1,7 @@
 {
   "ANA": {
     "display": "Aneasthesie u. Intensivtherapie",
-    "isICU": true
+    "isIcu": true
   },
   "IDIST1I": {
     "display": "Interdis. Station 1 Intensiv",
