@@ -135,16 +135,16 @@ pub(crate) fn parse_field<'a>(
         .field(field))
 }
 
-pub(crate) fn parse_field_value(
-    msg: &Message,
+pub(crate) fn parse_field_value<'a>(
+    msg: &'a Message,
     segment: &str,
     field: usize,
-) -> Result<Option<String>, MessageAccessError> {
+) -> Result<Option<&'a str>, MessageAccessError> {
     Ok(parse_field(msg, segment, field)?.and_then(|f| {
         if f.is_empty() {
             None
         } else {
-            Some(f.raw_value().to_string())
+            Some(f.raw_value())
         }
     }))
 }
@@ -173,14 +173,6 @@ pub(crate) fn parse_repeating_field_component_value<'a>(
         .segment(segment)
         .ok_or(MissingMessageSegment(segment.to_string()))?;
     Ok(get_repeat_value(f_extracted, field, 0, component))
-}
-
-pub(crate) fn parse_repeating_field_value<'a>(
-    msg: &'a Message<'a>,
-    segment: &str,
-    field: usize,
-) -> Result<Option<String>, MessageAccessError> {
-    parse_repeating_field_component_value(msg, segment, field, 1)
 }
 
 /// Extraktion eines Werts aus einem Segment
@@ -319,7 +311,7 @@ PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test S
 NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
 PV1|1|I|^^^KJM^KLINIKUM^123445|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331
 "#;
-        let msg = Message::parse_with_lenient_newlines(&input, true).expect("parse hl7 failed");
+        let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
 
         let v1 =
             parse_repeating_field_component_value(&msg, "PV1", 3, 1).expect("parse hl7 failed");
@@ -333,7 +325,7 @@ EVN|A01|202111221030|202111221029||EIDAMN
 PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
 NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
 "#;
-        let msg = Message::parse_with_lenient_newlines(&input, true).expect("parse hl7 failed");
+        let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
         let _actual = parse_repeating_field_component_value(&msg, "PV1", 3, 1).expect_err("PV1");
     }
 }
