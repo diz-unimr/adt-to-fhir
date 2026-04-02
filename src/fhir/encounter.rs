@@ -112,15 +112,14 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
 
     // hospitalization admit source & discharge disposition (Entlassgrund)
     enc.hospitalization = map_hospitalization(msg)?;
-    // if let Some(hospitalization) = map_hospitalization(msg)? {
-    //     enc.hospitalization = Some(hospitalization);
-    // }
 
     // Aufnahmegrund
-    enc.extension = map_aufnahmegrund(msg).unwrap_or_default();
-    // if let Ok(ext) = map_aufnahmegrund(msg) {
-    //     enc.extension = ext;
-    // }
+    enc.extension = vec![
+        Extension::builder()
+            .url("http://fhir.de/StructureDefinition/Aufnahmegrund".to_string())
+            .extension(map_aufnahmegrund(msg).unwrap_or_default())
+            .build()?,
+    ];
 
     Ok(enc)
 }
