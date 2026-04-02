@@ -18,8 +18,7 @@ use fhir_model::r4b::resources::{
     Location, ResourceType,
 };
 use fhir_model::r4b::types::{
-    CodeableConcept, Coding, Extension, ExtensionValue, FieldExtension, Identifier, Meta, Period,
-    Reference,
+    CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
 };
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
