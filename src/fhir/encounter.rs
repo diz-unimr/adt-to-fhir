@@ -14,7 +14,8 @@ use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
-    BundleEntry, Encounter, EncounterHospitalization, EncounterLocation, Location, ResourceType,
+    BundleEntry, Encounter, EncounterBuilder, EncounterHospitalization, EncounterLocation,
+    Location, ResourceType,
 };
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, FieldExtension, Identifier, Meta, Period,
@@ -98,26 +99,29 @@ fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
 
 fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, MappingError> {
     // base encounter
-    let mut enc = base_encounter(msg, config, &EncounterType::Einrichtungskontakt)?;
+    let mut enc = base_encounter(msg, config, &EncounterType::Einrichtungskontakt)?
+        // serviceProvider -> Hospital
+        .service_provider(
+            Reference::builder()
+                .reference(format!(
+                    "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|{}",
+                    config.facility_id
+                ))
+                .build()?,
+        )
+        .build()?;
 
     // hospitalization admit source & discharge disposition (Entlassgrund)
-    if let Some(hospitalization) = map_hospitalization(msg)? {
-        enc.hospitalization = Some(hospitalization);
-    }
+    enc.hospitalization = map_hospitalization(msg)?;
+    // if let Some(hospitalization) = map_hospitalization(msg)? {
+    //     enc.hospitalization = Some(hospitalization);
+    // }
 
-    // serviceProvider -> Hospital
-    enc.service_provider = Some(
-        Reference::builder()
-            .reference(format!(
-                "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|{}",
-                config.facility_id
-            ))
-            .build()?,
-    );
     // Aufnahmegrund
-    if let Ok(ext) = map_aufnahmegrund(msg) {
-        enc.extension = ext;
-    }
+    enc.extension = map_aufnahmegrund(msg).unwrap_or_default();
+    // if let Ok(ext) = map_aufnahmegrund(msg) {
+    //     enc.extension = ext;
+    // }
 
     Ok(enc)
 }
@@ -227,7 +231,7 @@ fn map_abteilungskontakt(
     resources: &ResourceMap,
 ) -> Result<Encounter, MappingError> {
     // base encounter
-    let mut enc = base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?;
+    let mut enc = base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?.build()?;
 
     let fab = parse_fab(msg)?;
     // fab related
@@ -245,7 +249,7 @@ fn base_encounter(
     msg: &Message,
     config: &Fhir,
     enc_type: &EncounterType,
-) -> Result<Encounter, MappingError> {
+) -> Result<EncounterBuilder, MappingError> {
     let visit_number = map_visit_number(msg)?;
 
     let admit = Encounter::builder()
@@ -264,8 +268,7 @@ fn base_encounter(
         .subject(subject_ref(msg, &config.person.system)?)
         .period(map_period(msg, enc_type)?)
         // set status depends on period.start / period.end
-        .status(map_encounter_status(&map_period(msg, enc_type)?))
-        .build()?;
+        .status(map_encounter_status(&map_period(msg, enc_type)?));
 
     Ok(admit)
 }
@@ -560,25 +563,28 @@ fn map_versorgungsstellenkontakt(
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Encounter, MappingError> {
-    let mut versorgungskontakt =
-        base_encounter(msg, config, &EncounterType::Versorgungsstellenkontakt)?;
+    let versorgungskontakt =
+        base_encounter(msg, config, &EncounterType::Versorgungsstellenkontakt)?
+            .part_of(resource_ref(
+                &ResourceType::Encounter,
+                parse_field_value(msg, "ZBE", 1)?
+                    .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
+                &config.fall.abteilungskontakt.system,
+            )?)
+            .service_provider(
+                parse_fab(msg)?
+                    .and_then(|f| fab_ref(&f).ok())
+                    .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
+            )
+            .location(map_lvl_3_locations(msg, config, resources)?)
+            .status(map_encounter_status(&map_period(
+                msg,
+                &EncounterType::Versorgungsstellenkontakt,
+            )?));
 
-    versorgungskontakt.part_of = Some(resource_ref(
-        &ResourceType::Encounter,
-        parse_field_value(msg, "ZBE", 1)?
-            .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
-        &config.fall.abteilungskontakt.system,
-    )?);
-    versorgungskontakt.service_provider = Some(
-        parse_fab(msg)?
-            .and_then(|f| fab_ref(&f).ok())
-            .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
-    );
-    versorgungskontakt.location = map_lvl_3_locations(msg, config, resources)?;
-    versorgungskontakt.status =
-        map_encounter_status(&map_period(msg, &EncounterType::Versorgungsstellenkontakt)?);
-
-    Ok(versorgungskontakt)
+    versorgungskontakt
+        .build()
+        .map_err(MappingError::BuilderError)
 }
 
 fn map_lvl_3_locations(
