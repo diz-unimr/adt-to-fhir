@@ -7,8 +7,8 @@ use crate::fhir::mapper::{
     patch_bundle_entry,
 };
 use crate::hl7::parser::{
-    MessageType, get_repeat_value, message_type, parse_component, parse_field, parse_field_value,
-    parse_repeat_component, parse_repeating_field, parse_subcomponents,
+    MessageType, field_repeats, message_type, query, repeat_component, repeat_subcomponents,
+    segment_value,
 };
 use anyhow::anyhow;
 use fhir_model::BuilderError;
@@ -80,25 +80,25 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
 fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
     let mut res = vec![];
 
-    if let Some(addr_repeats) = parse_repeating_field(msg, "PID", 11)? {
+    if let Some(addr_repeats) = field_repeats(msg, "PID.11") {
         for addr_elem in addr_repeats {
             let mut addr = Address::builder().r#type(AddressType::Both).build()?;
 
             // line
-            if let Some(lines) = parse_subcomponents(&addr_elem, 1) {
-                addr.line = lines.into_iter().map(Some).collect();
+            if let Some(lines) = repeat_subcomponents(addr_elem, 1) {
+                addr.line = lines.into_iter().map(|l| Some(l.to_string())).collect();
             }
             // city
-            if let Some(city) = parse_repeat_component(&addr_elem, 3) {
-                addr.city = Some(city);
+            if let Some(city) = repeat_component(addr_elem, 3) {
+                addr.city = Some(city.to_string());
             }
             // postal code
-            if let Some(postal_code) = parse_repeat_component(&addr_elem, 5) {
-                addr.postal_code = Some(postal_code);
+            if let Some(postal_code) = repeat_component(addr_elem, 5) {
+                addr.postal_code = Some(postal_code.to_string());
             }
             // country
-            if let Some(country) = parse_repeat_component(&addr_elem, 6) {
-                addr.country = Some(country);
+            if let Some(country) = repeat_component(addr_elem, 6) {
+                addr.country = Some(country.to_string());
             }
 
             res.push(Some(addr));
@@ -175,13 +175,9 @@ fn create_patient_merge(
         params,
         Identifier::builder()
             .system(config.person.system.to_string())
-            .value(
-                parse_field_value(msg, "MRG", 1)?
-                    .ok_or(anyhow!(
-                        "Failed to map Patient merge: Missing MRG.1 segment"
-                    ))?
-                    .into(),
-            )
+            .value(query(msg, "MRG.1").map(String::from).ok_or(anyhow!(
+                "Failed to map Patient merge: Missing MRG.1 segment"
+            ))?)
             .build()?,
     ))
 }
@@ -191,9 +187,9 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         .r#use(IdentifierUse::Usual)
         .system(config.person.system.to_owned())
         .value(
-            parse_field_value(msg, "PID", 2)?
-                .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?
-                .into(),
+            query(msg, "PID.2")
+                .map(String::from)
+                .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
         )
         .r#type(get_cc_with_one_code(
             "MR".to_string(),
@@ -218,7 +214,7 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
 ///
 /// * Ein PID-Identifier ist min. notwendig
 /// * Zusätzlich werden weitere Identifier aus Gesundheitskassendaten *(IN1-Segmente)* erzeugt
-///  werden, falls dies vorhanden sind.
+///   werden, falls dies vorhanden sind.
 ///
 /// _Hinweis:_ Es gibt HL7 Nachrichten, die in denen IN1 Segmente fehlen.
 ///
@@ -275,11 +271,11 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
         .build()?;
 
     // birth_date
-    if let Some(b) = &parse_field_value(msg, "PID", 7)? {
+    if let Some(b) = query(msg, "PID.7") {
         patient.birth_date = Some(parse_date(b)?)
     }
     // gender
-    if let Some(g) = &parse_field_value(msg, "PID", 8)? {
+    if let Some(g) = query(msg, "PID.8") {
         patient.gender = Some(map_gender(g));
     }
     // marital_status
@@ -294,8 +290,8 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
 
 fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
     // patient vital status
-    let death_time = parse_field_value(msg, "PID", 29)?;
-    let death_confirm = parse_field_value(msg, "PID", 30)?;
+    let death_time = query(msg, "PID.29");
+    let death_confirm = query(msg, "PID.30");
 
     match (death_time, death_confirm) {
         (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(death_time)?))),
@@ -305,9 +301,9 @@ fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> 
 }
 
 fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, MappingError> {
-    let is_multi_birth = parse_field_value(msg, "PID", 24)?;
-    let multi_birth_number = &parse_field_value(msg, "PID", 25)?;
-    let msg_id = parse_field_value(msg, "MSH", 10)?;
+    let is_multi_birth = query(msg, "PID.24");
+    let multi_birth_number = query(msg, "PID.25");
+    let msg_id = query(msg, "MSH.10");
 
     #[derive(Debug, PartialEq, Eq)]
     enum MultiBirthFlags {
@@ -373,95 +369,69 @@ fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, Map
 
 fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingError> {
     // marital status
-    if let Some(status) = parse_field(msg, "PID", 16)? {
-        parse_component(status, 1)
-            .map(|m| {
-                match m.as_str() {
-                    "A" | "E" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("L".to_string())
-                        .display("Legally Separated".to_string())
-                        .build(),
-                    "D" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("D".to_string())
-                        .display("Divorced".to_string())
-                        .build(),
-                    "M" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("M".to_string())
-                        .display("Married".to_string())
-                        .build(),
-                    "S" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("S".to_string())
-                        .display("Never Married".to_string())
-                        .build(),
-                    "W" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("W".to_string())
-                        .display("Widowed".to_string())
-                        .build(),
-                    "C" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("C".to_string())
-                        .display("Common Law".to_string())
-                        .build(),
-                    "G" | "P" | "R" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("T".to_string())
-                        .display("Domestic partner".to_string())
-                        .build(),
-                    "N" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("A".to_string())
-                        .display("Annulled".to_string())
-                        .build(),
-                    "I" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("I".to_string())
-                        .display("Interlocutory".to_string())
-                        .build(),
-                    "B" => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("U".to_string())
-                        .display("Unmarried".to_string())
-                        .build(),
-                    _a => Coding::builder()
-                        .system(
-                            "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string(),
-                        )
-                        .code("UNK".to_string())
-                        .display("Unknown".to_string())
-                        .build(),
-                }
-                .and_then(|c| CodeableConcept::builder().coding(vec![Some(c)]).build())
-                .map_err(MappingError::from)
-            })
-            .transpose()
-    } else {
-        Ok(None)
-    }
+    query(msg, "PID.16.1")
+        .map(|status| {
+            match status {
+                "A" | "E" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("L".to_string())
+                    .display("Legally Separated".to_string())
+                    .build(),
+                "D" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("D".to_string())
+                    .display("Divorced".to_string())
+                    .build(),
+                "M" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("M".to_string())
+                    .display("Married".to_string())
+                    .build(),
+                "S" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("S".to_string())
+                    .display("Never Married".to_string())
+                    .build(),
+                "W" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("W".to_string())
+                    .display("Widowed".to_string())
+                    .build(),
+                "C" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("C".to_string())
+                    .display("Common Law".to_string())
+                    .build(),
+                "G" | "P" | "R" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("T".to_string())
+                    .display("Domestic partner".to_string())
+                    .build(),
+                "N" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("A".to_string())
+                    .display("Annulled".to_string())
+                    .build(),
+                "I" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("I".to_string())
+                    .display("Interlocutory".to_string())
+                    .build(),
+                "B" => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("U".to_string())
+                    .display("Unmarried".to_string())
+                    .build(),
+                _a => Coding::builder()
+                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .code("UNK".to_string())
+                    .display("Unknown".to_string())
+                    .build(),
+            }
+            .and_then(|c| CodeableConcept::builder().coding(vec![Some(c)]).build())
+            .map_err(MappingError::from)
+        })
+        .transpose()
 }
 
 fn map_gender(gender: &str) -> AdministrativeGender {
@@ -476,9 +446,9 @@ fn map_gender(gender: &str) -> AdministrativeGender {
 fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
     let mut names = vec![];
 
-    if let Some(name_fields) = parse_repeating_field(v2_msg, "PID", 5)? {
+    if let Some(name_fields) = field_repeats(v2_msg, "PID.5") {
         for name_field in name_fields {
-            let name_use = parse_repeat_component(&name_field, 7).and_then(|u| match u.as_str() {
+            let name_use = repeat_component(name_field, 7).and_then(|u| match u {
                 "L" => Some(NameUse::Official),
                 "M" | "B" => Some(NameUse::Maiden),
                 _ => None,
@@ -486,18 +456,18 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
 
             let mut name = HumanName::builder()
                 .given(
-                    parse_repeat_component(&name_field, 2)
-                        .map(|e| vec![Some(e)])
+                    repeat_component(name_field, 2)
+                        .map(|e| vec![Some(e.to_string())])
                         .unwrap_or_default(),
                 )
                 .build()?;
 
             name.r#use = name_use;
-            name.family = parse_repeat_component(&name_field, 1);
+            name.family = repeat_component(name_field, 1).map(String::from);
 
             // prefix
-            if let Some(prefix) = parse_repeat_component(&name_field, 6) {
-                name.prefix = vec![Some(prefix)];
+            if let Some(prefix) = repeat_component(name_field, 6) {
+                name.prefix = vec![Some(prefix.to_string())];
                 name.prefix_ext = vec![Some(field_extension(
                     "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
                     ExtensionValue::Code("AC".into()),
@@ -505,25 +475,25 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
             }
 
             // namenszusatz
-            if let Some(namenszusatz) = parse_repeat_component(&name_field, 4) {
+            if let Some(namenszusatz) = repeat_component(name_field, 4) {
                 name.family_ext = Some(field_extension(
                     "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
-                    ExtensionValue::String(namenszusatz),
+                    ExtensionValue::String(namenszusatz.to_string()),
                 )?);
             }
 
             // vorsatzwort
-            if let Some(vorsatzwort) = parse_repeat_component(&name_field, 5) {
+            if let Some(vorsatzwort) = repeat_component(name_field, 5) {
                 name.family_ext = Some(field_extension(
                     "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
-                    ExtensionValue::String(vorsatzwort),
+                    ExtensionValue::String(vorsatzwort.to_string()),
                 )?);
             }
 
             names.push(Some(name));
 
             // maiden name
-            if let Some(maiden_name) = parse_field_value(v2_msg, "PID", 6)? {
+            if let Some(maiden_name) = query(v2_msg, "PID.24") {
                 names.push(Some(
                     HumanName::builder()
                         .r#use(NameUse::Maiden)
@@ -559,7 +529,12 @@ fn map_versicherungsdaten(
         .map_err(MappingError::from)?;
 
     // set assigner
-    match get_repeat_value(in1, 3, 0, 1) {
+    // match in1
+    //     .field(3)
+    //     .and_then(|f| f.repeat(1))
+    //     .and_then(|r| repeat_component(r, 1))
+    match segment_value(in1, 3, 1, 1) {
+        // match segment_value(in1, 3, 0, 1) {
         None => {
             log!(
                 Level::Warn,
@@ -573,7 +548,7 @@ fn map_versicherungsdaten(
                 .identifier(
                     Identifier::builder()
                         .system("http://fhir.de/sid/arge-ik/iknr".to_string())
-                        .value(id)
+                        .value(id.to_string())
                         .r#type(
                             CodeableConcept::builder()
                                 .coding(vec![
@@ -743,7 +718,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
                 .unwrap();
 
         // act
-        let (params, _) = create_patient_merge(&msg, &config).unwrap();
+        let (params, _) = create_patient_merge(&msg, config).unwrap();
 
         // get value parameters from result
         let values: Vec<ParametersParameter> = params
@@ -931,7 +906,7 @@ IN2|4||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||
         ).unwrap();
 
         let config = &get_test_config();
-        let identifiers = create_patient_identifiers(&msg, &config).unwrap();
+        let identifiers = create_patient_identifiers(&msg, config).unwrap();
         assert_eq!(identifiers.len(), 2);
     }
 
@@ -947,7 +922,7 @@ IN2|1||||||||||||||||||||||||||||^PC^0^K
 IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20091231|||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||||R|||||K454874316|||||||M| ^^^^^D  |||||K454874316^^^^^^^20150630
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = &get_test_config();
-        let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
+        let identifiers = create_patient_identifiers(&msg_full, config).unwrap();
 
         assert_eq!(identifiers.len(), 2);
 
@@ -990,7 +965,7 @@ IN2|1||||||||||||||||||||||||||||^PC^0^K
 IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||||R|||||K454874316|||||||M| ^^^^^D  |||||K454874316^^^^^^^20150630
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = &get_test_config();
-        let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
+        let identifiers = create_patient_identifiers(&msg_full, config).unwrap();
         assert_eq!(identifiers.len(), 2);
 
         assert_eq!(
@@ -1032,7 +1007,7 @@ IN2|1||||||||||||||||||||||||||||^PC^0^K
 IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||||R|||||454874316|||||||M| ^^^^^D  |||||454874316^^^^^^^20150630
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = &get_test_config();
-        let identifiers = create_patient_identifiers(&msg_full, &config).unwrap();
+        let identifiers = create_patient_identifiers(&msg_full, config).unwrap();
 
         assert_eq!(identifiers.len(), 2);
 
@@ -1070,13 +1045,10 @@ IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
     #[case("", "20260101")]
     fn test_try_set_identifier_period(#[case] start_date: String, #[case] end_date: String) {
         let input = format!(
-            r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
-IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||{}|{}||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R||||||||||||M| ^^^^^D  |||||454874316^^^^^^^20150630"#,
+            "IN1|1||AOK HSA HESSEN|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||{}|{}||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R||||||||||||M| ^^^^^D  |||||454874316^^^^^^^20150630",
             start_date, end_date
         );
-
-        let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
-        let in1 = msg.segment("IN1").unwrap();
+        let in1 = hl7_parser::parser::parse_segment(&input).unwrap();
 
         let period = get_identifier_period(&in1).expect("es wird ein Ergebnis erwartet!");
 
