@@ -24,6 +24,8 @@ pub(crate) enum FormattingError {
     #[error(transparent)]
     ParseDateError(#[from] time::error::Parse),
     #[error(transparent)]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error(transparent)]
     InvalidFormatError(#[from] InvalidFormatDescription),
     #[error(transparent)]
     ComponentRangeError(#[from] time::error::ComponentRange),
@@ -37,6 +39,8 @@ pub(crate) enum MessageAccessError {
     MissingMessageSegment(String),
     #[error(transparent)]
     MessageTypeError(#[from] MessageTypeError),
+    #[error("Message content at {0} is unsupported")]
+    UnsupportedContentError(String),
     #[error(transparent)]
     ParseError(#[from] hl7_parser::parser::ParseError),
 }

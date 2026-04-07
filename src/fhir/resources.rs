@@ -6,6 +6,7 @@ use serde_derive::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::string::ToString;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

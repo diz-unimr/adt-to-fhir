@@ -24,6 +24,7 @@ pub(crate) struct Fhir {
     pub(crate) fall: FallConfig,
     pub(crate) location: LocationConfig,
     pub(crate) meta_source: String,
+    pub(crate) condition: SystemConfig,
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]

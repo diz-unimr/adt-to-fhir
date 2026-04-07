@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
+    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig, SystemConfig};
     use crate::fhir::resources::{Department, ResourceMap, Ward};
     use fhir_model::WrongResourceType;
     use fhir_model::r4b::resources::{BundleEntry, Resource};
@@ -28,6 +28,7 @@ pub(crate) mod tests {
                 system_room: "https://fhir.diz.uni-marburg.de/sid/location-room-id".to_string(),
                 system_bed: "https://fhir.diz.uni-marburg.de/sid/location-bed-id".to_string(),
             },
+            condition: SystemConfig {system: "https://fhir.diz.uni-marburg.de/sid/condition-id".to_string()}
         }
     }
     pub fn get_dummy_resources() -> ResourceMap {

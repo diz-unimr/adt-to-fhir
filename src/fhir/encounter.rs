@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::error::{MappingError, MessageAccessError};
+use crate::error::{FormattingError, MappingError, MessageAccessError};
 use crate::fhir::mapper::{
     EntryRequestType, bundle_entry, is_inpatient_location, map_bed_location, map_room_location,
     map_ward_location, parse_datetime, parse_fab, resource_ref,
@@ -13,13 +13,16 @@ use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
-    BundleEntry, Encounter, EncounterHospitalization, EncounterLocation, Location, ResourceType,
+    BundleEntry, Encounter, EncounterDiagnosis, EncounterHospitalization, EncounterLocation,
+    Location, ResourceType,
 };
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
 };
 use fhir_model::time::OffsetDateTime;
+use futures::{StreamExt, TryStreamExt};
 use hl7_parser::Message;
+use std::num::NonZeroU32;
 
 enum EncounterType {
     Einrichtungskontakt,
@@ -115,6 +118,10 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
     // Aufnahmegrund
     if let Ok(ext) = map_aufnahme_entlassung(msg) {
         enc.extension = ext;
+    }
+
+    if let Ok(diagnosis) = map_conditions(msg, config) {
+        enc.diagnosis = diagnosis;
     }
 
     Ok(enc)
@@ -393,64 +400,64 @@ fn map_admit_source(msg: &Message) -> Result<Option<EncounterHospitalization>, M
         let admit = parse_component(source, 1);
 
         let coding = match admit.as_deref() {
-        Some("E") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("E".to_string())
-            .display("Einweisung durch einen Arzt".to_string())
-            .build()?),
-        Some("Z") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("Z".to_string())
-            .display("Einweisung durch einen Zahnarzt".to_string())
-            .build()?),
-        Some("N") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("N".to_string())
-            .display("Notfall".to_string())
-            .build()?),
-        Some("R") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("R".to_string())
-            .display(
-                "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
-                    .to_string(),
-            )
-            .build()?),
-        Some("V") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("V".to_string())
-            .display(
-                "Verlegung mit Behandlungsdauer im verlegenden Krankenhaus länger als 24 Stunden"
-                    .to_string(),
-            )
-            .build()?),
-        Some("A") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("A".to_string())
-            .display(
-                "Verlegung mit Behandlungsdauer im verlegenden Krankenhaus bis zu 24 Stunden"
-                    .to_string(),
-            )
-            .build()?),
-        Some("G") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("G".to_string())
-            .display("Geburt".to_string())
-            .build()?),
-        Some("B") => Ok(Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code("B".to_string())
-            .display("Begleitperson oder mitaufgenommene Pflegekraft".to_string())
-            .build()?),
+            Some("E") => Ok(Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("E".to_string())
+                .display("Einweisung durch einen Arzt".to_string())
+                .build()?),
+            Some("Z") => Ok(Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("Z".to_string())
+                .display("Einweisung durch einen Zahnarzt".to_string())
+                .build()?),
+            Some("N") => Ok(Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("N".to_string())
+                .display("Notfall".to_string())
+                .build()?),
+            Some("R") => Ok(Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("R".to_string())
+                .display(
+                    "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
+                        .to_string(),
+                )
+                .build()?),
+            Some("V") => Ok(Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("V".to_string())
+                .display(
+                    "Verlegung mit Behandlungsdauer im verlegenden Krankenhaus länger als 24 Stunden"
+                        .to_string(),
+                )
+                .build()?),
+            Some("A") => Ok(Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("A".to_string())
+                .display(
+                    "Verlegung mit Behandlungsdauer im verlegenden Krankenhaus bis zu 24 Stunden"
+                        .to_string(),
+                )
+                .build()?),
+            Some("G") => Ok(Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("G".to_string())
+                .display("Geburt".to_string())
+                .build()?),
+            Some("B") => Ok(Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("B".to_string())
+                .display("Begleitperson oder mitaufgenommene Pflegekraft".to_string())
+                .build()?),
 
-        Some(other) => Err(MappingError::Other(anyhow!(
+            Some(other) => Err(MappingError::Other(anyhow!(
             "Unknown code {} in PV1-4.1 for Encounter.hospitalization.admitSource",
             other
         ))),
-        None => Err(MappingError::Other(anyhow!(
+            None => Err(MappingError::Other(anyhow!(
             "Missing PV1-4.1 field / component for Encounter.hospitalization.admitSource"
         ))),
-    }?;
+        }?;
 
         return Ok(Some(
             EncounterHospitalization::builder()
@@ -682,6 +689,263 @@ fn map_lvl_3_locations(
             "could not determinate patient location"
         )))
     }
+}
+
+fn map_conditions(
+    msg: &Message,
+    config: &Fhir,
+) -> Result<Vec<Option<EncounterDiagnosis>>, MappingError> {
+    let mut res: Vec<Option<EncounterDiagnosis>> = vec![];
+    if msg.segment_count("DG1") > 0 {
+        for dg1 in msg.segments().filter(|seg| seg.name.eq("DG1")) {
+            if let (Some(row_number), Some(condition_typ), Some(priority), Some(condition_id)) =
+                (dg1.field(1), dg1.field(6), dg1.field(15), dg1.field(20))
+                && !condition_id.is_empty()
+                && !priority.is_empty()
+                && !condition_typ.is_empty()
+            {
+                if let (Ok(ref_to_diag), Ok(codings), Ok(rank)) = (
+                    resource_ref(
+                        &ResourceType::Condition,
+                        condition_id.raw_value(),
+                        &config.condition.system,
+                    ),
+                    CodeableConcept::builder()
+                        .coding(map_diagnose_local_codes(
+                            priority
+                                .raw_value()
+                                .parse::<u32>()
+                                .map_err(FormattingError::ParseIntError)?,
+                            condition_typ.raw_value().to_string(),
+                        )?)
+                        .build(),
+                    row_number
+                        .raw_value()
+                        .parse::<u32>()
+                        .map_err(FormattingError::ParseIntError),
+                ) {
+                    // fixme : add msg_id to error
+                    res.push(Some(
+                        EncounterDiagnosis::builder()
+                            .condition(ref_to_diag)
+                            .r#use(codings)
+                            .rank(
+                                NonZeroU32::new(rank)
+                                    .map(|r| r)
+                                    .ok_or_else(|| MappingError::Other(anyhow!("".to_string())))?,
+                            )
+                            .build()?,
+                    ));
+                }
+            }
+        }
+    };
+    Ok(res)
+}
+static DIAGNOSE_ROLE_SYSTEM: &str = "http://terminology.hl7.org/CodeSystem/diagnosis-role";
+static KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM: &str = "http://fhir.de/CodeSystem/KontaktDiagnoseProzedur";
+fn map_diagnose_local_codes(
+    priority: u32,
+    condition_type_local: String,
+) -> Result<Vec<Option<Coding>>, MappingError> {
+    let mut result = vec![];
+
+    let is_main_condition = priority < 2;
+
+    let priority_code = if is_main_condition {
+        "CC".to_string()
+    } else {
+        "CM".to_string()
+    };
+
+    result.push(Some(
+        Coding::builder()
+            .code(priority_code.to_string())
+            .system(DIAGNOSE_ROLE_SYSTEM.to_string())
+            .build()?,
+    ));
+
+    match condition_type_local.as_str() {
+        // Aufnahmediagnose
+        "AD" | "Aufn." => {
+            result.push(Some(
+                Coding::builder()
+                    .code("AD".to_string())
+                    .display("Admission diagnosis".to_string())
+                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
+                    .build()?,
+            ));
+        }
+        // Einweisungsdiagnose
+        "ED" | "Einw." => {
+            result.push(Some(
+                Coding::builder()
+                    .code("referral-diagnosis".to_string())
+                    .display("Überweisungsdiagnose".to_string())
+                    .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                    .build()?,
+            ));
+        }
+        // Behandlungsdiagnose
+        "BD" => {
+            result.push(Some(
+                Coding::builder()
+                    .code("treatment-diagnosis".to_string())
+                    .display("Behandlungsrelevante Diagnosen".to_string())
+                    .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                    .build()?,
+            ));
+
+            if is_main_condition {
+                result.push(Some(
+                    Coding::builder()
+                        .code("hospital-main-diagnosis".to_string())
+                        .display("Krankenhaus Hauptdiagnose".to_string())
+                        .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                        .build()?,
+                ));
+            }
+        }
+        // Entlassungsdiagnose
+        "EL" | "Entl." => {
+            result.push(Some(
+                Coding::builder()
+                    .code("DD".to_string())
+                    .display("Discharge diagnosis".to_string())
+                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
+                    .build()?,
+            ));
+        }
+
+        // Postoperative Diagnose
+        "PO" | "Post" => {
+            result.push(Some(
+                Coding::builder()
+                    .code("surgery-diagnosis".to_string())
+                    .display("Operationsdiagnose".to_string())
+                    .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                    .build()?,
+            ));
+
+            result.push(Some(
+                Coding::builder()
+                    .code("post-op".to_string())
+                    .display("post-op diagnosis".to_string())
+                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
+                    .build()?,
+            ));
+        }
+
+        // DRG Diagnose
+        "DD" => {
+            if is_main_condition {
+                result.push(Some(
+                    Coding::builder()
+                        .code("principle-DRG".to_string())
+                        .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                        .build()?,
+                ));
+            } else {
+                result.push(Some(
+                    Coding::builder()
+                        .code("secondary-DRG".to_string())
+                        .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                        .build()?,
+                ));
+            }
+        }
+
+        // Abrechungsdiagnose
+        "AR" | "Abr" => {
+            result.push(Some(
+                Coding::builder()
+                    .code("billing".to_string())
+                    .display("Billing".to_string())
+                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
+                    .build()?,
+            ));
+        }
+
+        // Präoperative Diagnose
+        "PR" | "Präop" => {
+            result.push(Some(
+                Coding::builder()
+                    .code("surgery-diagnosis".to_string())
+                    .display("Operationsdiagnose".to_string())
+                    .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                    .build()?,
+            ));
+            result.push(Some(
+                Coding::builder()
+                    .code("pre-op".to_string())
+                    .display("pre-op diagnosis".to_string())
+                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
+                    .build()?,
+            ));
+        }
+
+        // Fachabteilungs-Aufnahmediagnose & Behandlungsdiagnose & Entlassungsdiagnose
+        "FB" | "FA" | "FE" | "FA Entl." => {
+            if is_main_condition {
+                result.push(Some(
+                    Coding::builder()
+                        .code("department-main-diagnosis".to_string())
+                        .display("Abteilung Hauptdiagnose".to_string())
+                        .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                        .build()?,
+                ));
+            }
+            match condition_type_local.as_str() {
+                "FA" => {
+                    result.push(Some(
+                        Coding::builder()
+                            .code("AD".to_string())
+                            .display("Admission diagnosis".to_string())
+                            .system(DIAGNOSE_ROLE_SYSTEM.to_string())
+                            .build()?,
+                    ));
+                }
+                "FB" => {
+                    result.push(Some(
+                        Coding::builder()
+                            .code("treatment-diagnosis".to_string())
+                            .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
+                            .build()?,
+                    ));
+                }
+                "FE" | "FA Entl." => {
+                    result.push(Some(
+                        Coding::builder()
+                            .code("DD".to_string())
+                            .display("Discharge diagnosis".to_string())
+                            .system(DIAGNOSE_ROLE_SYSTEM.to_string())
+                            .build()?,
+                    ));
+                }
+                _ => {
+                    // ignore - since we are here in department context
+                }
+            }
+        }
+        _ => {
+            if !condition_type_local.is_empty() {
+                return Err(MessageAccessError::UnsupportedContentError(format!(
+                    "Unsupported value at DG1-6.1 '{}'",
+                    condition_type_local
+                ))
+                .into());
+            }
+            if condition_type_local.is_empty() {
+                return Err(MessageAccessError::UnsupportedContentError(format!(
+                    "Unsupported empty value at DG1-6.1 '{}'",
+                    condition_type_local
+                ))
+                .into());
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 trait ToEncounterLocation<EncounterLocation> {
