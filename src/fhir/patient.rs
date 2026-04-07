@@ -3,7 +3,8 @@ use crate::error::MappingError;
 use crate::error::MessageAccessError;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{
-    bundle_entry, conditional_reference, parse_date, parse_datetime, patch_bundle_entry,
+    bundle_entry, conditional_reference, get_cc_with_one_code, parse_date, parse_datetime,
+    patch_bundle_entry,
 };
 use crate::hl7::parser::{
     MessageType, get_repeat_value, message_type, parse_component, parse_field, parse_field_value,
@@ -194,6 +195,10 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
                 .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?
                 .into(),
         )
+        .r#type(get_cc_with_one_code(
+            "MR".to_string(),
+            "http://terminology.hl7.org/CodeSystem/v2-0203".to_string(),
+        )?)
         .assigner(
             Reference::builder()
                 .display("UKGM - Universitätsklinikum Marburg".to_string())
