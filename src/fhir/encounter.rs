@@ -6,10 +6,7 @@ use crate::fhir::mapper::{
 };
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::terminology::{AufnahmeGrundStelle, EntlassgrundStelle};
-use crate::hl7::parser::{
-    MessageType, message_type, parse_component, parse_field, parse_field_value,
-    parse_repeating_field_component_value,
-};
+use crate::hl7::parser::{MessageType, message_type, query};
 use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
@@ -93,7 +90,7 @@ pub(super) fn map(
 }
 
 fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
-    Ok(parse_field_value(msg, "PV1", 2)?.is_some_and(|f| f == "H"))
+    Ok(query(msg, "PV1.2").is_some_and(|f| f == "H"))
 }
 
 fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, MappingError> {
@@ -129,12 +126,8 @@ fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
 
     // Aufnahmegrund
     // 1. und 2. Stelle
-    if let Some(erste_und_zweite) = parse_field(msg, "PV2", 3)
-        .ok()
-        .flatten()
-        .and_then(|f| parse_component(f, 1))
-        .as_ref()
-        .map(|c| AufnahmeGrundStelle::ErsteUndZweite(c))
+    if let Some(erste_und_zweite) = query(msg, "PV2.3.1")
+        .map(AufnahmeGrundStelle::ErsteUndZweite)
         .and_then(Option::<Coding>::from)
         .map(|c| {
             Extension::builder()
@@ -147,11 +140,10 @@ fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     }
 
     // 3. und 4. Stelle
-    if let Some((Some(dritte), Some(vierte))) = msg
-        .query("PV1.4[2].1")
-        .filter(|r| r.raw_value().chars().count() == 2)
+    if let Some((Some(dritte), Some(vierte))) = query(msg, "PV1.4[2].1")
+        .filter(|r| r.chars().count() == 2)
         .map(|r| {
-            let mut chars = r.raw_value().chars().take(2);
+            let mut chars = r.chars().take(2);
             (
                 Option::<Coding>::from(AufnahmeGrundStelle::Dritte(
                     chars
@@ -191,9 +183,8 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     let mut result = vec![];
 
     // 1. und 2. Stelle
-    if let Some(erste_und_zweite) = msg
-        .query("PV1.36.1")
-        .map(|c| EntlassgrundStelle::ErsteUndZweite(c.raw_value()))
+    if let Some(erste_und_zweite) = query(msg, "PV1.36.1")
+        .map(EntlassgrundStelle::ErsteUndZweite)
         .and_then(Option::<Coding>::from)
         .map(|c| {
             Extension::builder()
@@ -206,9 +197,8 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     }
 
     // 3. Stelle
-    if let Some(dritte) = msg
-        .query("PV1.40.1")
-        .map(|c| EntlassgrundStelle::Dritte(c.raw_value()))
+    if let Some(dritte) = query(msg, "PV1.40.1")
+        .map(EntlassgrundStelle::Dritte)
         .and_then(Option::<Coding>::from)
         .map(|c| {
             Extension::builder()
@@ -235,9 +225,9 @@ fn map_abteilungskontakt(
     // fab related
     if let Some(f) = fab {
         // fab schluessel
-        enc.service_type = resources.map_fab_schluessel(&f)?;
+        enc.service_type = resources.map_fab_schluessel(f)?;
         // service provider
-        enc.service_provider = Some(fab_ref(&f)?);
+        enc.service_provider = Some(fab_ref(f)?);
     }
 
     Ok(enc)
@@ -295,12 +285,9 @@ fn map_level_identifier(
     config: &Fhir,
     msg: &Message,
 ) -> Result<Identifier, MappingError> {
-    let zbe_id = msg
-        .query("ZBE.1.1")
-        .map(|r| r.raw_value())
-        .ok_or(MessageAccessError::Other(anyhow!(
-            "Failed to create Identifier: ZBE-1.1 is missing or empty"
-        )));
+    let zbe_id = query(msg, "ZBE.1.1").ok_or(MessageAccessError::Other(anyhow!(
+        "Failed to create Identifier: ZBE-1.1 is missing or empty"
+    )));
     let visit_number = map_visit_number(msg)?;
 
     let (system, value) = match encounter_type {
@@ -346,7 +333,7 @@ fn fab_ref(fab: &str) -> Result<Reference, MappingError> {
 }
 
 fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
-    let pid = parse_field_value(msg, "PID", 2)?.ok_or(anyhow!("missing pid value in PID.2"))?;
+    let pid = query(msg, "PID.2").ok_or(anyhow!("missing pid value in PID.2"))?;
 
     resource_ref(&ResourceType::Patient, pid, sid)
 }
@@ -373,12 +360,9 @@ fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>
 }
 
 fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
-    let code = msg
-        .query("PV1.4.1")
-        .map(|r| r.raw_value())
-        .ok_or(MappingError::Other(anyhow!(
-            "Missing PV1-4.1 field / component for Encounter.hospitalization.admitSource"
-        )))?;
+    let code = query(msg, "PV1.4.1").ok_or(MappingError::Other(anyhow!(
+        "Missing PV1-4.1 field / component for Encounter.hospitalization.admitSource"
+    )))?;
 
     let display = match code {
         "E" => Ok("Einweisung durch einen Arzt"),
@@ -411,20 +395,17 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     let end: Option<DateTime>;
     match lvl {
         EncounterType::Einrichtungskontakt => {
-            start = parse_datetime(
-                parse_field_value(msg, "PV1", 44)?.ok_or(anyhow!("empty datetime in PV1.44"))?,
-            )?;
+            start =
+                parse_datetime(query(msg, "PV1.44").ok_or(anyhow!("empty datetime in PV1.44"))?)?;
 
-            end = match parse_field_value(msg, "PV1", 45)? {
+            end = match query(msg, "PV1.45") {
                 Some(end) => Some(parse_datetime(end)?),
                 None => None,
             };
         }
         EncounterType::Fachabteilungskontakt | EncounterType::Versorgungsstellenkontakt => {
-            start = parse_datetime(
-                parse_field_value(msg, "ZBE", 2)?.ok_or(anyhow!("empty datetime in ZBE-2"))?,
-            )?;
-            end = match parse_field_value(msg, "ZBE", 3)? {
+            start = parse_datetime(query(msg, "ZBE.2").ok_or(anyhow!("empty datetime in ZBE-2"))?)?;
+            end = match query(msg, "ZBE.3") {
                 Some(end) => Some(parse_datetime(end)?),
                 None => {
                     // A04 get never an end date form source system - therefore we use start date here as well
@@ -462,10 +443,8 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
 
 fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> {
     match message_type(msg)? {
-        MessageType::A14 => {
-            Ok(parse_field_value(msg, "PID", 4)?.ok_or(anyhow!("empty visit number in PID.4"))?)
-        }
-        _ => Ok(parse_field_value(msg, "PV1", 19)?.ok_or(anyhow!("empty visit number in PV1.19"))?),
+        MessageType::A14 => Ok(query(msg, "PID.4").ok_or(anyhow!("empty visit number in PID.4"))?),
+        _ => Ok(query(msg, "PV1.19").ok_or(anyhow!("empty visit number in PV1.19"))?),
     }
 }
 
@@ -477,8 +456,7 @@ fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
 }
 
 fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
-    let code =
-        parse_field_value(msg, "PV1", 2)?.ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
+    let code = query(msg, "PV1.2").ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
     match code {
         "I" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
@@ -501,7 +479,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
 }
 
 fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
-    if let Some(code) = parse_field_value(msg, "PV1", 2)? {
+    if let Some(code) = query(msg, "PV1.2") {
         match code {
             // todo: the following are missing
             // O ("Ambulantes Operieren") => operation
@@ -565,13 +543,13 @@ fn map_versorgungsstellenkontakt(
         base_encounter(msg, config, &EncounterType::Versorgungsstellenkontakt)?
             .part_of(resource_ref(
                 &ResourceType::Encounter,
-                parse_field_value(msg, "ZBE", 1)?
+                query(msg, "ZBE.1")
                     .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
                 &config.fall.abteilungskontakt.system,
             )?)
             .service_provider(
                 parse_fab(msg)?
-                    .and_then(|f| fab_ref(&f).ok())
+                    .and_then(|f| fab_ref(f).ok())
                     .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
             )
             .location(map_lvl_3_locations(msg, config, resources)?)
@@ -599,10 +577,10 @@ fn map_lvl_3_locations(
         ));
 
         if is_inpatient_location(msg)? {
-            let ward = parse_repeating_field_component_value(msg, "PV1", 3, 1)?;
-            let room = parse_repeating_field_component_value(msg, "PV1", 3, 2)?;
-            let bed = parse_repeating_field_component_value(msg, "PV1", 3, 3)?;
-            if let (Some(ward), Some(room)) = (ward.clone(), room.clone()) {
+            let ward = query(msg, "PV1.3.1");
+            let room = query(msg, "PV1.3.2");
+            let bed = query(msg, "PV1.3.3");
+            if let (Some(ward), Some(room)) = (ward, room) {
                 locations.push(Some(
                     map_room_location(config, ward, room)?.to_encounter_location()?,
                 ));

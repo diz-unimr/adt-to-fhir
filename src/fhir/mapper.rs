@@ -2,7 +2,7 @@ use crate::config::Fhir;
 use crate::error::{FormattingError, MappingError, MessageAccessError};
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::{encounter, location, patient};
-use crate::hl7::parser::{parse_component, parse_field, parse_repeating_field_component_value};
+use crate::hl7::parser::query;
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -198,25 +198,23 @@ pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
 }
 
 pub(crate) fn build_usual_identifier(
-    value_components: Vec<String>,
+    value_components: Vec<&str>,
     system: String,
 ) -> Result<Identifier, BuilderError> {
     let identifier_value = value_components.join("_");
 
     Identifier::builder()
         .r#use(IdentifierUse::Usual)
-        .system(system.to_string())
-        .value(identifier_value.to_string())
+        .system(system)
+        .value(identifier_value)
         .build()
 }
 
 pub fn is_inpatient_location(msg: &Message) -> Result<bool, MappingError> {
-    Ok(parse_field(msg, "PV1", 2)?
-        .map(|s| s.raw_value() == "I")
-        .is_some()
-        && parse_repeating_field_component_value(msg, "PV1", 3, 5)?
-            .map(|v| v == "KLINIKUM")
-            .is_some())
+    Ok(
+        query(msg, "PV1.2") == Some("I")
+            && query(msg, "PV1.3.5").map(|v| v == "KLINIKUM").is_some(),
+    )
 }
 
 pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConcept, BuilderError> {
@@ -230,26 +228,22 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
         .build()
 }
 
-pub fn parse_fab(msg: &Message) -> Result<Option<String>, MessageAccessError> {
-    if let Some(assigned_loc) = parse_field(msg, "PV1", 3)? {
-        let facility = parse_component(assigned_loc, 4);
-        let location = parse_component(assigned_loc, 1);
-        let loc_status = parse_component(assigned_loc, 5);
-        // let kostenstelle = extract_repeat(assigned_loc, 6)?;
+pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAccessError> {
+    let facility = query(msg, "PV1.3.4");
+    let location = query(msg, "PV1.3.1");
+    let loc_status = query(msg, "PV1.3.5");
+    // let kostenstelle = extract_repeat(assigned_loc, 6)?;
 
-        // todo: kostenstelle lookup etc.
-        return match (facility, location, loc_status) {
-            // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
-            (Some(f), Some(_), _) => Ok(Some(f)),
-            // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
-            (None, Some(l), _) => Ok(Some(l)),
-            // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
-            (Some(_), None, Some(st)) => Ok(Some(st)),
-            _ => Ok(None),
-        };
+    // todo: kostenstelle lookup etc.
+    match (facility, location, loc_status) {
+        // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
+        (Some(f), Some(_), _) => Ok(Some(f)),
+        // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
+        (None, Some(l), _) => Ok(Some(l)),
+        // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
+        (Some(_), None, Some(st)) => Ok(Some(st)),
+        _ => Ok(None),
     }
-
-    Ok(None)
 }
 
 pub(crate) fn get_meta() -> Result<Meta, MappingError> {
@@ -265,9 +259,9 @@ pub(crate) fn create_locations(
 ) -> Result<Option<Vec<Location>>, MappingError> {
     let mut result: Vec<Location> = vec![];
     if is_inpatient_location(msg)? {
-        let pv1_3_1 = parse_repeating_field_component_value(msg, "PV1", 3, 1)?;
-        let pv1_3_2 = parse_repeating_field_component_value(msg, "PV1", 3, 2)?;
-        let pv1_3_3 = parse_repeating_field_component_value(msg, "PV1", 3, 3)?;
+        let pv1_3_1 = query(msg, "PV1.3.1");
+        let pv1_3_2 = query(msg, "PV1.3.2");
+        let pv1_3_3 = query(msg, "PV1.3.3");
 
         if let Some(department) = parse_fab(msg)? {
             match (pv1_3_1, pv1_3_2, pv1_3_3) {
@@ -280,7 +274,7 @@ pub(crate) fn create_locations(
                 }
                 (Some(pv1_3_1), Some(pv1_3_2), Some(pv1_3_3)) => {
                     result.push(map_ward_location(msg, department, config, resources)?);
-                    result.push(map_room_location(config, pv1_3_1.clone(), pv1_3_2.clone())?);
+                    result.push(map_room_location(config, pv1_3_1, pv1_3_2)?);
                     result.push(map_bed_location(config, pv1_3_1, pv1_3_2, pv1_3_3)?);
                 }
                 (_, _, _) => {}
@@ -295,7 +289,7 @@ pub(crate) fn create_locations(
 }
 
 fn map_location_type_icu(
-    pv1_3_1_value: &String,
+    pv1_3_1_value: &str,
     resources: &ResourceMap,
 ) -> Result<Option<Vec<Option<CodeableConcept>>>, MappingError> {
     if let Some(ward_entry) = resources.ward_map.get(pv1_3_1_value)
@@ -312,7 +306,7 @@ fn map_location_type_icu(
 
 pub(crate) fn map_ward_location(
     msg: &Message,
-    department: String,
+    department: &str,
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Location, MappingError> {
@@ -328,8 +322,8 @@ pub(crate) fn map_ward_location(
         )?)])
         .build()
         .map_err(MappingError::BuilderError)?;
-    if let Some(icu_coding) = parse_repeating_field_component_value(msg, "PV1", 3, 1)?
-        .and_then(|field_value| map_location_type_icu(&field_value, resources).transpose())
+    if let Some(icu_coding) = query(msg, "PV1.3.1")
+        .and_then(|field_value| map_location_type_icu(field_value, resources).transpose())
     {
         location.r#type = icu_coding?;
     }
@@ -338,8 +332,8 @@ pub(crate) fn map_ward_location(
 
 pub(crate) fn map_room_location(
     config: &Fhir,
-    pv1_3_1: String,
-    pv1_3_2: String,
+    pv1_3_1: &str,
+    pv1_3_2: &str,
 ) -> Result<Location, MappingError> {
     Location::builder()
         .meta(get_meta()?)
@@ -349,7 +343,7 @@ pub(crate) fn map_room_location(
         )?)
         .identifier(vec![Some(build_usual_identifier(
             vec![pv1_3_1, pv1_3_2],
-            config.location.system_room.to_string(),
+            config.location.system_room.clone(),
         )?)])
         .build()
         .map_err(MappingError::BuilderError)
@@ -357,9 +351,9 @@ pub(crate) fn map_room_location(
 
 pub(crate) fn map_bed_location(
     config: &Fhir,
-    pv1_3_1: String,
-    pv1_3_2: String,
-    pv1_3_3: String,
+    pv1_3_1: &str,
+    pv1_3_2: &str,
+    pv1_3_3: &str,
 ) -> Result<Location, MappingError> {
     Location::builder()
         .meta(get_meta()?)
