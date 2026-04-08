@@ -43,6 +43,8 @@ pub(crate) enum MessageAccessError {
     UnsupportedContentError(String),
     #[error(transparent)]
     ParseError(#[from] hl7_parser::parser::ParseError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 #[derive(Debug, Error)]

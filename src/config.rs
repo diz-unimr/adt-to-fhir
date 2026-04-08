@@ -1,5 +1,5 @@
 use config::{Config, ConfigError, Environment, File};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 #[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct App {
@@ -28,12 +28,6 @@ pub(crate) struct Fhir {
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]
-pub(crate) struct ResourceConfig {
-    pub(crate) profile: String,
-    pub(crate) system: String,
-}
-
-#[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct PatientConfig {
     pub(crate) profile: String,
     pub(crate) system: String,
@@ -51,7 +45,6 @@ pub(crate) struct FallConfig {
 }
 #[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct LocationConfig {
-    //    pub(crate) profile: String,
     pub(crate) system_ward: String,
     pub(crate) system_room: String,
     pub(crate) system_bed: String,
