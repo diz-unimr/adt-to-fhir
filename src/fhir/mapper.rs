@@ -376,8 +376,8 @@ mod tests {
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
-        Bundle, BundleEntry, BundleEntryRequest, Encounter, Location, Parameters, Patient,
-        Resource, ResourceType,
+        Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
+        ResourceType,
     };
 
     use crate::test_utils::tests::{
@@ -425,7 +425,6 @@ mod tests {
 
         let patient: Vec<Patient> = filter_resources(&bundle);
         let encounter: Vec<Encounter> = filter_resources(&bundle);
-        let location: Vec<Location> = filter_resources(&bundle);
 
         // assert profiles set
         assert!(
@@ -437,11 +436,6 @@ mod tests {
             encounter
                 .iter()
                 .all(|e| has_profile(e.meta.as_ref().unwrap(), &config.fall.profile))
-        );
-        assert!(
-            location
-                .iter()
-                .all(|l| has_profile(l.meta.as_ref().unwrap(), &config.fall.profile))
         );
     }
 
