@@ -3,7 +3,8 @@ pub(crate) mod tests {
     use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
     use crate::fhir::resources::{Department, ResourceMap, Ward};
     use fhir_model::WrongResourceType;
-    use fhir_model::r4b::resources::{BundleEntry, Resource};
+    use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
+    use fhir_model::r4b::types::Meta;
     use std::collections::HashMap;
 
     pub fn get_test_config() -> Fhir {
@@ -80,5 +81,20 @@ pub(crate) mod tests {
     ) -> Result<T, WrongResourceType> {
         let r = e.resource.clone().unwrap();
         T::try_from(r)
+    }
+
+    pub(crate) fn filter_resources<T: TryFrom<Resource, Error = WrongResourceType>>(
+        bundle: &Bundle,
+    ) -> Vec<T> {
+        bundle
+            .entry
+            .iter()
+            .flatten()
+            .filter_map(|e| resource_from::<T>(e).ok())
+            .collect()
+    }
+
+    pub(crate) fn has_profile(meta: &Meta, profile: &str) -> bool {
+        meta.profile.iter().flatten().any(|m| m == profile)
     }
 }

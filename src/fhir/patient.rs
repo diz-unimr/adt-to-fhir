@@ -529,12 +529,7 @@ fn map_versicherungsdaten(
         .map_err(MappingError::from)?;
 
     // set assigner
-    // match in1
-    //     .field(3)
-    //     .and_then(|f| f.repeat(1))
-    //     .and_then(|r| repeat_component(r, 1))
     match segment_value(in1, 3, 1, 1) {
-        // match segment_value(in1, 3, 0, 1) {
         None => {
             log!(
                 Level::Warn,

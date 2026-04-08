@@ -380,7 +380,9 @@ mod tests {
         Resource, ResourceType,
     };
 
-    use crate::test_utils::tests::{get_dummy_resources, get_test_config, resource_from};
+    use crate::test_utils::tests::{
+        filter_resources, get_dummy_resources, get_test_config, has_profile,
+    };
     use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};
 
@@ -421,47 +423,26 @@ mod tests {
 
         assert_eq!(bundle.entry.len(), 5);
 
-        let patient: Vec<Patient> = bundle
-            .entry
-            .iter()
-            .flatten()
-            .filter_map(|e| resource_from(e).ok())
-            .collect();
-        let encounter: Vec<Encounter> = bundle
-            .entry
-            .iter()
-            .flatten()
-            .filter_map(|e| resource_from(e).ok())
-            .collect();
-
-        let location: Vec<Location> = bundle
-            .entry
-            .iter()
-            .flatten()
-            .filter_map(|e| resource_from(e).ok())
-            .collect();
+        let patient: Vec<Patient> = filter_resources(&bundle);
+        let encounter: Vec<Encounter> = filter_resources(&bundle);
+        let location: Vec<Location> = filter_resources(&bundle);
 
         // assert profiles set
-        assert!(patient.iter().all(|p| {
-            p.meta
-                .as_ref()
-                .unwrap()
-                .profile
+        assert!(
+            patient
                 .iter()
-                .flatten()
-                .find(|&pr| pr.as_str() == config.person.profile)
-                .is_some()
-        }));
-        assert!(encounter.iter().all(|e| {
-            e.meta
-                .as_ref()
-                .unwrap()
-                .profile
+                .all(|p| has_profile(p.meta.as_ref().unwrap(), &config.person.profile))
+        );
+        assert!(
+            encounter
                 .iter()
-                .flatten()
-                .find(|&pr| pr.as_str() == config.fall.profile)
-                .is_some()
-        }));
+                .all(|e| has_profile(e.meta.as_ref().unwrap(), &config.fall.profile))
+        );
+        assert!(
+            location
+                .iter()
+                .all(|l| has_profile(l.meta.as_ref().unwrap(), &config.fall.profile))
+        );
     }
 
     #[test]
