@@ -115,6 +115,9 @@ pub(crate) fn query<'a>(msg: &'a Message<'_>, location: &str) -> Option<&'a str>
         .filter(|s| !s.is_empty())
 }
 
+/// Get component value of a repeating field.
+///
+/// Returns non empty string slices ([`Option<&str>`]) or [`None`].
 pub(crate) fn repeat_component<'a>(repeat: &Repeat<'a>, component: usize) -> Option<&'a str> {
     repeat
         .component(component)
@@ -122,6 +125,9 @@ pub(crate) fn repeat_component<'a>(repeat: &Repeat<'a>, component: usize) -> Opt
         .filter(|s| !s.is_empty())
 }
 
+/// Get subcomponent values of a repeating field.
+///
+/// Subcomponent values are non empty string slices ([`Option<&str>`]) or [`None`].
 pub(crate) fn repeat_subcomponents<'a>(
     repeat: &Repeat<'a>,
     component: usize,
@@ -135,6 +141,9 @@ pub(crate) fn repeat_subcomponents<'a>(
     })
 }
 
+/// Get field repeats of the provided query.
+///
+/// Returns an iterator of [`Repeat`], if query targets a [`Field`].
 pub(crate) fn field_repeats<'a>(
     msg: &'a Message<'_>,
     query: &str,
@@ -174,6 +183,7 @@ pub(crate) fn segment_value<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hl7_parser::parser::parse_segment;
     use rstest::rstest;
 
     #[test]
@@ -197,18 +207,16 @@ mod tests {
     #[case(3, 100, 5, None)]
     #[case(3, 2, 500, None)]
     #[case(0, 1, 0, None)]
-    fn test_get_repeat_value(
+    fn test_segment_value(
         #[case] field_number: usize,
         #[case] repeat_index: usize,
         #[case] component_number: usize,
         #[case] expected: Option<&str>,
     ) {
-        let segment_raw: &str = r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
-IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||000000000001^PRN^PH^^^0800^99900801^^^^^000000000001~1313131331313^PRN^FX^^^00000^00000000^^^^^1313131331313||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U||||||10001|Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||H|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L"#;
-        let msg = Message::parse_with_lenient_newlines(segment_raw, true).unwrap();
+        let segment_raw = "IN1|2||777777777^^^^NII~BG HM HAUPT^^^^XX|BGHM - Hauptverwaltung|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L||000000000001^PRN^PH^^^0800^99900801^^^^^000000000001~1313131331313^PRN^FX^^^00000^00000000^^^^^1313131331313||Träger der ges. Unfallversicherer^26^^^2&Berufsgenossenschaft^^NII~Träger der ges. Unfallversicherer^26^^^^^U||||||10001|Max^Mustermann||19620115|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L|||H|||||||||M||||||||||||M|Musterstreasse. 1&Musterstreasse.&1^^Berlin^^10115^DE^L";
 
-        let segment = msg.segment("IN1").unwrap();
-        let result = segment_value(segment, field_number, repeat_index, component_number);
+        let segment = parse_segment(segment_raw).unwrap();
+        let result = segment_value(&segment, field_number, repeat_index, component_number);
 
         assert_eq!(result, expected);
     }
