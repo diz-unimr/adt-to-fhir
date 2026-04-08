@@ -11,16 +11,13 @@ use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
-    BundleEntry, Encounter, EncounterBuilder, EncounterHospitalization, EncounterLocation,
-    Location, ResourceType,
-     EncounterDiagnosis
-
+    BundleEntry, Encounter, EncounterBuilder, EncounterDiagnosis, EncounterHospitalization,
+    EncounterLocation, Location, ResourceType,
 };
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
 };
 use fhir_model::time::OffsetDateTime;
-use futures::{StreamExt, TryStreamExt};
 use hl7_parser::Message;
 use std::num::NonZeroU32;
 
@@ -926,12 +923,12 @@ ZBE|zbe_id^SAP-ISH~615^MEDOS|20030901163000||UPDATE"#;
                 },
                 profile: String::default(),
                 system: String::default(),
-                institut_kennzeichen_system: String::default(),
             },
             person: PatientConfig::default(),
             facility_id: String::default(),
             location: LocationConfig::default(),
             meta_source: String::default(),
+            condition: Default::default(),
         };
 
         let expected = Identifier::builder()

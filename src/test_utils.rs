@@ -21,8 +21,7 @@ pub(crate) mod tests {
                 system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
                 einrichtungskontakt: Default::default(),
                 abteilungskontakt: Default::default(),
-                versorgungsstellenkontakt: Default::default(),
-                institut_kennzeichen_system: "http://fhir.de/sid/arge-ik/iknr".to_string()
+                versorgungsstellenkontakt: Default::default()
             },
             location: LocationConfig {
                 system_ward: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
