@@ -5,7 +5,9 @@ use crate::fhir::mapper::{
     map_ward_location, parse_datetime, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::terminology::{AufnahmeGrundStelle, EntlassgrundStelle};
+use crate::fhir::terminology::{
+    AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
+};
 use crate::hl7::parser::{MessageType, message_type, query};
 use anyhow::anyhow;
 use fhir_model::DateTime;
@@ -656,7 +658,6 @@ fn map_conditions(
     };
     Ok(res)
 }
-static DIAGNOSE_ROLE_SYSTEM: &str = "http://terminology.hl7.org/CodeSystem/diagnosis-role";
 static KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM: &str = "http://fhir.de/CodeSystem/KontaktDiagnoseProzedur";
 fn map_diagnose_local_codes(
     priority: u32,
@@ -666,175 +667,75 @@ fn map_diagnose_local_codes(
 
     let is_main_condition = priority < 2;
 
-    let priority_code = if is_main_condition {
-        "CC".to_string()
+    if is_main_condition {
+        result.push(diagnose_role_coding("CC"));
     } else {
-        "CM".to_string()
+        result.push(diagnose_role_coding("CM"));
     };
-
-    result.push(Some(
-        Coding::builder()
-            .code(priority_code.to_string())
-            .system(DIAGNOSE_ROLE_SYSTEM.to_string())
-            .build()?,
-    ));
 
     match condition_type_local.as_str() {
         // Aufnahmediagnose
         "AD" | "Aufn." => {
-            result.push(Some(
-                Coding::builder()
-                    .code("AD".to_string())
-                    .display("Admission diagnosis".to_string())
-                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
-                    .build()?,
-            ));
+            result.push(diagnose_role_coding("AD"));
         }
         // Einweisungsdiagnose
         "ED" | "Einw." => {
-            result.push(Some(
-                Coding::builder()
-                    .code("referral-diagnosis".to_string())
-                    .display("Überweisungsdiagnose".to_string())
-                    .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                    .build()?,
-            ));
+            result.push(kontakt_diagnose_procedures("referral-diagnosis"));
         }
         // Behandlungsdiagnose
         "BD" => {
-            result.push(Some(
-                Coding::builder()
-                    .code("treatment-diagnosis".to_string())
-                    .display("Behandlungsrelevante Diagnosen".to_string())
-                    .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                    .build()?,
-            ));
+            result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
 
             if is_main_condition {
-                result.push(Some(
-                    Coding::builder()
-                        .code("hospital-main-diagnosis".to_string())
-                        .display("Krankenhaus Hauptdiagnose".to_string())
-                        .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                        .build()?,
-                ));
+                result.push(kontakt_diagnose_procedures("hospital-main-diagnosis"));
             }
         }
         // Entlassungsdiagnose
         "EL" | "Entl." => {
-            result.push(Some(
-                Coding::builder()
-                    .code("DD".to_string())
-                    .display("Discharge diagnosis".to_string())
-                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
-                    .build()?,
-            ));
+            result.push(diagnose_role_coding("DD"));
         }
 
         // Postoperative Diagnose
         "PO" | "Post" => {
-            result.push(Some(
-                Coding::builder()
-                    .code("surgery-diagnosis".to_string())
-                    .display("Operationsdiagnose".to_string())
-                    .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                    .build()?,
-            ));
+            result.push(kontakt_diagnose_procedures("surgery-diagnosis"));
 
-            result.push(Some(
-                Coding::builder()
-                    .code("post-op".to_string())
-                    .display("post-op diagnosis".to_string())
-                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
-                    .build()?,
-            ));
+            result.push(diagnose_role_coding("post-op"));
         }
 
         // DRG Diagnose
         "DD" => {
             if is_main_condition {
-                result.push(Some(
-                    Coding::builder()
-                        .code("principle-DRG".to_string())
-                        .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                        .build()?,
-                ));
+                result.push(kontakt_diagnose_procedures("principle-DRG"));
             } else {
-                result.push(Some(
-                    Coding::builder()
-                        .code("secondary-DRG".to_string())
-                        .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                        .build()?,
-                ));
+                result.push(kontakt_diagnose_procedures("secondary-DRG"));
             }
         }
 
         // Abrechungsdiagnose
         "AR" | "Abr" => {
-            result.push(Some(
-                Coding::builder()
-                    .code("billing".to_string())
-                    .display("Billing".to_string())
-                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
-                    .build()?,
-            ));
+            result.push(diagnose_role_coding("billing"));
         }
 
         // Präoperative Diagnose
         "PR" | "Präop" => {
-            result.push(Some(
-                Coding::builder()
-                    .code("surgery-diagnosis".to_string())
-                    .display("Operationsdiagnose".to_string())
-                    .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                    .build()?,
-            ));
-            result.push(Some(
-                Coding::builder()
-                    .code("pre-op".to_string())
-                    .display("pre-op diagnosis".to_string())
-                    .system(DIAGNOSE_ROLE_SYSTEM.to_string())
-                    .build()?,
-            ));
+            result.push(kontakt_diagnose_procedures("surgery-diagnosis"));
+            result.push(diagnose_role_coding("pre-op"));
         }
 
         // Fachabteilungs-Aufnahmediagnose & Behandlungsdiagnose & Entlassungsdiagnose
         "FB" | "FA" | "FE" | "FA Entl." => {
             if is_main_condition {
-                result.push(Some(
-                    Coding::builder()
-                        .code("department-main-diagnosis".to_string())
-                        .display("Abteilung Hauptdiagnose".to_string())
-                        .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                        .build()?,
-                ));
+                result.push(kontakt_diagnose_procedures("department-main-diagnosis"));
             }
             match condition_type_local.as_str() {
                 "FA" => {
-                    result.push(Some(
-                        Coding::builder()
-                            .code("AD".to_string())
-                            .display("Admission diagnosis".to_string())
-                            .system(DIAGNOSE_ROLE_SYSTEM.to_string())
-                            .build()?,
-                    ));
+                    result.push(diagnose_role_coding("AD"));
                 }
                 "FB" => {
-                    result.push(Some(
-                        Coding::builder()
-                            .code("treatment-diagnosis".to_string())
-                            .system(KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM.to_string())
-                            .build()?,
-                    ));
+                    result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
                 }
                 "FE" | "FA Entl." => {
-                    result.push(Some(
-                        Coding::builder()
-                            .code("DD".to_string())
-                            .display("Discharge diagnosis".to_string())
-                            .system(DIAGNOSE_ROLE_SYSTEM.to_string())
-                            .build()?,
-                    ));
+                    result.push(diagnose_role_coding("DD"));
                 }
                 _ => {
                     // ignore - since we are here in department context
