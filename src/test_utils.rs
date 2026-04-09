@@ -6,6 +6,8 @@ pub(crate) mod tests {
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
     use fhir_model::r4b::types::Meta;
     use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
 
     pub fn get_test_config() -> Fhir {
         Fhir {
@@ -96,5 +98,14 @@ pub(crate) mod tests {
 
     pub(crate) fn has_profile(meta: &Meta, profile: &str) -> bool {
         meta.profile.iter().flatten().any(|m| m == profile)
+    }
+
+    pub fn read_test_resource(file_name: &str) -> String {
+        let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        file_path.push("resources/test");
+        file_path.push(file_name);
+
+        fs::read_to_string(file_path.display().to_string())
+            .unwrap_or_else(|_| panic!("Test resource not found: {}", file_path.display()))
     }
 }

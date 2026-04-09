@@ -207,7 +207,7 @@ fn deserialize_message(m: &BorrowedMessage) -> (String, Option<String>) {
 mod tests {
     use crate::config::AppConfig;
     use crate::fhir::mapper::FhirMapper;
-    use crate::test_utils::tests::get_dummy_resources;
+    use crate::test_utils::tests::{get_dummy_resources, read_test_resource};
     use crate::{deserialize_message, run};
     use fhir_model::r4b::resources::{Bundle, ResourceType};
     use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -215,8 +215,6 @@ mod tests {
     use rdkafka::producer::future_producer::OwnedDeliveryResult;
     use rdkafka::producer::{FutureProducer, FutureRecord};
     use serde_json::Value;
-    use std::fs;
-    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::sync::oneshot;
 
@@ -324,14 +322,5 @@ mod tests {
             .unwrap()
             .await
             .unwrap()
-    }
-
-    pub fn read_test_resource(file_name: &str) -> String {
-        let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        file_path.push("resources/test");
-        file_path.push(file_name);
-
-        fs::read_to_string(file_path.display().to_string())
-            .unwrap_or_else(|_| panic!("Test resource not found: {}", file_path.display()))
     }
 }

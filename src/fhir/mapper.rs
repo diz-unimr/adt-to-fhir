@@ -372,7 +372,6 @@ pub(crate) fn map_bed_location(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::read_test_resource;
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
@@ -381,7 +380,7 @@ mod tests {
     };
 
     use crate::test_utils::tests::{
-        filter_resources, get_dummy_resources, get_test_config, has_profile,
+        filter_resources, get_dummy_resources, get_test_config, has_profile, read_test_resource,
     };
     use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};

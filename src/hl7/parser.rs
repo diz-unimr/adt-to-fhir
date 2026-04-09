@@ -127,7 +127,7 @@ pub(crate) fn repeat_component<'a>(repeat: &Repeat<'a>, component: usize) -> Opt
 
 /// Get subcomponent values of a repeating field.
 ///
-/// Subcomponent values are non empty string slices ([`Option<&str>`]) or [`None`].
+/// Subcomponent values are non-empty string slices ([`Option<&str>`]) or [`None`].
 pub(crate) fn repeat_subcomponents<'a>(
     repeat: &Repeat<'a>,
     component: usize,
