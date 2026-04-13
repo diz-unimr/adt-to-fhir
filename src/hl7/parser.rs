@@ -117,7 +117,7 @@ pub(crate) fn query<'a>(msg: &'a Message<'_>, location: &str) -> Option<&'a str>
 
 /// Get component value of a repeating field.
 ///
-/// Returns non empty string slices ([`Option<&str>`]) or [`None`].
+/// Returns non-empty string slices ([`Option<&str>`]) or [`None`].
 pub(crate) fn repeat_component<'a>(repeat: &Repeat<'a>, component: usize) -> Option<&'a str> {
     repeat
         .component(component)

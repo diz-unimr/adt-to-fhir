@@ -21,6 +21,7 @@ use fhir_model::r4b::types::{
 };
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
+use hl7_parser::message::Field;
 use std::num::NonZeroU32;
 
 enum EncounterType {
@@ -611,7 +612,7 @@ fn map_conditions(
     msg: &Message,
     config: &Fhir,
 ) -> Result<Vec<Option<EncounterDiagnosis>>, MappingError> {
-    let mut res: Vec<Option<EncounterDiagnosis>> = vec![];
+    let mut res = vec![];
     if msg.segment_count("DG1") > 0 {
         for dg1 in msg.segments().filter(|seg| seg.name.eq("DG1")) {
             if let (Some(row_number), Some(condition_typ), Some(priority), Some(condition_id)) =
@@ -623,32 +624,30 @@ fn map_conditions(
                 if let (Ok(ref_to_diag), Ok(codings), Ok(rank)) = (
                     resource_ref(
                         &ResourceType::Condition,
-                        condition_id.raw_value(),
+                        map_bar_identifier(condition_id, priority)?.as_str(),
                         &config.condition.system,
                     ),
                     CodeableConcept::builder()
                         .coding(map_diagnose_local_codes(
                             priority
                                 .raw_value()
-                                .parse::<u32>()
-                                .map_err(FormattingError::ParseIntError)?,
+                                .parse::<f32>()
+                                .map_err(FormattingError::ParseFloatError)?
+                                .floor() as u32,
                             condition_typ.raw_value().to_string(),
                         )?)
                         .build(),
-                    row_number
+                    priority
                         .raw_value()
-                        .parse::<u32>()
-                        .map_err(FormattingError::ParseIntError),
+                        .parse::<f32>()
+                        .map_err(FormattingError::ParseFloatError),
                 ) {
-                    // fixme : add msg_id to error
                     res.push(Some(
                         EncounterDiagnosis::builder()
                             .condition(ref_to_diag)
                             .r#use(codings)
                             .rank(
-                                NonZeroU32::new(rank)
-                                    .map(|r| r)
-                                    .ok_or_else(|| MappingError::Other(anyhow!("".to_string())))?,
+                                NonZeroU32::new(rank.floor() as u32).ok_or_else(|| MappingError::Other(anyhow!(format!("DG1 entry row '{}': priority could not be parsed. value was '{}'",row_number.raw_value(), priority.raw_value()))))?,
                             )
                             .build()?,
                     ));
@@ -658,7 +657,41 @@ fn map_conditions(
     };
     Ok(res)
 }
-static KONTAKT_DIAGNOSE_PROZEDUR_SYSTEM: &str = "http://fhir.de/CodeSystem/KontaktDiagnoseProzedur";
+/// identifier value is build like 'condition-id-rank'
+///
+/// note:
+/// Some ADT messages have only an integer as diagnosis priority,
+/// but actually if we check BAR message it has '\<value\>.1'!
+/// It seems .1 is only added to ADT message if .2 priority is present, too.
+/// Since we build identifier from this value, we need to unify it
+/// to standard, which are set by HL7 BAR messages.
+fn map_bar_identifier(condition_id: &Field, priority: &Field) -> Result<String, MappingError> {
+    let split_by_point = priority.raw_value().split(".").collect::<Vec<&str>>();
+
+    match split_by_point.len() > 1 {
+        false => Ok(format!(
+            "{}-{}.1",
+            condition_id.raw_value(),
+            priority.raw_value()
+        )),
+        true => {
+            match (
+                split_by_point[1].parse::<u32>(),
+                split_by_point[0].parse::<u32>(),
+            ) {
+                (Ok(_), Ok(_)) => Ok(format!(
+                    "{}-{}",
+                    condition_id.raw_value(),
+                    priority.raw_value()
+                )),
+
+                (Err(e), _) => Err(MappingError::FormattingError(e.into())),
+                (_, Err(e)) => Err(MappingError::FormattingError(e.into())),
+            }
+        }
+    }
+}
+
 fn map_diagnose_local_codes(
     priority: u32,
     condition_type_local: String,
@@ -678,10 +711,12 @@ fn map_diagnose_local_codes(
         "AD" | "Aufn." => {
             result.push(diagnose_role_coding("AD"));
         }
+
         // Einweisungsdiagnose
         "ED" | "Einw." => {
             result.push(kontakt_diagnose_procedures("referral-diagnosis"));
         }
+
         // Behandlungsdiagnose
         "BD" => {
             result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
@@ -690,6 +725,7 @@ fn map_diagnose_local_codes(
                 result.push(kontakt_diagnose_procedures("hospital-main-diagnosis"));
             }
         }
+
         // Entlassungsdiagnose
         "EL" | "Entl." => {
             result.push(diagnose_role_coding("DD"));
@@ -723,7 +759,7 @@ fn map_diagnose_local_codes(
         }
 
         // Fachabteilungs-Aufnahmediagnose & Behandlungsdiagnose & Entlassungsdiagnose
-        "FB" | "FA" | "FE" | "FA Entl." => {
+        "FB" | "FA" | "FE" | "FA En" | "FA Be" => {
             if is_main_condition {
                 result.push(kontakt_diagnose_procedures("department-main-diagnosis"));
             }
@@ -731,14 +767,14 @@ fn map_diagnose_local_codes(
                 "FA" => {
                     result.push(diagnose_role_coding("AD"));
                 }
-                "FB" => {
+                "FB" | "FA Be" => {
                     result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
                 }
-                "FE" | "FA Entl." => {
+                "FE" | "FA En" => {
                     result.push(diagnose_role_coding("DD"));
                 }
                 _ => {
-                    // ignore - since we are here in department context
+                    // other ignore - since we are here in department context
                 }
             }
         }
@@ -794,11 +830,12 @@ impl ToEncounterLocation<Result<EncounterLocation, MappingError>> for Location {
 mod tests {
     use super::*;
     use crate::config::{FallConfig, LocationConfig, PatientConfig, SystemConfig};
-    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
+    use crate::error::FormattingError::{ParseFloatError, ParseIntError};
+    use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use hl7_parser::Message;
     use rstest::rstest;
     use std::default::Default;
-
+    use std::num::NonZero;
     #[rstest]
     #[case(EncounterType::Einrichtungskontakt, ("einrichtungskontakt","admit_id"))]
     #[case(EncounterType::Fachabteilungskontakt, ("abteilungskontakt","zbe_id"))]
@@ -902,5 +939,132 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         let actual = map_entlassgrund(&msg).unwrap();
 
         assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(0, "CC,department-main-diagnosis,DD", 1)]
+    #[case(1, "CM,treatment-diagnosis", 2)]
+    #[case(2, "CC,AD", 1)]
+    fn map_conditions_test(
+        #[case] entry_index: usize,
+        #[case] codings_expected: String,
+        #[case] rank_expected: u32,
+    ) {
+        let binding = read_test_resource("a08_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
+        let result = &map_conditions(&msg, &get_test_config()).ok().unwrap();
+
+        assert_eq!(result.len(), 6);
+
+        let first_entry = result.get(entry_index).unwrap().as_ref().unwrap();
+        assert_eq!(first_entry.rank, NonZero::new(rank_expected));
+
+        codings_expected.split(',').for_each(|s| {
+            assert!(
+                first_entry
+                    .r#use
+                    .as_ref()
+                    .unwrap()
+                    .coding
+                    .iter()
+                    .find(|c| c.as_ref().unwrap().code.as_ref().unwrap() == s)
+                    .is_some()
+            );
+        });
+
+        let amount_of_uses = codings_expected.split(',').count();
+        assert_eq!(
+            amount_of_uses,
+            first_entry.r#use.as_ref().unwrap().coding.len()
+        );
+    }
+    #[test]
+    fn map_condition_identifier_test() {
+        let binding = read_test_resource("a03_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
+        let result = &map_conditions(&msg, &get_test_config());
+
+        assert_eq!(result.is_ok(), true);
+        let first_entry = result
+            .as_ref()
+            .unwrap()
+            .first()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .condition
+            .reference
+            .as_ref()
+            .unwrap();
+        assert!(
+            first_entry.ends_with("|12345677-1.1"),
+            "but fount {}",
+            first_entry
+        );
+        let second_entry = result
+            .as_ref()
+            .unwrap()
+            .get(1)
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .condition
+            .reference
+            .as_ref()
+            .unwrap();
+        assert!(
+            second_entry.ends_with("|12345678-2.1"),
+            "but fount {}",
+            second_entry
+        );
+        let third_entry = result
+            .as_ref()
+            .unwrap()
+            .get(2)
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .condition
+            .reference
+            .as_ref()
+            .unwrap();
+        assert!(
+            third_entry.ends_with("|12345679-2.2"),
+            "but fount {}",
+            third_entry
+        );
+    }
+
+    #[rstest]
+    #[case("asdf", 0)]
+    #[case("a.1", 1)]
+    #[case("1.b", 1)]
+    fn invalid_condition_ref_nan(#[case] prio_value: String, #[case] expect: usize) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
+EVN|A03|202111230904|202111230904||Muster
+PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
+DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||20230101131500|Aufn.|||||||||{}|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345677|U
+"#,
+            prio_value
+        );
+        let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
+        let x = &map_conditions(&msg, &get_test_config());
+        match x {
+            Ok(_) => panic!("ParseIntError was expected"),
+            Err(MappingError::FormattingError(ParseFloatError(l))) => {
+                if expect == 1 {
+                    panic!("ParseFloatError was expected but got other")
+                }
+                println!("as expected {:#?}", l);
+            }
+            Err(MappingError::FormattingError(ParseIntError(c))) => {
+                if expect != 1 {
+                    panic!("ParseIntError was expected but got ParseFloatError")
+                }
+                println!("as expected ParseIntError: {}", c)
+            }
+            Err(c) => panic!("ParseFloatError was expected but found {}", c),
+        }
     }
 }
