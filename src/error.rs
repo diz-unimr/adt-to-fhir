@@ -26,6 +26,8 @@ pub(crate) enum FormattingError {
     #[error(transparent)]
     ParseIntError(#[from] std::num::ParseIntError),
     #[error(transparent)]
+    ParseFloatError(#[from] std::num::ParseFloatError),
+    #[error(transparent)]
     InvalidFormatError(#[from] InvalidFormatDescription),
     #[error(transparent)]
     ComponentRangeError(#[from] time::error::ComponentRange),
