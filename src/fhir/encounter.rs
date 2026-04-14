@@ -682,6 +682,18 @@ ZBE|zbe_id^SAP-ISH~615^MEDOS|20030901163000||UPDATE"#;
             .system(expected.0.into())
             .value(expected.1.into())
             .r#use(IdentifierUse::Usual)
+            .r#type(
+                CodeableConcept::builder()
+                    .coding(vec![Some(
+                        Coding::builder()
+                            .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
+                            .code("VN".to_string())
+                            .build()
+                            .unwrap(),
+                    )])
+                    .build()
+                    .unwrap(),
+            )
             .build()
             .unwrap();
 
