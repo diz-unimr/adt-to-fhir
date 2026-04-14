@@ -615,44 +615,53 @@ fn map_conditions(
     let mut res = vec![];
     if msg.segment_count("DG1") > 0 {
         for dg1 in msg.segments().filter(|seg| seg.name.eq("DG1")) {
-            if let (Some(row_number), Some(condition_typ), Some(priority), Some(condition_id)) =
-                (dg1.field(1), dg1.field(6), dg1.field(15), dg1.field(20))
-                && !condition_id.is_empty()
-                && !priority.is_empty()
-                && !condition_typ.is_empty()
-            {
-                if let (Ok(ref_to_diag), Ok(codings), Ok(rank)) = (
-                    resource_ref(
-                        &ResourceType::Condition,
-                        map_bar_identifier(condition_id, priority)?.as_str(),
-                        &config.condition.system,
-                    ),
-                    CodeableConcept::builder()
-                        .coding(map_diagnose_local_codes(
-                            priority
-                                .raw_value()
-                                .parse::<f32>()
-                                .map_err(FormattingError::ParseFloatError)?
-                                .floor() as u32,
-                            condition_typ.raw_value().to_string(),
-                        )?)
-                        .build(),
-                    priority
-                        .raw_value()
-                        .parse::<f32>()
-                        .map_err(FormattingError::ParseFloatError),
-                ) {
-                    res.push(Some(
-                        EncounterDiagnosis::builder()
-                            .condition(ref_to_diag)
-                            .r#use(codings)
-                            .rank(
-                                NonZeroU32::new(rank.floor() as u32).ok_or_else(|| MappingError::Other(anyhow!(format!("DG1 entry row '{}': priority could not be parsed. value was '{}'",row_number.raw_value(), priority.raw_value()))))?,
-                            )
-                            .build()?,
-                    ));
-                }
+            let Some(row_number) = dg1.field(1) else {
+                continue;
+            };
+            let Some(condition_typ) = dg1.field(6) else {
+                continue;
+            };
+            let Some(priority) = dg1.field(15) else {
+                continue;
+            };
+            let Some(condition_id) = dg1.field(20) else {
+                continue;
+            };
+
+            if condition_id.is_empty() || priority.is_empty() || condition_typ.is_empty() {
+                continue;
             }
+
+            let priority_u32 = priority
+                .raw_value()
+                .parse::<f32>()
+                .map_err(FormattingError::ParseFloatError)?
+                .floor() as u32;
+
+            let rank_nz = NonZeroU32::new(priority_u32).ok_or_else(|| {
+                MappingError::Other(anyhow!(format!(
+                    "DG1 entry row '{}': priority could not be parsed. value was '{}'",
+                    row_number.raw_value(),
+                    priority.raw_value()
+                )))
+            })?;
+
+            let condition_reference = resource_ref(
+                &ResourceType::Condition,
+                map_bar_identifier(condition_id, priority)?.as_str(),
+                &config.condition.system,
+            )?;
+
+            let codings =
+                map_diagnose_local_codes(priority_u32, condition_typ.raw_value().to_string())?;
+
+            res.push(Some(
+                EncounterDiagnosis::builder()
+                    .condition(condition_reference)
+                    .r#use(CodeableConcept::builder().coding(codings).build()?)
+                    .rank(rank_nz)
+                    .build()?,
+            ));
         }
     };
     Ok(res)
@@ -830,7 +839,7 @@ impl ToEncounterLocation<Result<EncounterLocation, MappingError>> for Location {
 mod tests {
     use super::*;
     use crate::config::{FallConfig, LocationConfig, PatientConfig, SystemConfig};
-    use crate::error::FormattingError::{ParseFloatError, ParseIntError};
+    use crate::error::FormattingError::ParseFloatError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use hl7_parser::Message;
     use rstest::rstest;
@@ -1036,10 +1045,10 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     }
 
     #[rstest]
-    #[case("asdf", 0)]
-    #[case("a.1", 1)]
-    #[case("1.b", 1)]
-    fn invalid_condition_ref_nan(#[case] prio_value: String, #[case] expect: usize) {
+    #[case("asdf")]
+    #[case("a.1")]
+    #[case("1.b")]
+    fn invalid_condition_ref_nan(#[case] prio_value: String) {
         let input = format!(
             r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
 EVN|A03|202111230904|202111230904||Muster
@@ -1051,18 +1060,9 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
         let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
         let x = &map_conditions(&msg, &get_test_config());
         match x {
-            Ok(_) => panic!("ParseIntError was expected"),
+            Ok(_) => panic!("ParseFloatError was expected but result was OK!"),
             Err(MappingError::FormattingError(ParseFloatError(l))) => {
-                if expect == 1 {
-                    panic!("ParseFloatError was expected but got other")
-                }
-                println!("as expected {:#?}", l);
-            }
-            Err(MappingError::FormattingError(ParseIntError(c))) => {
-                if expect != 1 {
-                    panic!("ParseIntError was expected but got ParseFloatError")
-                }
-                println!("as expected ParseIntError: {}", c)
+                println!("got ParseFloatError as expected {:#?}", l);
             }
             Err(c) => panic!("ParseFloatError was expected but found {}", c),
         }
