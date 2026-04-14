@@ -304,6 +304,16 @@ fn map_level_identifier(
         .system(system.clone())
         .value(value.to_string())
         .r#use(IdentifierUse::Usual)
+        .r#type(
+            CodeableConcept::builder()
+                .coding(vec![Some(
+                    Coding::builder()
+                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
+                        .code("VN".to_string())
+                        .build()?,
+                )])
+                .build()?,
+        )
         .build()?)
 }
 
@@ -547,20 +557,19 @@ fn map_versorgungsstellenkontakt(
                     .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
                 &config.fall.abteilungskontakt.system,
             )?)
-            .service_provider(
-                parse_fab(msg)?
-                    .and_then(|f| fab_ref(f).ok())
-                    .ok_or(MappingError::Other(anyhow!("missing service provider")))?,
-            )
             .location(map_lvl_3_locations(msg, config, resources)?)
             .status(map_encounter_status(&map_period(
                 msg,
                 &EncounterType::Versorgungsstellenkontakt,
             )?));
 
-    versorgungskontakt
+    let mut kontakt = versorgungskontakt
         .build()
-        .map_err(MappingError::BuilderError)
+        .map_err(MappingError::BuilderError)?;
+
+    kontakt.service_provider = parse_fab(msg)?.and_then(|f| fab_ref(f).ok());
+
+    Ok(kontakt)
 }
 
 fn map_lvl_3_locations(

@@ -5,6 +5,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(crate) enum MappingError {
+    #[error("fatal mapping error: `{0}`")]
+    FatalError(String),
     #[error(transparent)]
     MessageAccessError(#[from] MessageAccessError),
     #[error(transparent)]

@@ -18,11 +18,11 @@ fhir:
   meta_source: "#orbis_adt"
   facility_id: "12345678"
   person:
-    profile: https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0
+    profile: https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2026.0.0
     system: https://fhir.diz.uni-marburg.de/sid/patient-id
     other_insurance_system: https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id
   fall:
-    profile: https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0
+    profile: https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.0
     system: https://fhir.diz.uni-marburg.de/sid/encounter-id
     institut_kennzeichen_system: http://fhir.de/sid/arge-ik/iknr
     einrichtungskontakt:
