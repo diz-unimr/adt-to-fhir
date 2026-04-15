@@ -167,3 +167,45 @@ fn entlassgrund_dritte_stelle(code: &str) -> Option<Coding> {
         .build()
         .ok()
 }
+
+pub fn diagnose_role_coding(code: &str) -> Option<Coding> {
+    let display = match code {
+        "AD" => "Admission diagnosis",
+        "DD" => "Discharge diagnosis",
+        "CC" => "Chief complaint",
+        "CM" => "Comorbidity diagnosis",
+        "pre-op" => "pre-op diagnosis",
+        "post-op" => "post-op diagnosis",
+        "billing" => "Billing",
+        _ => return None,
+    };
+
+    Coding::builder()
+        .system("http://terminology.hl7.org/CodeSystem/diagnosis-role".to_string())
+        .code(code.to_string())
+        .display(display.to_string())
+        .build()
+        .ok()
+}
+
+pub fn kontakt_diagnose_procedures(code: &str) -> Option<Coding> {
+    let display = match code {
+        "referral-diagnosis" => "Überweisungsdiagnose",
+        "treatment-diagnosis" => "Behandlungsrelevante Diagnosen",
+        "hospital-main-diagnosis" => "Krankenhaus Hauptdiagnose",
+        "surgery-diagnosis" => "Operationsdiagnose",
+        "principle-DRG" => "DRG-Hauptdiagnose",
+        "secondary-DRG" => "DRG-Nebendiagnose",
+        "department-main-diagnosis" => "Abteilung Hauptdiagnose",
+        "infection-control-diagnosis" => "Infektionsschutzdiagnose",
+        "cause-of-death" => "Todesursache",
+        _ => return None,
+    };
+
+    Coding::builder()
+        .system("http://fhir.de/CodeSystem/KontaktDiagnoseProzedur".to_string())
+        .code(code.to_string())
+        .display(display.to_string())
+        .build()
+        .ok()
+}
