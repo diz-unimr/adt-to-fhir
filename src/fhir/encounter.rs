@@ -1048,6 +1048,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     #[case("asdf")]
     #[case("a.1")]
     #[case("1.b")]
+    #[case("0")]
     fn invalid_condition_ref_nan(#[case] prio_value: String) {
         let input = format!(
             r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
@@ -1059,12 +1060,15 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
         );
         let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
         let x = &map_conditions(&msg, &get_test_config());
-        match x {
-            Ok(_) => panic!("ParseFloatError was expected but result was OK!"),
-            Err(MappingError::FormattingError(ParseFloatError(l))) => {
-                println!("got ParseFloatError as expected {:#?}", l);
+        match (x, prio_value.as_str()) {
+            (Ok(_), _) => panic!("ParseFloatError was expected but result was OK!"),
+            (Err(MappingError::Other(_)), "0") => {
+                println!("got MappingError for zero rank as expected");
             }
-            Err(c) => panic!("ParseFloatError was expected but found {}", c),
+            (Err(MappingError::FormattingError(ParseFloatError(_))), _) => {
+                println!("got ParseFloatError as expected");
+            }
+            (Err(c), _) => panic!("ParseFloatError was expected but found {}", c),
         }
     }
 }
