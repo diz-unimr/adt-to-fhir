@@ -840,11 +840,13 @@ mod tests {
     use super::*;
     use crate::config::{FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use crate::error::FormattingError::ParseFloatError;
+    use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use hl7_parser::Message;
     use rstest::rstest;
     use std::default::Default;
     use std::num::NonZero;
+
     #[rstest]
     #[case(EncounterType::Einrichtungskontakt, ("einrichtungskontakt","admit_id"))]
     #[case(EncounterType::Fachabteilungskontakt, ("abteilungskontakt","zbe_id"))]
@@ -1069,6 +1071,25 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
                 println!("got ParseFloatError as expected");
             }
             (Err(c), _) => panic!("ParseFloatError was expected but found {}", c),
+        }
+    }
+
+    #[test]
+    fn unsupported_condition_type() {
+        let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
+EVN|A03|202111230904|202111230904||Muster
+PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
+DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||20230101131500|do-not-know|||||||||1|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345677|U
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+        let x = &map_conditions(&msg, &get_test_config());
+        match x {
+            Ok(_) => panic!("we have an unsupported condition type - this is not OK!"),
+
+            Err(MappingError::MessageAccessError(UnsupportedContentError(_))) => {
+                println!("got UnsupportedContentError as expected");
+            }
+            Err(c) => panic!("UnsupportedContentError was expected but found {}", c),
         }
     }
 }
