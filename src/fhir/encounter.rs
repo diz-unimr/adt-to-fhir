@@ -1051,6 +1051,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     #[case("a.1")]
     #[case("1.b")]
     #[case("0")]
+    #[case("-1")]
     fn invalid_condition_ref_nan(#[case] prio_value: String) {
         let input = format!(
             r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
@@ -1067,10 +1068,13 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
             (Err(MappingError::Other(_)), "0") => {
                 println!("got MappingError for zero rank as expected");
             }
+            (Err(MappingError::Other(_)), "-1") => {
+                println!("got MappingError for negativ rank as expected");
+            }
             (Err(MappingError::FormattingError(ParseFloatError(_))), _) => {
                 println!("got ParseFloatError as expected");
             }
-            (Err(c), _) => panic!("ParseFloatError was expected but found {}", c),
+            (Err(c), _) => panic!("ParseFloatError was expected but found => '{}'", c),
         }
     }
 
