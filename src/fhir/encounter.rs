@@ -1,8 +1,10 @@
 use crate::config::Fhir;
 use crate::error::{FormattingError, MappingError, MessageAccessError};
+use crate::fhir::location::{
+    map_bed_location, map_room_location, map_ward_location, to_encounter_location,
+};
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, is_inpatient_location, map_bed_location, map_room_location,
-    map_ward_location, parse_datetime, parse_fab, resource_ref,
+    EntryRequestType, bundle_entry, is_inpatient_location, parse_datetime, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::terminology::{
@@ -14,7 +16,7 @@ use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterBuilder, EncounterDiagnosis, EncounterHospitalization,
-    EncounterLocation, Location, ResourceType,
+    EncounterLocation, ResourceType,
 };
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
@@ -589,24 +591,24 @@ fn map_lvl_3_locations(
 
     if let Some(department) = parse_fab(msg)? {
         // department location should be always available
-        locations.push(Some(
-            map_ward_location(msg, department, config, resources)?.to_encounter_location()?,
-        ));
+        locations.push(Some(to_encounter_location(map_ward_location(
+            msg, department, config, resources,
+        )?)?));
 
         if is_inpatient_location(msg)? {
             let ward = query(msg, "PV1.3.1");
             let room = query(msg, "PV1.3.2");
             let bed = query(msg, "PV1.3.3");
             if let (Some(ward), Some(room)) = (ward, room) {
-                locations.push(Some(
-                    map_room_location(config, ward, room)?.to_encounter_location()?,
-                ));
+                locations.push(Some(to_encounter_location(map_room_location(
+                    config, ward, room,
+                )?)?));
             }
 
             if let (Some(ward), Some(room), Some(bed)) = (ward, room, bed) {
-                locations.push(Some(
-                    map_bed_location(config, ward, room, bed)?.to_encounter_location()?,
-                ));
+                locations.push(Some(to_encounter_location(map_bed_location(
+                    config, ward, room, bed,
+                )?)?));
             }
         }
         Ok(locations)
@@ -815,33 +817,6 @@ fn map_diagnose_local_codes(
     }
 
     Ok(result)
-}
-
-trait ToEncounterLocation<EncounterLocation> {
-    fn to_encounter_location(&self) -> EncounterLocation;
-}
-
-impl ToEncounterLocation<Result<EncounterLocation, MappingError>> for Location {
-    fn to_encounter_location(&self) -> Result<EncounterLocation, MappingError> {
-        if let Some(identifier) = self
-            .identifier
-            .first()
-            .ok_or(MappingError::Other(anyhow!("failed to access identifier")))?
-            .clone()
-        {
-            return Ok(EncounterLocation::builder()
-                .physical_type(
-                    self.physical_type
-                        .clone()
-                        .ok_or(MappingError::Other(anyhow!(
-                            "physical type ist missing".to_string()
-                        )))?,
-                )
-                .location(Reference::builder().identifier(identifier).build()?)
-                .build()?);
-        };
-        Err(MappingError::Other(anyhow!("failed to access identifier")))
-    }
 }
 
 #[cfg(test)]
