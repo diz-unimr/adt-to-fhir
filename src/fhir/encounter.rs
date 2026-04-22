@@ -1001,7 +1001,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
         let result = &map_conditions(&msg, &get_test_config());
 
-        assert_eq!(result.is_ok(), true);
+        assert!(result.is_ok());
         let first_entry = result
             .as_ref()
             .unwrap()
