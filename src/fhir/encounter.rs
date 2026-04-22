@@ -954,6 +954,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     #[case(2, "CC,AD", 1)]
     #[case(6, "pre-op,surgery-diagnosis,CM", 2)]
     #[case(7, "post-op,surgery-diagnosis,CM", 2)]
+    #[case(8, "billing,CC", 1)]
     fn map_conditions_test(
         #[case] entry_index: usize,
         #[case] codings_expected: String,
@@ -970,7 +971,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             }
         };
 
-        assert_eq!(conditions.len(), 8);
+        assert_eq!(conditions.len(), 9);
 
         let entry = conditions.get(entry_index).unwrap().as_ref().unwrap();
         assert_eq!(
