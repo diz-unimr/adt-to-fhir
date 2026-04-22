@@ -956,6 +956,8 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     #[case(0, "CC,department-main-diagnosis,DD", 1)]
     #[case(1, "CM,treatment-diagnosis", 2)]
     #[case(2, "CC,AD", 1)]
+    #[case(6, "pre-op,surgery-diagnosis,CM", 2)]
+    #[case(7, "post-op,surgery-diagnosis,CM", 2)]
     fn map_conditions_test(
         #[case] entry_index: usize,
         #[case] codings_expected: String,
@@ -963,16 +965,27 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     ) {
         let binding = read_test_resource("a08_test.hl7");
         let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
-        let result = &map_conditions(&msg, &get_test_config()).ok().unwrap();
+        let result = &map_conditions(&msg, &get_test_config());
 
-        assert_eq!(result.len(), 6);
+        let conditions = match result {
+            Ok(conditions) => conditions,
+            Err(err) => {
+                panic!("map_conditions failed with => {}", err);
+            }
+        };
 
-        let first_entry = result.get(entry_index).unwrap().as_ref().unwrap();
-        assert_eq!(first_entry.rank, NonZero::new(rank_expected));
+        assert_eq!(conditions.len(), 8);
+
+        let entry = conditions.get(entry_index).unwrap().as_ref().unwrap();
+        assert_eq!(
+            entry.rank,
+            NonZero::new(rank_expected),
+            "rank value is not as expected"
+        );
 
         codings_expected.split(',').for_each(|s| {
             assert!(
-                first_entry
+                entry
                     .r#use
                     .as_ref()
                     .unwrap()
@@ -984,10 +997,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         });
 
         let amount_of_uses = codings_expected.split(',').count();
-        assert_eq!(
-            amount_of_uses,
-            first_entry.r#use.as_ref().unwrap().coding.len()
-        );
+        assert_eq!(amount_of_uses, entry.r#use.as_ref().unwrap().coding.len());
     }
     #[test]
     fn map_condition_identifier_test() {
