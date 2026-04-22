@@ -7,6 +7,10 @@ DG1|1||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA En||||
 DG1|2||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||2|BBBBBB^^^^^^^^^^^^^^^^^^^^^^KJM||||12340007|U
 DG1|3||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|Aufn.|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340009|U
 DG1|4||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|FA Be|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340001|U
+DG1|5||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|BD|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340009|U
+DG1|6||Z38.0^Einling, Geburt im Krankenhaus^icd10gm2023||0000000000000|EL|||||||||1|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340009|U
+DG1|7||O32.1^Betreuung der Mutter wegen Beckenendlage^icd10gm2026||0000000000000|PR|||||||||2|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340010|U
+DG1|8||O34.2^Betreuung der Mutter bei Uterusnarbe durch vorangegangenen chirurgischen Eingriff^icd10gm2026||0000000000000|PO|||||||||2|BBBBBB^^^^^^^^^^^^^^^^^^^^^^GEB||||12340011|U
 IN1|1||000000000^^^^NII~Krankenkasse^^^^XX|Krankenkasse|Strasse 1&Strasse&1^^Stadt^^1000^DE^L||000000000000^PRN^PH^^^00000^0000000^^^^^000000000000||Krankenkasse^1^^^1&gesetzliche Krankenkasse^^NII~Krankenkasse^1^^^^^U|||||||Nachname^Vorname||19340101|Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L|||H|||||||||F||||||||||||F|||||||||AndereStadt
 IN2|1||||||||||||||||||||||||||||^PC^100.0||||DE|||N|||ev||||||||||||||||||||||||00000 0000000
 ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE

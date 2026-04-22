@@ -35,3 +35,5 @@ fhir:
     system_ward: https://fhir.diz.uni-marburg.de/sid/location-caresite-id
     system_room: https://fhir.diz.uni-marburg.de/sid/location-room-id
     system_bed: https://fhir.diz.uni-marburg.de/sid/location-bed-id
+  condition:
+    system: https://fhir.diz.uni-marburg.de/sid/condition-id

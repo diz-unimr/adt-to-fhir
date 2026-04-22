@@ -1,11 +1,13 @@
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig};
+    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig, SystemConfig};
     use crate::fhir::resources::{Department, ResourceMap, Ward};
     use fhir_model::WrongResourceType;
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
     use fhir_model::r4b::types::Meta;
     use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
 
     pub fn get_test_config() -> Fhir {
         Fhir {
@@ -21,14 +23,14 @@ pub(crate) mod tests {
                 system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
                 einrichtungskontakt: Default::default(),
                 abteilungskontakt: Default::default(),
-                versorgungsstellenkontakt: Default::default(),
-                institut_kennzeichen_system: "http://fhir.de/sid/arge-ik/iknr".to_string()
+                versorgungsstellenkontakt: Default::default()
             },
             location: LocationConfig {
                 system_ward: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),
                 system_room: "https://fhir.diz.uni-marburg.de/sid/location-room-id".to_string(),
                 system_bed: "https://fhir.diz.uni-marburg.de/sid/location-bed-id".to_string(),
             },
+            condition: SystemConfig {system: "https://fhir.diz.uni-marburg.de/sid/condition-id".to_string()}
         }
     }
     pub fn get_dummy_resources() -> ResourceMap {
@@ -96,5 +98,14 @@ pub(crate) mod tests {
 
     pub(crate) fn has_profile(meta: &Meta, profile: &str) -> bool {
         meta.profile.iter().flatten().any(|m| m == profile)
+    }
+
+    pub fn read_test_resource(file_name: &str) -> String {
+        let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        file_path.push("resources/test");
+        file_path.push(file_name);
+
+        fs::read_to_string(file_path.display().to_string())
+            .unwrap_or_else(|_| panic!("Test resource not found: {}", file_path.display()))
     }
 }
