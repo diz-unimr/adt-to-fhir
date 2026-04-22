@@ -10,7 +10,7 @@ use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
-    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Location, Parameters, Resource,
+    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Parameters, Resource,
     ResourceType,
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
@@ -248,125 +248,6 @@ pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAcc
 
 pub(crate) fn get_meta() -> Result<Meta, MappingError> {
     Ok(Meta::builder().source("#orbis".to_string()).build()?)
-}
-
-static LOCATION_TYPE_SYSTEM: &str = "http://terminology.hl7.org/CodeSystem/location-physical-type";
-
-pub(crate) fn create_locations(
-    msg: &Message,
-    config: &Fhir,
-    resources: &ResourceMap,
-) -> Result<Option<Vec<Location>>, MappingError> {
-    let mut result: Vec<Location> = vec![];
-    if is_inpatient_location(msg)? {
-        let pv1_3_1 = query(msg, "PV1.3.1");
-        let pv1_3_2 = query(msg, "PV1.3.2");
-        let pv1_3_3 = query(msg, "PV1.3.3");
-
-        if let Some(department) = parse_fab(msg)? {
-            match (pv1_3_1, pv1_3_2, pv1_3_3) {
-                (Some(_), None, None) => {
-                    result.push(map_ward_location(msg, department, config, resources)?)
-                }
-                (Some(pv1_3_1), Some(pv1_3_2), None) => {
-                    result.push(map_ward_location(msg, department, config, resources)?);
-                    result.push(map_room_location(config, pv1_3_1, pv1_3_2)?)
-                }
-                (Some(pv1_3_1), Some(pv1_3_2), Some(pv1_3_3)) => {
-                    result.push(map_ward_location(msg, department, config, resources)?);
-                    result.push(map_room_location(config, pv1_3_1, pv1_3_2)?);
-                    result.push(map_bed_location(config, pv1_3_1, pv1_3_2, pv1_3_3)?);
-                }
-                (_, _, _) => {}
-            }
-        }
-    }
-    if result.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(result))
-}
-
-fn map_location_type_icu(
-    pv1_3_1_value: &str,
-    resources: &ResourceMap,
-) -> Result<Option<Vec<Option<CodeableConcept>>>, MappingError> {
-    if let Some(ward_entry) = resources.ward_map.get(pv1_3_1_value)
-        && ward_entry.is_icu
-    {
-        Ok(Some(vec![Some(get_cc_with_one_code(
-            "ICU".to_string(),
-            "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
-        )?)]))
-    } else {
-        Ok(None)
-    }
-}
-
-pub(crate) fn map_ward_location(
-    msg: &Message,
-    department: &str,
-    config: &Fhir,
-    resources: &ResourceMap,
-) -> Result<Location, MappingError> {
-    let mut location = Location::builder()
-        .meta(get_meta()?)
-        .physical_type(get_cc_with_one_code(
-            "wa".to_string(),
-            config.location.system_ward.to_string(),
-        )?)
-        .identifier(vec![Some(build_usual_identifier(
-            vec![department],
-            config.location.system_ward.to_string(),
-        )?)])
-        .build()
-        .map_err(MappingError::BuilderError)?;
-    if let Some(icu_coding) = query(msg, "PV1.3.1")
-        .and_then(|field_value| map_location_type_icu(field_value, resources).transpose())
-    {
-        location.r#type = icu_coding?;
-    }
-    Ok(location)
-}
-
-pub(crate) fn map_room_location(
-    config: &Fhir,
-    pv1_3_1: &str,
-    pv1_3_2: &str,
-) -> Result<Location, MappingError> {
-    Location::builder()
-        .meta(get_meta()?)
-        .physical_type(get_cc_with_one_code(
-            "ro".to_string(),
-            LOCATION_TYPE_SYSTEM.to_string(),
-        )?)
-        .identifier(vec![Some(build_usual_identifier(
-            vec![pv1_3_1, pv1_3_2],
-            config.location.system_room.clone(),
-        )?)])
-        .build()
-        .map_err(MappingError::BuilderError)
-}
-
-pub(crate) fn map_bed_location(
-    config: &Fhir,
-    pv1_3_1: &str,
-    pv1_3_2: &str,
-    pv1_3_3: &str,
-) -> Result<Location, MappingError> {
-    Location::builder()
-        .meta(get_meta()?)
-        .physical_type(get_cc_with_one_code(
-            "bd".to_string(),
-            LOCATION_TYPE_SYSTEM.to_string(),
-        )?)
-        .identifier(vec![Some(build_usual_identifier(
-            vec![pv1_3_1, pv1_3_2, pv1_3_3],
-            config.location.system_bed.to_string(),
-        )?)])
-        .build()
-        .map_err(MappingError::BuilderError)
 }
 
 #[cfg(test)]

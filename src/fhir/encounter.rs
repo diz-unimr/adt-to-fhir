@@ -1,8 +1,10 @@
 use crate::config::Fhir;
 use crate::error::{FormattingError, MappingError, MessageAccessError};
+use crate::fhir::location::{
+    map_bed_location, map_room_location, map_ward_location, to_encounter_location,
+};
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, is_inpatient_location, map_bed_location, map_room_location,
-    map_ward_location, parse_datetime, parse_fab, resource_ref,
+    EntryRequestType, bundle_entry, is_inpatient_location, parse_datetime, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::terminology::{
@@ -14,7 +16,7 @@ use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterBuilder, EncounterDiagnosis, EncounterHospitalization,
-    EncounterLocation, Location, ResourceType,
+    EncounterLocation, ResourceType,
 };
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
@@ -589,24 +591,24 @@ fn map_lvl_3_locations(
 
     if let Some(department) = parse_fab(msg)? {
         // department location should be always available
-        locations.push(Some(
-            map_ward_location(msg, department, config, resources)?.to_encounter_location()?,
-        ));
+        locations.push(Some(to_encounter_location(map_ward_location(
+            msg, department, config, resources,
+        )?)?));
 
         if is_inpatient_location(msg)? {
             let ward = query(msg, "PV1.3.1");
             let room = query(msg, "PV1.3.2");
             let bed = query(msg, "PV1.3.3");
             if let (Some(ward), Some(room)) = (ward, room) {
-                locations.push(Some(
-                    map_room_location(config, ward, room)?.to_encounter_location()?,
-                ));
+                locations.push(Some(to_encounter_location(map_room_location(
+                    config, ward, room,
+                )?)?));
             }
 
             if let (Some(ward), Some(room), Some(bed)) = (ward, room, bed) {
-                locations.push(Some(
-                    map_bed_location(config, ward, room, bed)?.to_encounter_location()?,
-                ));
+                locations.push(Some(to_encounter_location(map_bed_location(
+                    config, ward, room, bed,
+                )?)?));
             }
         }
         Ok(locations)
@@ -817,33 +819,6 @@ fn map_diagnose_local_codes(
     Ok(result)
 }
 
-trait ToEncounterLocation<EncounterLocation> {
-    fn to_encounter_location(&self) -> EncounterLocation;
-}
-
-impl ToEncounterLocation<Result<EncounterLocation, MappingError>> for Location {
-    fn to_encounter_location(&self) -> Result<EncounterLocation, MappingError> {
-        if let Some(identifier) = self
-            .identifier
-            .first()
-            .ok_or(MappingError::Other(anyhow!("failed to access identifier")))?
-            .clone()
-        {
-            return Ok(EncounterLocation::builder()
-                .physical_type(
-                    self.physical_type
-                        .clone()
-                        .ok_or(MappingError::Other(anyhow!(
-                            "physical type ist missing".to_string()
-                        )))?,
-                )
-                .location(Reference::builder().identifier(identifier).build()?)
-                .build()?);
-        };
-        Err(MappingError::Other(anyhow!("failed to access identifier")))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -979,6 +954,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     #[case(2, "CC,AD", 1)]
     #[case(6, "pre-op,surgery-diagnosis,CM", 2)]
     #[case(7, "post-op,surgery-diagnosis,CM", 2)]
+    #[case(8, "billing,CC", 1)]
     fn map_conditions_test(
         #[case] entry_index: usize,
         #[case] codings_expected: String,
@@ -995,7 +971,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             }
         };
 
-        assert_eq!(conditions.len(), 8);
+        assert_eq!(conditions.len(), 9);
 
         let entry = conditions.get(entry_index).unwrap().as_ref().unwrap();
         assert_eq!(
@@ -1026,7 +1002,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
         let result = &map_conditions(&msg, &get_test_config());
 
-        assert_eq!(result.is_ok(), true);
+        assert!(result.is_ok());
         let first_entry = result
             .as_ref()
             .unwrap()
