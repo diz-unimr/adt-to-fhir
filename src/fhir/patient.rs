@@ -34,7 +34,8 @@ use std::vec;
 pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
     let msg_type = message_type(msg);
 
-    match msg_type.map_err(MessageAccessError::MessageTypeError)? {
+    let message_type_value = msg_type.map_err(MessageAccessError::MessageTypeError)?;
+    match message_type_value {
         MessageType::A01
         | MessageType::A04
         | MessageType::A05

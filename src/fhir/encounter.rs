@@ -88,8 +88,19 @@ pub(super) fn map(
             ])
         }
         MessageType::A11 | MessageType::A27 => {
-            // todo
-            Ok(r)
+            // create only basic encounter data for delete
+            let enc_admit =
+                base_encounter(msg, &config, &EncounterType::Einrichtungskontakt)?.build()?;
+            let enc_dep =
+                base_encounter(msg, &config, &EncounterType::Fachabteilungskontakt)?.build()?;
+            let care_site_enc =
+                base_encounter(msg, &config, &EncounterType::Versorgungsstellenkontakt)?.build()?;
+
+            Ok(vec![
+                bundle_entry(enc_admit, EntryRequestType::Delete)?,
+                bundle_entry(enc_dep, EntryRequestType::Delete)?,
+                bundle_entry(care_site_enc, EntryRequestType::Delete)?,
+            ])
         }
         _ => Ok(r),
     }
