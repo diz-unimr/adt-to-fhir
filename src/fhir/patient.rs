@@ -67,6 +67,8 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         | MessageType::A14
         | MessageType::A27 => {
             // ignore
+
+            // A11 & A27 should not create any patient resource
             Ok(vec![])
         }
         MessageType::A29 => {
