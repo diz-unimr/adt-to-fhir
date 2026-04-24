@@ -41,7 +41,8 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         | MessageType::A05
         | MessageType::A06
         | MessageType::A07
-        | MessageType::A08 => {
+        | MessageType::A08
+        => {
             let patient = map_patient(msg, &config)?;
             // update-as-create
             Ok(vec![bundle_entry(patient, UpdateAsCreate)?])
@@ -63,6 +64,9 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         // todo error?
         MessageType::A11
         | MessageType::A12
+        // At A13 no changes expected - we could update patient here,
+        // but an update follows shortly after this message with another message,
+        // therefore we can safely skip this on.
         | MessageType::A13
         | MessageType::A14
         | MessageType::A27 => {

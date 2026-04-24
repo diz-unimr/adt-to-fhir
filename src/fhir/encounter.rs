@@ -74,7 +74,8 @@ pub(super) fn map(
         | MessageType::A02
         | MessageType::A03
         | MessageType::A04
-        | MessageType::A05 => {
+        | MessageType::A05
+        | MessageType::A13 => {
             let enc_admit = map_einrichtungskontakt(msg, &config)?;
             let enc_dep = map_abteilungskontakt(msg, &config, resources)?;
             let care_site_enc = map_versorgungsstellenkontakt(msg, &config, resources)?;
