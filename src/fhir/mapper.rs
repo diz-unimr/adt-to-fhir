@@ -347,4 +347,116 @@ mod tests {
                 .unwrap(),
         )
     }
+
+    #[test]
+    fn map_a11_test() {
+        let hl7 = read_test_resource("a11_test.hl7");
+
+        let config = get_test_config();
+        let mapper = FhirMapper {
+            config: config.clone(),
+            resources: get_dummy_resources(),
+        };
+
+        // act
+        let mapped = mapper.map(hl7).unwrap();
+        let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
+
+        assert_eq!(bundle.entry.len(), 3);
+
+        bundle.entry.iter().for_each(|entry| {
+            let entry_typ = entry
+                .as_ref()
+                .unwrap()
+                .resource
+                .as_ref()
+                .unwrap()
+                .resource_type();
+            match entry_typ {
+                ResourceType::Encounter => {
+                    assert_eq!(
+                        HTTPVerb::Delete,
+                        entry.as_ref().unwrap().request.as_ref().unwrap().method,
+                        "encounter resource must be send with DELETE request"
+                    );
+                    assert!(
+                        entry
+                            .as_ref()
+                            .unwrap()
+                            .request
+                            .as_ref()
+                            .unwrap()
+                            .if_none_exist
+                            .is_none(),
+                        "on A11 msg source type encounter must be send with if not exists!"
+                    );
+                }
+
+                _ => {
+                    panic!("Unexpected entry type");
+                }
+            }
+        });
+
+        assert!(
+            bundle
+                .entry
+                .iter()
+                .find(|entry| {
+                    entry
+                        .as_ref()
+                        .unwrap()
+                        .request
+                        .as_ref()
+                        .unwrap()
+                        .url
+                        .eq(format!(
+                            "Encounter?identifier={}|{}",
+                            config.fall.einrichtungskontakt.system, "23232323"
+                        )
+                        .as_str())
+                })
+                .is_some()
+        );
+        assert!(
+            bundle
+                .entry
+                .iter()
+                .find(|entry| {
+                    entry
+                        .as_ref()
+                        .unwrap()
+                        .request
+                        .as_ref()
+                        .unwrap()
+                        .url
+                        .eq(format!(
+                            "Encounter?identifier={}|{}",
+                            config.fall.abteilungskontakt.system, "30674176"
+                        )
+                        .as_str())
+                })
+                .is_some()
+        );
+        assert!(
+            bundle
+                .entry
+                .iter()
+                .find(|entry| {
+                    entry
+                        .as_ref()
+                        .unwrap()
+                        .request
+                        .as_ref()
+                        .unwrap()
+                        .url
+                        .eq(format!(
+                            "Encounter?identifier={}|{}",
+                            config.fall.versorgungsstellenkontakt.system, "30674176"
+                        )
+                        .as_str())
+                })
+                .is_some()
+        )
+    }
 }

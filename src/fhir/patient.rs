@@ -34,7 +34,8 @@ use std::vec;
 pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
     let msg_type = message_type(msg);
 
-    match msg_type.map_err(MessageAccessError::MessageTypeError)? {
+    let message_type_value = msg_type.map_err(MessageAccessError::MessageTypeError)?;
+    match message_type_value {
         MessageType::A01
         | MessageType::A04
         | MessageType::A05
@@ -66,6 +67,8 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         | MessageType::A14
         | MessageType::A27 => {
             // ignore
+
+            // A11 & A27 should not create any patient resource
             Ok(vec![])
         }
         MessageType::A29 => {
