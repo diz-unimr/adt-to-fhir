@@ -63,6 +63,7 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         }
         // todo error?
         MessageType::A11
+        // patient stays unchanged
         | MessageType::A12
         // At A13 no changes expected - we could update patient here,
         // but an update follows shortly after this message with another message,
