@@ -265,6 +265,7 @@ mod tests {
     };
     use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};
+    use rstest::rstest;
 
     #[test]
     fn test_parse_datetime() {
@@ -348,9 +349,22 @@ mod tests {
         )
     }
 
-    #[test]
-    fn map_a11_test() {
-        let hl7 = read_test_resource("a11_test.hl7");
+    #[rstest]
+    #[case("A11")]
+    #[case("A12")]
+    #[case("A27")]
+    fn map_delete_test(#[case] msg_type: String) {
+        let hl7 = format!(
+            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^{}_{}|62325574|P|2.5|||||D||DE
+EVN|{}|202111230904|202111230904||Muster
+PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
+PV1|1|I|UROST133^133-03^1^URO^KLINIKUM^900000|01^Normalfall^301||UROST133^^^URO^KLINIKUM^900000||35576TEO^Test^Ulrike^^Frau^Dr. med.^Karl-Test-Ring 23^35576^Test^06441^45433^FÄ für Test|35576TEO^Test^Ulrike^^Frau^Dr. med.^Karl-Test-Ring 23^35576^Test^06441^45433^FÄ für Allgemeinmedizin|N||||||N|||23232323||K|||||||||||||||01|||2200|9||||202111190630|202111230904||||||A
+PV2||xxx|02^KH-Behandlung, vollstat. nach vorstat.^301||||||202112030000||||||||||||N|||I||||||||||||N
+ZBE|30674176^ORBIS|202111230904||DELETE"#,
+            msg_type, msg_type, msg_type
+        );
+
+        //let hl7 = read_test_resource("a11_test.hl7");
 
         let config = get_test_config();
         let mapper = FhirMapper {
@@ -361,8 +375,6 @@ mod tests {
         // act
         let mapped = mapper.map(hl7).unwrap();
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
-
-        assert_eq!(bundle.entry.len(), 3);
 
         bundle.entry.iter().for_each(|entry| {
             let entry_typ = entry
@@ -398,26 +410,35 @@ mod tests {
             }
         });
 
-        assert!(
-            bundle
-                .entry
-                .iter()
-                .find(|entry| {
-                    entry
-                        .as_ref()
-                        .unwrap()
-                        .request
-                        .as_ref()
-                        .unwrap()
-                        .url
-                        .eq(format!(
-                            "Encounter?identifier={}|{}",
-                            config.fall.einrichtungskontakt.system, "23232323"
-                        )
-                        .as_str())
-                })
-                .is_some()
-        );
+        match msg_type.as_str() {
+            "A12" => {
+                assert_eq!(bundle.entry.len(), 2);
+            }
+            _ => assert_eq!(bundle.entry.len(), 3),
+        }
+
+        if msg_type == "A11" || msg_type == "A27" {
+            assert!(
+                bundle
+                    .entry
+                    .iter()
+                    .find(|entry| {
+                        entry
+                            .as_ref()
+                            .unwrap()
+                            .request
+                            .as_ref()
+                            .unwrap()
+                            .url
+                            .eq(format!(
+                                "Encounter?identifier={}|{}",
+                                config.fall.einrichtungskontakt.system, "23232323"
+                            )
+                            .as_str())
+                    })
+                    .is_some()
+            );
+        }
         assert!(
             bundle
                 .entry

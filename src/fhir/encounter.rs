@@ -69,7 +69,8 @@ pub(super) fn map(
     }
 
     let msg_type = message_type(msg);
-    match msg_type.map_err(MessageAccessError::MessageTypeError)? {
+    let message_type = msg_type.map_err(MessageAccessError::MessageTypeError)?;
+    match message_type {
         MessageType::A01
         | MessageType::A02
         | MessageType::A03
@@ -88,21 +89,30 @@ pub(super) fn map(
                 bundle_entry(care_site_enc, EntryRequestType::UpdateAsCreate)?,
             ])
         }
-        MessageType::A11 | MessageType::A27 => {
-            // create only basic encounter data for delete
-            let enc_admit =
-                base_encounter(msg, &config, &EncounterType::Einrichtungskontakt)?.build()?;
-            let enc_dep =
-                base_encounter(msg, &config, &EncounterType::Fachabteilungskontakt)?.build()?;
-            let care_site_enc =
-                base_encounter(msg, &config, &EncounterType::Versorgungsstellenkontakt)?.build()?;
+        // create only basic encounter data for delete
+        MessageType::A11 | MessageType::A27 | MessageType::A12 => {
+            let mut result: Vec<BundleEntry> = vec![];
 
-            Ok(vec![
-                bundle_entry(enc_admit, EntryRequestType::Delete)?,
-                bundle_entry(enc_dep, EntryRequestType::Delete)?,
-                bundle_entry(care_site_enc, EntryRequestType::Delete)?,
-            ])
+            // A12 deletes only  Fachabteilungskontakt & Versorgungsstellenkontakt
+            if message_type == MessageType::A11 || message_type == MessageType::A27 {
+                let enc_admit =
+                    base_encounter(msg, &config, &EncounterType::Einrichtungskontakt)?.build()?;
+                result.push(bundle_entry(enc_admit, EntryRequestType::Delete)?)
+            }
+
+            result.push(bundle_entry(
+                base_encounter(msg, &config, &EncounterType::Fachabteilungskontakt)?.build()?,
+                EntryRequestType::Delete,
+            )?);
+
+            result.push(bundle_entry(
+                base_encounter(msg, &config, &EncounterType::Versorgungsstellenkontakt)?.build()?,
+                EntryRequestType::Delete,
+            )?);
+
+            Ok(result)
         }
+
         _ => Ok(r),
     }
 }
