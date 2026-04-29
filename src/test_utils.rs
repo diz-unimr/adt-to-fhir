@@ -50,6 +50,13 @@ pub(crate) mod tests {
                         fachabteilungs_schluessel: "1000".to_string(),
                     },
                 ),
+                (
+                    "URO".to_string(),
+                    Department {
+                        abteilungs_bezeichnung: "Urologie und Kinderurologie".to_string(),
+                        fachabteilungs_schluessel: "2200".to_string(),
+                    },
+                ),
             ]),
             location_map: Default::default(),
             ward_map: HashMap::from([

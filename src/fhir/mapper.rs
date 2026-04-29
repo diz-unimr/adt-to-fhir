@@ -59,7 +59,7 @@ impl FhirMapper {
         let p = patient::map(v2_msg, self.config.clone())?;
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
-        // TODO map observation
+        let o = observation::map(v2_msg, self.config.clone(), &self.resources)?;
         let res = p.into_iter().chain(e).chain(l).map(Some).collect();
 
         Ok(res)
@@ -259,6 +259,7 @@ mod tests {
         Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
         ResourceType,
     };
+    use std::str::FromStr;
 
     use crate::test_utils::tests::{
         filter_resources, get_dummy_resources, get_test_config, has_profile, read_test_resource,
@@ -350,27 +351,34 @@ mod tests {
     }
 
     #[rstest]
-    #[case("A11")]
-    #[case("A12")]
-    #[case("A27")]
-    fn map_delete_test(#[case] msg_type: String) {
+    #[case("A11", "DELETE", "", 3)]
+    #[case("A12", "DELETE", "", 2)]
+    #[case("A27", "DELETE", "", 3)]
+    #[case("A04", "PUT", "PUT", 5)]
+    #[case("A02", "PUT", "POST", 7)]
+    fn map_request_and_encounter_type_test(
+        #[case] msg_type: String,
+        #[case] request_type_encounter: String,
+        #[case] request_type_patient: String,
+        #[case] resource_count: usize,
+    ) {
         let hl7 = format!(
             r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^{}_{}|62325574|P|2.5|||||D||DE
 EVN|{}|202111230904|202111230904||Muster
 PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
-PV1|1|I|UROST133^133-03^1^URO^KLINIKUM^900000|01^Normalfall^301||UROST133^^^URO^KLINIKUM^900000||35576TEO^Test^Ulrike^^Frau^Dr. med.^Karl-Test-Ring 23^35576^Test^06441^45433^FÄ für Test|35576TEO^Test^Ulrike^^Frau^Dr. med.^Karl-Test-Ring 23^35576^Test^06441^45433^FÄ für Allgemeinmedizin|N||||||N|||23232323||K|||||||||||||||01|||2200|9||||202111190630|202111230904||||||A
+PV1|1|I|UROST133^133-03^1^URO^KLINIKUM^900000|R^^HL7~01^Normalfall^301||UROST133^^^URO^KLINIKUM^900000||35576TEO^Test^Ulrike^^Frau^Dr. med.^Karl-Test-Ring 23^35576^Test^06441^45433^FÄ für Test|35576TEO^Test^Ulrike^^Frau^Dr. med.^Karl-Test-Ring 23^35576^Test^06441^45433^FÄ für Allgemeinmedizin|N||||||N|||23232323||K|||||||||||||||01|||2200|9||||202111190630|202111230904||||||A
 PV2||xxx|02^KH-Behandlung, vollstat. nach vorstat.^301||||||202112030000||||||||||||N|||I||||||||||||N
-ZBE|30674176^ORBIS|202111230904||DELETE"#,
+ZBE|30674176^ORBIS|202111230904||DUMMY"#,
             msg_type, msg_type, msg_type
         );
-
-        //let hl7 = read_test_resource("a11_test.hl7");
 
         let config = get_test_config();
         let mapper = FhirMapper {
             config: config.clone(),
             resources: get_dummy_resources(),
         };
+
+        let expected_request_type = HTTPVerb::from_str(request_type_encounter.as_str()).unwrap();
 
         // act
         let mapped = mapper.map(hl7).unwrap();
@@ -386,36 +394,42 @@ ZBE|30674176^ORBIS|202111230904||DELETE"#,
                 .resource_type();
             match entry_typ {
                 ResourceType::Encounter => {
-                    assert_eq!(
-                        HTTPVerb::Delete,
-                        entry.as_ref().unwrap().request.as_ref().unwrap().method,
-                        "encounter resource must be send with DELETE request"
-                    );
-                    assert!(
-                        entry
-                            .as_ref()
-                            .unwrap()
-                            .request
-                            .as_ref()
-                            .unwrap()
-                            .if_none_exist
-                            .is_none(),
-                        "on A11 msg source type encounter must be send with if not exists!"
+                    check_request_type(&msg_type, expected_request_type, entry);
+                }
+                ResourceType::Location => {}
+                ResourceType::Patient => {
+                    match msg_type.as_str() {
+                        "A04" | "A02" => {}
+                        _ => {
+                            assert_eq!(
+                                "For message type '{}' patient resource should not be created.",
+                                msg_type
+                            );
+                        }
+                    }
+
+                    check_request_type(
+                        &msg_type,
+                        HTTPVerb::from_str(request_type_patient.as_str()).unwrap(),
+                        entry,
                     );
                 }
-
                 _ => {
-                    panic!("Unexpected entry type");
+                    panic!(
+                        "unexpected resource type '{}' at message type '{}",
+                        entry_typ, msg_type
+                    );
                 }
             }
         });
 
-        match msg_type.as_str() {
-            "A12" => {
-                assert_eq!(bundle.entry.len(), 2);
-            }
-            _ => assert_eq!(bundle.entry.len(), 3),
-        }
+        assert_eq!(
+            bundle.entry.len(),
+            resource_count,
+            "For message type '{}' we expect {} resource to be created.",
+            msg_type,
+            resource_count
+        );
 
         if msg_type == "A11" || msg_type == "A27" {
             assert!(
@@ -479,5 +493,43 @@ ZBE|30674176^ORBIS|202111230904||DELETE"#,
                 })
                 .is_some()
         )
+    }
+
+    fn check_request_type(
+        msg_type: &String,
+        expected_request_type: HTTPVerb,
+        entry: &Option<BundleEntry>,
+    ) {
+        let resource_name = entry
+            .as_ref()
+            .unwrap()
+            .resource
+            .as_ref()
+            .unwrap()
+            .resource_type()
+            .as_str();
+        assert_eq!(
+            expected_request_type,
+            entry.as_ref().unwrap().request.as_ref().unwrap().method,
+            "At msg_type {} resource {} must be send with {} request",
+            msg_type,
+            resource_name,
+            expected_request_type
+        );
+        if expected_request_type == HTTPVerb::Post {
+            assert!(
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .request
+                    .as_ref()
+                    .unwrap()
+                    .if_none_exist
+                    .is_some(),
+                "on msg type '{}' resource {} must be send with if-none-exists entry!",
+                msg_type,
+                resource_name
+            );
+        }
     }
 }
