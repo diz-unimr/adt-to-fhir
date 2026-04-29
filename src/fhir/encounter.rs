@@ -62,14 +62,14 @@ pub(super) fn map(
     config: Fhir,
     resources: &ResourceMap,
 ) -> Result<Vec<BundleEntry>, MappingError> {
-    let r: Vec<BundleEntry> = vec![];
-
+    let mut result: Vec<BundleEntry> = vec![];
     if is_begleitperson(msg).is_ok_and(|v| v) {
-        return Ok(r);
+        return Ok(result);
     }
 
     let msg_type = message_type(msg);
     let message_type = msg_type.map_err(MessageAccessError::MessageTypeError)?;
+
     match message_type {
         MessageType::A01
         | MessageType::A02
@@ -78,21 +78,20 @@ pub(super) fn map(
         | MessageType::A05
         | MessageType::A13 => {
             let enc_admit = map_einrichtungskontakt(msg, &config)?;
-            let enc_dep = map_abteilungskontakt(msg, &config, resources)?;
-            let care_site_enc = map_versorgungsstellenkontakt(msg, &config, resources)?;
-            // todo
-            // ...
+            result.push(bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?);
 
-            Ok(vec![
-                bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?,
-                bundle_entry(enc_dep, EntryRequestType::UpdateAsCreate)?,
-                bundle_entry(care_site_enc, EntryRequestType::UpdateAsCreate)?,
-            ])
+            let enc_dep = map_abteilungskontakt(msg, &config, resources)?;
+            result.push(bundle_entry(enc_dep, EntryRequestType::UpdateAsCreate)?);
+
+            let care_site_enc = map_versorgungsstellenkontakt(msg, &config, resources)?;
+            result.push(bundle_entry(
+                care_site_enc,
+                EntryRequestType::UpdateAsCreate,
+            )?);
+            Ok(result)
         }
         // create only basic encounter data for delete
         MessageType::A11 | MessageType::A27 | MessageType::A12 => {
-            let mut result: Vec<BundleEntry> = vec![];
-
             // A12 deletes only  Fachabteilungskontakt & Versorgungsstellenkontakt
             if message_type == MessageType::A11 || message_type == MessageType::A27 {
                 let enc_admit =
@@ -113,7 +112,7 @@ pub(super) fn map(
             Ok(result)
         }
 
-        _ => Ok(r),
+        _ => Ok(result),
     }
 }
 
