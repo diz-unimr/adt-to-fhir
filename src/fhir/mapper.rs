@@ -1,7 +1,7 @@
 use crate::config::Fhir;
 use crate::error::{FormattingError, MappingError, MessageAccessError};
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::{encounter, location, patient};
+use crate::fhir::{encounter, location, observation, patient};
 use crate::hl7::parser::query;
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
@@ -59,7 +59,7 @@ impl FhirMapper {
         let p = patient::map(v2_msg, self.config.clone())?;
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
-        let o = observation::map(v2_msg, self.config.clone(), &self.resources)?;
+        let o = observation::map(v2_msg, &self.config, &self.resources)?;
         let res = p.into_iter().chain(e).chain(l).map(Some).collect();
 
         Ok(res)

@@ -1,6 +1,8 @@
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::config::{FallConfig, Fhir, LocationConfig, PatientConfig, SystemConfig};
+    use crate::config::{
+        FallConfig, Fhir, LocationConfig, ObservationConfig, PatientConfig, SystemConfig,
+    };
     use crate::fhir::resources::{Department, ResourceMap, Ward};
     use fhir_model::WrongResourceType;
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
@@ -30,7 +32,15 @@ pub(crate) mod tests {
                 system_room: "https://fhir.diz.uni-marburg.de/sid/location-room-id".to_string(),
                 system_bed: "https://fhir.diz.uni-marburg.de/sid/location-bed-id".to_string(),
             },
-            condition: SystemConfig {system: "https://fhir.diz.uni-marburg.de/sid/condition-id".to_string()}
+            condition: SystemConfig {system: "https://fhir.diz.uni-marburg.de/sid/condition-id".to_string()},
+            observation: ObservationConfig {
+                system: "https://fhir.diz.uni-marburg.de/sid/observation-id".to_string(),
+                profile_weight:"https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergewicht|2026.0.1".to_string(),
+                profile_head_circumference: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-kopfumfang|2026.0.1".to_string(),
+                profile_vital_status: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Vitalstatus|2026.0.0".to_string(),
+                profile_height: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergroesse|2026.0.0".to_string()
+
+            },
         }
     }
     pub fn get_dummy_resources() -> ResourceMap {
