@@ -59,7 +59,7 @@ impl FhirMapper {
         let p = patient::map(v2_msg, self.config.clone())?;
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
-        let o = observation::map(v2_msg, &self.config, &self.resources)?;
+        let o = observation::map(v2_msg, &self.config)?;
         let res = p.into_iter().chain(e).chain(l).map(Some).collect();
 
         Ok(res)

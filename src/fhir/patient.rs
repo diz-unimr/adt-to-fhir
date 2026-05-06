@@ -296,7 +296,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
     Ok(patient)
 }
 
-fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
+pub fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
     // patient vital status
     let death_time = query(msg, "PID.29");
     let death_confirm = query(msg, "PID.30");
