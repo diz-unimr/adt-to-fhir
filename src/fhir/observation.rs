@@ -171,7 +171,10 @@ fn build_vitals_status_observation(
                     match msg_type {
                         // is alife observation will be created at patient admission,
                         // discharge and movement
-                        MessageType::A01 | MessageType::A02 | MessageType::A03 => {}
+                        MessageType::A01
+                        | MessageType::A02
+                        | MessageType::A03
+                        | MessageType::A04 => {}
                         _ => {
                             // message type should not create a life sign observation
                             return Ok(None);

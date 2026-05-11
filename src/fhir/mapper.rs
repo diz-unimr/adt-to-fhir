@@ -60,7 +60,7 @@ impl FhirMapper {
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
         let o = observation::map(v2_msg, &self.config)?;
-        let res = p.into_iter().chain(e).chain(l).map(Some).collect();
+        let res = p.into_iter().chain(e).chain(l).chain(o).map(Some).collect();
 
         Ok(res)
     }
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn map_test() {
-        let hl7 = read_test_resource("a01_test.hl7");
+        let hl7 = read_test_resource("a08_test.hl7");
 
         let config = get_test_config();
         let mapper = FhirMapper {
@@ -303,7 +303,7 @@ mod tests {
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
-        assert_eq!(bundle.entry.len(), 5);
+        assert_eq!(bundle.entry.len(), 7);
 
         let patient: Vec<Patient> = filter_resources(&bundle);
         let encounter: Vec<Encounter> = filter_resources(&bundle);
@@ -354,8 +354,8 @@ mod tests {
     #[case("A11", "DELETE", "", 3)]
     #[case("A12", "DELETE", "", 2)]
     #[case("A27", "DELETE", "", 3)]
-    #[case("A04", "PUT", "PUT", 5)]
-    #[case("A02", "PUT", "POST", 7)]
+    #[case("A04", "PUT", "PUT", 6)]
+    #[case("A02", "PUT", "POST", 8)]
     fn map_request_and_encounter_type_test(
         #[case] msg_type: String,
         #[case] request_type_encounter: String,
@@ -397,6 +397,18 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
                     check_request_type(&msg_type, expected_request_type, entry);
                 }
                 ResourceType::Location => {}
+                ResourceType::Observation => {
+                    match msg_type.as_str() {
+                        "A04" | "A03" | "A02" => {}
+                        _ => {
+                            assert_eq!(
+                                "For message type '{}' patient resource should not be created.",
+                                msg_type
+                            );
+                        }
+                    }
+                    check_request_type(&msg_type, HTTPVerb::Put, entry);
+                }
                 ResourceType::Patient => {
                     match msg_type.as_str() {
                         "A04" | "A02" => {}
