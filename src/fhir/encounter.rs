@@ -10,7 +10,7 @@ use crate::fhir::resources::ResourceMap;
 use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
-use crate::hl7::parser::{MessageType, message_type, query};
+use crate::hl7::parser::{MessageType, PID_MOTHERS_ENCOUNTER_NUMBER, message_type, query};
 use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
@@ -76,6 +76,7 @@ pub(super) fn map(
         | MessageType::A03
         | MessageType::A04
         | MessageType::A05
+        | MessageType::A08
         | MessageType::A13 => {
             let enc_admit = map_einrichtungskontakt(msg, &config)?;
             result.push(bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?);
@@ -148,8 +149,23 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
     if let Ok(diagnosis) = map_conditions(msg, config) {
         enc.diagnosis = diagnosis;
     }
+    if let Ok(mothers_encounter) = map_mothers_encounter(msg, config) {
+        enc.part_of = mothers_encounter
+    }
 
     Ok(enc)
+}
+
+fn map_mothers_encounter(msg: &Message, config: &Fhir) -> Result<Option<Reference>, MappingError> {
+    let mothers_enc_number = query(msg, PID_MOTHERS_ENCOUNTER_NUMBER);
+    match mothers_enc_number {
+        Some(mothers_enc_number) => Ok(Some(resource_ref(
+            &ResourceType::Encounter,
+            mothers_enc_number,
+            config.fall.einrichtungskontakt.system.as_str(),
+        )?)),
+        None => Ok(None),
+    }
 }
 
 fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
@@ -1123,6 +1139,53 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
                 println!("got UnsupportedContentError as expected");
             }
             Err(c) => panic!("UnsupportedContentError was expected but found {}", c),
+        }
+    }
+
+    #[test]
+    fn test_mothers_encounter_ref() {
+        let hl7 = read_test_resource("a08_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let config = get_test_config();
+
+        let result = map(&msg, config.clone(), &get_dummy_resources());
+
+        assert!(result.is_ok());
+
+        let enc: Option<Encounter> = result
+            .unwrap()
+            .first()
+            .unwrap()
+            .resource
+            .clone()
+            .unwrap()
+            .try_into()
+            .ok();
+
+        match enc {
+            None => {
+                panic!("encounter resource expected!")
+            }
+            Some(enc) => {
+                println!("{:?}", enc);
+                match enc.part_of.clone() {
+                    Some(r) => {
+                        let ref_value = r.reference.as_ref().unwrap().to_string();
+                        let expected = resource_ref(
+                            &ResourceType::Encounter,
+                            "12345678",
+                            config.fall.einrichtungskontakt.system.as_str(),
+                        )
+                        .unwrap();
+
+                        assert_eq!(ref_value, expected.reference.as_ref().unwrap().as_str())
+                    }
+                    _ => {
+                        panic!("expected 'part_of' value as reference to mothers encounter")
+                    }
+                }
+            }
         }
     }
 }
