@@ -60,7 +60,7 @@ impl FhirMapper {
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
         let o = observation::map(v2_msg, &self.config)?;
-        let res = p.into_iter().chain(e).chain(l).map(Some).collect();
+        let res = p.into_iter().chain(e).chain(l).chain(o).map(Some).collect();
 
         Ok(res)
     }
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn map_test() {
-        let hl7 = read_test_resource("a01_test.hl7");
+        let hl7 = read_test_resource("a08_test.hl7");
 
         let config = get_test_config();
         let mapper = FhirMapper {
@@ -303,7 +303,7 @@ mod tests {
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
-        assert_eq!(bundle.entry.len(), 5);
+        assert_eq!(bundle.entry.len(), 7);
 
         let patient: Vec<Patient> = filter_resources(&bundle);
         let encounter: Vec<Encounter> = filter_resources(&bundle);
