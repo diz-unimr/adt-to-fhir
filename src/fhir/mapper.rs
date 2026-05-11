@@ -354,8 +354,8 @@ mod tests {
     #[case("A11", "DELETE", "", 3)]
     #[case("A12", "DELETE", "", 2)]
     #[case("A27", "DELETE", "", 3)]
-    #[case("A04", "PUT", "PUT", 5)]
-    #[case("A02", "PUT", "POST", 7)]
+    #[case("A04", "PUT", "PUT", 6)]
+    #[case("A02", "PUT", "POST", 8)]
     fn map_request_and_encounter_type_test(
         #[case] msg_type: String,
         #[case] request_type_encounter: String,
@@ -397,6 +397,18 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
                     check_request_type(&msg_type, expected_request_type, entry);
                 }
                 ResourceType::Location => {}
+                ResourceType::Observation => {
+                    match msg_type.as_str() {
+                        "A04" | "A03" | "A02" => {}
+                        _ => {
+                            assert_eq!(
+                                "For message type '{}' patient resource should not be created.",
+                                msg_type
+                            );
+                        }
+                    }
+                    check_request_type(&msg_type, HTTPVerb::Put, entry);
+                }
                 ResourceType::Patient => {
                     match msg_type.as_str() {
                         "A04" | "A02" => {}
