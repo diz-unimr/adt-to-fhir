@@ -154,7 +154,7 @@ fn map_vital_status(
 ) -> Result<Option<Observation>, MappingError> {
     if map_deceased(msg)?.is_none() {
         return match message_type(msg).ok() {
-            // is alife observation will be created at patient admission,
+            // is alive observation will be created at patient admission,
             // discharge, movement, registration
             Some(MessageType::A01)
             | Some(MessageType::A02)
