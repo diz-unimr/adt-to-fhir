@@ -13,7 +13,7 @@ use fhir_model::r4b::codes::ObservationStatus;
 use fhir_model::r4b::resources::{
     BundleEntry, Observation, ObservationBuilder, ObservationEffective, ObservationValue,
 };
-use fhir_model::r4b::types::{CodeableConcept, Coding, Meta, Quantity};
+use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity};
 use hl7_parser::Message;
 use std::sync::LazyLock;
 
@@ -127,8 +127,8 @@ pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
     let visit = query(msg, PV1_VISIT_ID);
 
     if let (Some(pid), Some(visit)) = (pid, visit) {
-        if let Some(is_alife) = map_vital_status(msg, config, pid, visit)? {
-            result.push(bundle_entry(is_alife, EntryRequestType::UpdateAsCreate)?);
+        if let Some(is_alive) = map_vital_status(msg, config, pid, visit)? {
+            result.push(bundle_entry(is_alive, EntryRequestType::UpdateAsCreate)?);
         }
 
         if let Some(head) = map_head_circumference(msg, config, pid, visit)? {
@@ -207,10 +207,10 @@ fn map_body_length(
         return Ok(Some(
             get_birth_obs_builder(
                 msg,
-                config,
-                LOINC_BODY_HEIGHT,
-                pid,
-                visit,
+                build_usual_identifier(
+                    vec![LOINC_BODY_HEIGHT, pid, visit],
+                    config.observation.system.clone(),
+                )?,
                 quantity_value,
                 "cm".to_string(),
                 config.observation.profile_height.to_string(),
@@ -236,13 +236,15 @@ fn map_body_weight(
         .map(|val| val.parse::<f64>().map_err(FormattingError::ParseFloatError))
         .transpose()?
     {
+        let identifier = build_usual_identifier(
+            vec![LOINC_BODY_WEIGHT, pid, visit],
+            config.observation.system.clone(),
+        )?;
+
         return Ok(Some(
             get_birth_obs_builder(
                 msg,
-                config,
-                LOINC_BODY_WEIGHT,
-                pid,
-                visit,
+                identifier,
                 quantity_value,
                 "g".to_string(),
                 config.observation.profile_weight.to_string(),
@@ -268,13 +270,14 @@ fn map_head_circumference(
         .map(|val| val.parse::<f64>().map_err(FormattingError::ParseFloatError))
         .transpose()?
     {
+        let identifier = build_usual_identifier(
+            vec![LOINC_HEAD_CIRCUMFERENCE, pid, visit],
+            config.observation.system.clone(),
+        )?;
         return Ok(Some(
             get_birth_obs_builder(
                 msg,
-                config,
-                LOINC_HEAD_CIRCUMFERENCE,
-                pid,
-                visit,
+                identifier,
                 quantity_value,
                 "cm".to_string(),
                 config.observation.profile_head_circumference.to_string(),
@@ -296,20 +299,14 @@ fn map_head_circumference(
 
 fn get_birth_obs_builder(
     msg: &Message,
-    config: &Fhir,
-    identifier_code: &str,
-    pid: &str,
-    visit: &str,
+    identifier: Identifier,
     quantity_value: f64,
     unit: String,
     profile: String,
 ) -> Result<ObservationBuilder, MappingError> {
     Ok(get_basic_observation_builder(msg)?
         .meta(Meta::builder().profile(vec![Some(profile)]).build()?)
-        .identifier(vec![Some(build_usual_identifier(
-            vec![identifier_code, pid, visit],
-            config.observation.system.clone(),
-        )?)])
+        .identifier(vec![Some(identifier)])
         .category(vec![Some(get_cc_with_one_code(
             VITAL_SIGNS_CATEGORY_CODE.to_string(),
             VITAL_SIGNS_CATEGORY_SYSTEM.to_string(),
