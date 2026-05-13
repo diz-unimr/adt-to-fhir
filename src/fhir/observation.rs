@@ -115,9 +115,26 @@ const IS_ALIVE_CODING: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
 pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, MappingError> {
     let mut result: Vec<BundleEntry> = vec![];
 
-    let is_alife = build_vitals_status_observation(msg, config, ObsToBuild::VitalStatus)?;
-    if let Some(is_alife) = is_alife {
-        result.push(bundle_entry(is_alife, EntryRequestType::UpdateAsCreate)?);
+    if map_deceased(msg)?.is_none() {
+        // patient is deceased therefore no vital status observation
+
+        let msg_type = message_type(msg).ok();
+        if let Some(msg_type) = msg_type {
+            match msg_type {
+                // is alife observation will be created at patient admission,
+                // discharge, movement, registration
+                MessageType::A01 | MessageType::A02 | MessageType::A03 | MessageType::A04 => {
+                    let is_alife =
+                        build_vitals_status_observation(msg, config, ObsToBuild::VitalStatus)?;
+                    if let Some(is_alife) = is_alife {
+                        result.push(bundle_entry(is_alife, EntryRequestType::UpdateAsCreate)?);
+                    }
+                }
+                _ => {
+                    // message type should not create a life sign observation
+                }
+            }
+        }
     }
 
     let head = build_vitals_status_observation(msg, config, ObsToBuild::HeadCircumference)?;
@@ -161,27 +178,6 @@ fn build_vitals_status_observation(
     if let (Some(pid), Some(visit)) = (pid, visit) {
         match target {
             ObsToBuild::VitalStatus => {
-                if map_deceased(msg)?.is_some() {
-                    // patient is deceased therefore no vital status observation
-                    return Ok(None);
-                }
-
-                let msg_type = message_type(msg).ok();
-                if let Some(msg_type) = msg_type {
-                    match msg_type {
-                        // is alife observation will be created at patient admission,
-                        // discharge and movement
-                        MessageType::A01
-                        | MessageType::A02
-                        | MessageType::A03
-                        | MessageType::A04 => {}
-                        _ => {
-                            // message type should not create a life sign observation
-                            return Ok(None);
-                        }
-                    }
-                }
-
                 identifier = Some(build_usual_identifier(
                     vec![LOINC_PATIENT_DISPOSITION, pid, visit],
                     config.observation.system.clone(),
@@ -207,8 +203,8 @@ fn build_vitals_status_observation(
                 )?);
 
                 body_site = Some(get_cc_with_one_code(
-                    SNOMED_BODYSITE_HEAD.into(),
-                    SNOMED_SYSTEM.into(),
+                    SNOMED_BODYSITE_HEAD.to_string(),
+                    SNOMED_SYSTEM.to_string(),
                 )?);
 
                 profile = config.observation.profile_head_circumference.clone();
@@ -260,8 +256,8 @@ fn build_vitals_status_observation(
             }
             ObsToBuild::HeadCircumference | ObsToBuild::BodyWeight | ObsToBuild::BodyLength => {
                 vec![Some(get_cc_with_one_code(
-                    VITAL_SIGNS_CATEGORY_CODE.into(),
-                    VITAL_SIGNS_CATEGORY_SYSTEM.into(),
+                    VITAL_SIGNS_CATEGORY_CODE.to_string(),
+                    VITAL_SIGNS_CATEGORY_SYSTEM.to_string(),
                 )?)]
             }
         };
