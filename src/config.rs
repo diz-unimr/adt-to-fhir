@@ -26,6 +26,7 @@ pub(crate) struct Fhir {
     pub(crate) meta_source: String,
     pub(crate) condition: SystemConfig,
     pub(crate) observation: ObservationConfig,
+    pub(crate) organization: OrganizationConfig,
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]
@@ -57,6 +58,12 @@ pub(crate) struct ObservationConfig {
     pub(crate) profile_weight: String,
     pub(crate) profile_vital_status: String,
     pub(crate) profile_height: String,
+}
+
+#[derive(Default, Debug, Deserialize, Clone)]
+pub(crate) struct OrganizationConfig {
+    pub(crate) department: SystemConfig,
+    pub(crate) ward: SystemConfig,
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]

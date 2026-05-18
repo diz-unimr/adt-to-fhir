@@ -929,6 +929,7 @@ ZBE|zbe_id^SAP-ISH~615^MEDOS|20030901163000||UPDATE"#;
             meta_source: String::default(),
             condition: Default::default(),
             observation: Default::default(),
+            organization: Default::default(),
         };
 
         let expected = Identifier::builder()

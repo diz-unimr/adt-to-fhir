@@ -12,8 +12,11 @@ pub(crate) const ZNG_WEIGHT: &str = "ZNG.7";
 pub(crate) const ZNG_HEAD_CIRCUMFERENCE: &str = "ZNG.11";
 pub(crate) const ZNG_BODY_HEIGHT: &str = "ZNG.6";
 pub(crate) const PID_PID: &str = "PID.3.1";
-pub(crate) const PID_MOTHERS_ENCOUNTER_NUMBER: &str = "PID.21.1";
+pub(crate) const PV1_WARD_NAME: &str = "PV1.3.1";
+pub(crate) const PV1_DEPARTMENT_SHORT_NAME: &str = "PV1.3.4";
+pub(crate) const PV1_WARD_ROOM: &str = "PV1.3.5";
 pub(crate) const PV1_VISIT_ID: &str = "PV1.19.1";
+pub(crate) const PID_MOTHERS_ENCOUNTER_NUMBER: &str = "PID.21.1";
 pub(crate) const PV1_CLINICAL_DEPARTMENT_CODE: &str = "PV1.39.1";
 pub(crate) const ZBE_BEGINN_OF_MOVEMENT: &str = "ZBE.2";
 

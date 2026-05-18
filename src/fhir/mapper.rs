@@ -1,8 +1,8 @@
 use crate::config::Fhir;
 use crate::error::{FormattingError, MappingError, MessageAccessError};
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::{encounter, location, observation, patient};
-use crate::hl7::parser::query;
+use crate::fhir::{encounter, location, observation, organization, patient};
+use crate::hl7::parser::{PV1_DEPARTMENT_SHORT_NAME, PV1_WARD_NAME, PV1_WARD_ROOM, query};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -59,8 +59,16 @@ impl FhirMapper {
         let p = patient::map(v2_msg, self.config.clone())?;
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
-        let o = observation::map(v2_msg, &self.config)?;
-        let res = p.into_iter().chain(e).chain(l).chain(o).map(Some).collect();
+        let obs = observation::map(v2_msg, &self.config)?;
+        let org = organization::map(v2_msg, &self.config)?;
+        let res = p
+            .into_iter()
+            .chain(e)
+            .chain(l)
+            .chain(obs)
+            .chain(org)
+            .map(Some)
+            .collect();
 
         Ok(res)
     }
@@ -229,13 +237,13 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
 }
 
 pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAccessError> {
-    let facility = query(msg, "PV1.3.4");
-    let location = query(msg, "PV1.3.1");
-    let loc_status = query(msg, "PV1.3.5");
+    let department = query(msg, PV1_DEPARTMENT_SHORT_NAME);
+    let ward = query(msg, PV1_WARD_NAME);
+    let room = query(msg, PV1_WARD_ROOM);
     // let kostenstelle = extract_repeat(assigned_loc, 6)?;
 
     // todo: kostenstelle lookup etc.
-    match (facility, location, loc_status) {
+    match (department, ward, room) {
         // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
         (Some(f), Some(_), _) => Ok(Some(f)),
         // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
@@ -303,7 +311,7 @@ mod tests {
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
-        assert_eq!(bundle.entry.len(), 7);
+        assert_eq!(bundle.entry.len(), 9);
 
         let patient: Vec<Patient> = filter_resources(&bundle);
         let encounter: Vec<Encounter> = filter_resources(&bundle);
@@ -351,11 +359,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case("A11", "DELETE", "", 3)]
-    #[case("A12", "DELETE", "", 2)]
-    #[case("A27", "DELETE", "", 3)]
-    #[case("A04", "PUT", "PUT", 6)]
-    #[case("A02", "PUT", "POST", 8)]
+    #[case("A11", "DELETE", "", 5)]
+    #[case("A12", "DELETE", "", 4)]
+    #[case("A27", "DELETE", "", 5)]
+    #[case("A04", "PUT", "PUT", 8)]
+    #[case("A02", "PUT", "POST", 10)]
     fn map_request_and_encounter_type_test(
         #[case] msg_type: String,
         #[case] request_type_encounter: String,
@@ -396,7 +404,11 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
                 ResourceType::Encounter => {
                     check_request_type(&msg_type, expected_request_type, entry);
                 }
-                ResourceType::Location => {}
+                ResourceType::Location => { //TODO!
+                }
+                ResourceType::Organization => {
+                    check_request_type(&msg_type, HTTPVerb::Put, entry);
+                }
                 ResourceType::Observation => {
                     match msg_type.as_str() {
                         "A04" | "A03" | "A02" => {}
