@@ -4,13 +4,16 @@ use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, is_inpatient_location, parse_datetime, parse_fab, resource_ref,
+    EntryRequestType, bundle_entry, get_cc_with_one_code, is_inpatient_location, parse_datetime,
+    parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
-use crate::hl7::parser::{MessageType, PID_MOTHERS_ENCOUNTER_NUMBER, message_type, query};
+use crate::hl7::parser::{
+    MessageType, PID_MOTHERS_ENCOUNTER_NUMBER, PV1_CLINICAL_DEPARTMENT_CODE, message_type, query,
+};
 use anyhow::anyhow;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
@@ -24,6 +27,7 @@ use fhir_model::r4b::types::{
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 use hl7_parser::message::Field;
+use log::warn;
 use std::num::NonZeroU32;
 
 enum EncounterType {
@@ -269,10 +273,35 @@ fn map_abteilungskontakt(
     let mut enc = base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?.build()?;
 
     let fab = parse_fab(msg)?;
+    let service_type: Option<CodeableConcept>;
     // fab related
     if let Some(f) = fab {
         // fab schluessel
-        enc.service_type = resources.map_fab_schluessel(f)?;
+        if let Some(fab_from_short_name) = resources.map_fab_schluessel(f)? {
+            service_type = Some(fab_from_short_name)
+        } else {
+            if let Some(fab_schluessel) = query(msg, PV1_CLINICAL_DEPARTMENT_CODE) {
+                service_type = Some(get_cc_with_one_code(
+                    fab_schluessel.to_string(),
+                    "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
+                        .to_string(),
+                )?)
+            } else {
+                // fallback department code is unknown or does not exist
+                service_type = Some(get_cc_with_one_code(
+                    "3700".to_string(),
+                    "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
+                        .to_string(),
+                )?);
+
+                warn!(
+                    "Fachabteilungsschlüssel mapping fehlt für '{}' - Fallback 3700 eingesetzt.",
+                    f
+                )
+            }
+        }
+        enc.service_type = service_type;
+
         // service provider
         enc.service_provider = Some(fab_ref(f)?);
     }
