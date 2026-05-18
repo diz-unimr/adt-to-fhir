@@ -6,7 +6,7 @@ use crate::fhir::mapper::{
 };
 use anyhow::anyhow;
 
-use crate::hl7::parser::{MessageType, message_type, query};
+use crate::hl7::parser::{MessageType, PV1_WARD_NAME, message_type, query};
 
 use crate::fhir::resources::ResourceMap;
 use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location};
@@ -21,6 +21,7 @@ pub(super) fn map(
     let mut r: Vec<BundleEntry> = vec![];
     if let Ok(msg_type) = message_type(msg) {
         match msg_type {
+            // fixme: begründe warum ConditionalCreate!
             MessageType::A02 | MessageType::A01 => {
                 if let Ok(Some(locations)) = create_locations(msg, &config, resources) {
                     for location in locations.iter() {
@@ -33,6 +34,7 @@ pub(super) fn map(
             }
 
             MessageType::A04 => {
+                // fixme: begründe warum ConditionalCreate!
                 if let Some(department) = parse_fab(msg)? {
                     r.push(bundle_entry(
                         map_ward_location(msg, department, &config, resources)?,
@@ -56,7 +58,7 @@ pub(crate) fn create_locations(
 ) -> Result<Option<Vec<Location>>, MappingError> {
     let mut result: Vec<Location> = vec![];
     if is_inpatient_location(msg)? {
-        let pv1_3_1 = query(msg, "PV1.3.1");
+        let pv1_3_1 = query(msg, PV1_WARD_NAME);
         let pv1_3_2 = query(msg, "PV1.3.2");
         let pv1_3_3 = query(msg, "PV1.3.3");
 
