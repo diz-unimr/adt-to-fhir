@@ -404,9 +404,8 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
                 ResourceType::Encounter => {
                     check_request_type(&msg_type, expected_request_type, entry);
                 }
-                ResourceType::Location => { //TODO!
-                }
-                ResourceType::Organization => {
+
+                ResourceType::Location | ResourceType::Organization => {
                     check_request_type(&msg_type, HTTPVerb::Put, entry);
                 }
                 ResourceType::Observation => {

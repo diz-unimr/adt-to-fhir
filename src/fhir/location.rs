@@ -21,28 +21,32 @@ pub(super) fn map(
     let mut r: Vec<BundleEntry> = vec![];
     if let Ok(msg_type) = message_type(msg) {
         match msg_type {
-            // fixme: begründe warum ConditionalCreate!
+            // location changes only at patient movement and admission
             MessageType::A02 | MessageType::A01 => {
                 if let Ok(Some(locations)) = create_locations(msg, &config, resources) {
                     for location in locations.iter() {
                         r.push(bundle_entry(
                             location.clone(),
-                            EntryRequestType::ConditionalCreate,
+                            EntryRequestType::UpdateAsCreate,
                         )?);
                     }
                 }
             }
 
+            // department stays the same - we have only a short contact at another location
             MessageType::A04 => {
-                // fixme: begründe warum ConditionalCreate!
                 if let Some(department) = parse_fab(msg)? {
                     r.push(bundle_entry(
                         map_ward_location(msg, department, &config, resources)?,
-                        EntryRequestType::ConditionalCreate,
+                        EntryRequestType::UpdateAsCreate,
                     )?);
                 }
             }
-            _ => { // skip other messages, since they should not add any locations.
+            _ => {
+
+                // skip other messages, since they should not add any locations.
+                // also delete is not necessary since locations stay in the system,
+                // even if a patient movement is revoked.
             }
         }
     }
