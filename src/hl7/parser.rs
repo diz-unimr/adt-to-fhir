@@ -1,5 +1,5 @@
-use crate::error::MessageTypeError;
 use crate::error::MessageTypeError::MissingMessageType;
+use crate::error::{MessageAccessError, MessageTypeError};
 use crate::hl7::parser::MessageType::*;
 use hl7_parser::Message;
 use hl7_parser::message::{Repeat, Segment};
@@ -8,13 +8,15 @@ use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
 
+pub(crate) const MSH_HL7_KEY: &str = "MSH.10";
 pub(crate) const ZNG_WEIGHT: &str = "ZNG.7";
 pub(crate) const ZNG_HEAD_CIRCUMFERENCE: &str = "ZNG.11";
 pub(crate) const ZNG_BODY_HEIGHT: &str = "ZNG.6";
 pub(crate) const PID_PID: &str = "PID.3.1";
 pub(crate) const PV1_WARD_NAME: &str = "PV1.3.1";
 pub(crate) const PV1_DEPARTMENT_SHORT_NAME: &str = "PV1.3.4";
-pub(crate) const PV1_WARD_ROOM: &str = "PV1.3.5";
+/// based on message type this may be 'department' or 'private clinic department' or 'generic location'
+pub(crate) const PV1_PLACE_INSTITUT: &str = "PV1.3.5";
 pub(crate) const PV1_VISIT_ID: &str = "PV1.19.1";
 pub(crate) const PID_MOTHERS_ENCOUNTER_NUMBER: &str = "PID.21.1";
 pub(crate) const PV1_CLINICAL_DEPARTMENT_CODE: &str = "PV1.39.1";
@@ -192,9 +194,21 @@ pub(crate) fn segment_value<'a>(
         .and_then(|r| repeat_component(r, component_number))
 }
 
+pub(crate) fn get_message_key(msg: &Message) -> Result<String, MessageAccessError> {
+    if let Some(msg_key) = query(msg, MSH_HL7_KEY)
+        && !msg_key.is_empty()
+    {
+        return Ok(msg_key.to_string());
+    }
+    Err(MessageAccessError::UnsupportedContentError(
+        "HL7 message has no key or is missing MSH segment!".to_string(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::tests::read_test_resource;
     use hl7_parser::parser::parse_segment;
     use rstest::rstest;
 
@@ -280,5 +294,35 @@ PV1|1|I|^^^KJM^KLINIKUM^123445|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000
 
         let v1 = query(&msg, "PV1.3.1");
         assert_eq!(None, v1);
+    }
+
+    #[test]
+    fn test_get_message_key() {
+        let hl7 = read_test_resource("a04_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        match get_message_key(&msg) {
+            Ok(actual) => assert_eq!(actual, "12332112".to_string()),
+            Err(_) => panic!("get_message_key failed"),
+        }
+    }
+
+    #[test]
+    fn test_get_message_key_failed() {
+        let input = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^DUMMY||P|2.5|||NE|NE||8859/1
+EVN|A01|202111221030|202111221029||
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
+
+        match get_message_key(&msg) {
+            Ok(actual) => panic!(
+                "get_message_key returned {:?} but a FatalError was expected",
+                actual
+            ),
+            Err(MessageAccessError::UnsupportedContentError(str)) => {
+                assert_eq!(str, "HL7 message has no key or is missing MSH segment!")
+            }
+            Err(_) => panic!("we expected FatalError!"),
+        }
     }
 }
