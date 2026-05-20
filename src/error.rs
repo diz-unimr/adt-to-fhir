@@ -13,6 +13,10 @@ pub(crate) enum MappingError {
     BuilderError(#[from] BuilderError),
     #[error(transparent)]
     FormattingError(#[from] FormattingError),
+    /// * is an issue if occurs on valid input data
+    /// * is OK on incomplete input data (which sometimes occurs)
+    #[error("MissingRessourceEntry: {0}")]
+    MissingRessourceEntry(String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

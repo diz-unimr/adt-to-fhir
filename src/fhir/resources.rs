@@ -1,5 +1,4 @@
 use crate::error::MappingError;
-use anyhow::anyhow;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -82,8 +81,8 @@ impl ResourceMap {
         let dep = self
             .department_map
             .get(code)
-            .ok_or(MappingError::Other(anyhow!(
-                "Fachabteilungsschlüssel {} not found",
+            .ok_or(MappingError::MissingRessourceEntry(format!(
+                "Fachabteilungsschlüssel for fab name '{}' not found!",
                 code
             )))?;
 
