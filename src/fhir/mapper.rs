@@ -2,7 +2,7 @@ use crate::config::Fhir;
 use crate::error::{FormattingError, MappingError, MessageAccessError};
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::{encounter, location, observation, organization, patient};
-use crate::hl7::parser::{PV1_DEPARTMENT_SHORT_NAME, PV1_WARD_NAME, PV1_WARD_ROOM, query};
+use crate::hl7::parser::{PV1_DEPARTMENT_SHORT_NAME, PV1_PLACE_INSTITUT, PV1_WARD_NAME, query};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -237,13 +237,14 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
 }
 
 pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAccessError> {
+    // todo: testing
     let department = query(msg, PV1_DEPARTMENT_SHORT_NAME);
     let ward = query(msg, PV1_WARD_NAME);
-    let room = query(msg, PV1_WARD_ROOM);
+    let location = query(msg, PV1_PLACE_INSTITUT);
     // let kostenstelle = extract_repeat(assigned_loc, 6)?;
 
     // todo: kostenstelle lookup etc.
-    match (department, ward, room) {
+    match (department, ward, location) {
         // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
         (Some(f), Some(_), _) => Ok(Some(f)),
         // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1

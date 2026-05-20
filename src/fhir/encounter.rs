@@ -12,7 +12,8 @@ use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
 use crate::hl7::parser::{
-    MessageType, PID_MOTHERS_ENCOUNTER_NUMBER, PV1_CLINICAL_DEPARTMENT_CODE, message_type, query,
+    MessageType, PID_MOTHERS_ENCOUNTER_NUMBER, PV1_CLINICAL_DEPARTMENT_CODE, get_message_key,
+    message_type, query,
 };
 use anyhow::anyhow;
 use fhir_model::DateTime;
@@ -272,41 +273,63 @@ fn map_abteilungskontakt(
     // base encounter
     let mut enc = base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?.build()?;
 
-    let fab = parse_fab(msg)?;
-    let service_type: Option<CodeableConcept>;
-    // fab related
-    if let Some(f) = fab {
-        // fab schluessel
-        if let Some(fab_from_short_name) = resources.map_fab_schluessel(f)? {
-            service_type = Some(fab_from_short_name)
-        } else {
-            if let Some(fab_schluessel) = query(msg, PV1_CLINICAL_DEPARTMENT_CODE) {
-                service_type = Some(get_cc_with_one_code(
-                    fab_schluessel.to_string(),
-                    "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
-                        .to_string(),
-                )?)
-            } else {
-                // fallback department code is unknown or does not exist
-                service_type = Some(get_cc_with_one_code(
-                    "3700".to_string(),
-                    "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
-                        .to_string(),
-                )?);
+    if let Some(service_type) = get_service_type(msg, resources)? {
+        enc.service_type = Some(service_type)
+    } else {
+        // fixme: returning error may be to much. check if e.g. messages with empty PV1-3 or '^^^^^' content should be skipped whole
+        return Err(MappingError::Other(anyhow!(
+            "Missing service type at msg-id '{}' - cannot build valid encounter at department level!",
+            get_message_key(msg)?
+        )));
+    }
 
-                warn!(
-                    "Fachabteilungsschlüssel mapping fehlt für '{}' - Fallback 3700 eingesetzt.",
-                    f
-                )
-            }
-        }
-        enc.service_type = service_type;
-
-        // service provider
-        enc.service_provider = Some(fab_ref(f)?);
+    if let Some(fab) = parse_fab(msg)? {
+        enc.service_provider = Some(fab_ref(fab)?);
     }
 
     Ok(enc)
+}
+pub(crate) const SYSTEM_FACHABTEILUNGS_SCHLUESSEL: &str =
+    "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
+fn get_service_type(
+    msg: &Message,
+    resources: &ResourceMap,
+) -> Result<Option<CodeableConcept>, MappingError> {
+    if let Some(fab) = parse_fab(msg)? {
+        let service_type_from_pv1_3 = match resources.map_fab_schluessel(fab) {
+            Ok(Some(fab_from_short_name)) => Some(fab_from_short_name),
+            Err(MappingError::MissingRessourceEntry(missed)) => {
+                warn!(
+                    "MissingRessourceEntry error for msg id '{}' with '{}'",
+                    get_message_key(msg)?,
+                    missed
+                );
+                None
+            }
+            Err(e) => return Err(e),
+            Ok(None) => None,
+        };
+        if service_type_from_pv1_3.is_some() {
+            return Ok(service_type_from_pv1_3);
+        }
+    }
+
+    if let Some(fab_schluessel) = query(msg, PV1_CLINICAL_DEPARTMENT_CODE) {
+        Ok(Some(get_cc_with_one_code(
+            fab_schluessel.to_string(),
+            SYSTEM_FACHABTEILUNGS_SCHLUESSEL.to_string(),
+        )?))
+    } else {
+        warn!(
+            "Fachabteilungsschlüssel mapping is missing at msg-id '{}' - fallback to value 3700",
+            get_message_key(msg)?
+        );
+        // fallback department code is unknown or does not exist
+        Ok(Some(get_cc_with_one_code(
+            "3700".to_string(),
+            SYSTEM_FACHABTEILUNGS_SCHLUESSEL.to_string(),
+        )?))
+    }
 }
 
 fn base_encounter(
@@ -1216,6 +1239,71 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_service_type_by_pv1_39() {
+        let input = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^B DL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|I|^^^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||0800|9||||202511022120|202511022120||||||A
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+
+        match get_service_type(&msg, &get_dummy_resources()) {
+            Ok(actual) => {
+                if let Some(value) = actual
+                    .unwrap()
+                    .coding
+                    .first()
+                    .unwrap()
+                    .clone()
+                    .unwrap()
+                    .code
+                    .clone()
+                {
+                    assert_eq!(value, "0800");
+                } else {
+                    panic!("we expect service type to have a code value")
+                }
+            }
+            Err(MappingError::FatalError(err_str)) => {
+                panic!("fatal error: {}", err_str)
+            }
+            Err(e) => panic!("error not expected - error {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_service_type_by_pv1_3() {
+        let input = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|I|POL1234^BSP-2-2^2^POL^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01||||9||||202511022120|202511022120||||||A
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+
+        match get_service_type(&msg, &get_dummy_resources()) {
+            Ok(actual) => {
+                if let Some(value) = actual
+                    .unwrap()
+                    .coding
+                    .first()
+                    .unwrap()
+                    .clone()
+                    .unwrap()
+                    .code
+                    .clone()
+                {
+                    assert_eq!(value, "0800");
+                } else {
+                    panic!("we expect service type to have a code value")
+                }
+            }
+            Err(_) => panic!("error not expected"),
         }
     }
 }
