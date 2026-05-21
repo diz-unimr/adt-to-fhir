@@ -237,20 +237,21 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
 }
 
 pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAccessError> {
-    // todo: testing
-    let department = query(msg, PV1_DEPARTMENT_SHORT_NAME);
     let ward = query(msg, PV1_WARD_NAME);
+    let department = query(msg, PV1_DEPARTMENT_SHORT_NAME);
     let location = query(msg, PV1_PLACE_INSTITUT);
     // let kostenstelle = extract_repeat(assigned_loc, 6)?;
 
     // todo: kostenstelle lookup etc.
-    match (department, ward, location) {
+    match (ward, department, location) {
         // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
-        (Some(f), Some(_), _) => Ok(Some(f)),
-        // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
-        (None, Some(l), _) => Ok(Some(l)),
-        // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
-        (Some(_), None, Some(st)) => Ok(Some(st)),
+        (Some(_), Some(f), _) => Ok(Some(f)),
+        // 2. wenn PV1-3.1 & PV1-3.4 leer hat Wert -> dann  PV1-3.1
+        (Some(l), None, _) => Ok(Some(l)),
+        // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.4
+        (None, Some(st), Some(_)) => Ok(Some(st)),
+        // 4. wenn PV1-3.1 leer & PV1-3.4 leer -> dann  PV1-3.5
+        (None, None, Some(st)) => Ok(Some(st)),
         _ => Ok(None),
     }
 }
@@ -554,6 +555,34 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
                 msg_type,
                 resource_name
             );
+        }
+    }
+    #[rstest]
+    #[case("POLPOLAMB^^^POL^POLPOL^945400^^^", "POL")]
+    #[case("POLPOLAMB^^^^POLPOL^945400^^^", "POLPOLAMB")]
+    #[case("^^^POL^POLPOL^945400^^^", "POL")]
+    #[case("^^^^POLPOL^945400^^^", "POLPOL")]
+    #[case("Station^^^^KLINIKUM^945400^^^", "Station")]
+    fn test_parse_fab(#[case] pv1_3: String, #[case] expected: String) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.5||123456789|NE|NE||8859/1
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
+PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331"#,
+            pv1_3
+        );
+
+        let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
+
+        match parse_fab(&msg) {
+            Ok(Some(actual)) => {
+                assert_eq!(actual, expected);
+            }
+            Ok(None) => panic!("did not find fab"),
+            Err(_) => {
+                panic!("did not find fab produced unexpected error")
+            }
         }
     }
 }

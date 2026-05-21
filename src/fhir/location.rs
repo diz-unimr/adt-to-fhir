@@ -2,14 +2,12 @@ use crate::config::Fhir;
 use crate::error::MappingError;
 use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, get_meta,
-    is_inpatient_location, parse_fab,
+    is_inpatient_location, parse_fab, resource_ref,
 };
-use anyhow::anyhow;
-
-use crate::hl7::parser::{MessageType, PV1_WARD_NAME, message_type, query};
-
 use crate::fhir::resources::ResourceMap;
-use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location};
+use crate::hl7::parser::{MessageType, PV1_WARD_NAME, message_type, query};
+use anyhow::anyhow;
+use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
 use fhir_model::r4b::types::{CodeableConcept, Reference};
 use hl7_parser::Message;
 
@@ -129,6 +127,13 @@ pub(crate) fn map_ward_location(
         .and_then(|field_value| map_location_type_icu(field_value, resources).transpose())
     {
         location.r#type = icu_coding?;
+    }
+    if let Some(dep_id) = parse_fab(msg)? {
+        location.managing_organization = Some(resource_ref(
+            &ResourceType::Organization,
+            dep_id,
+            config.organization.department.system.as_str(),
+        )?)
     }
     Ok(location)
 }
