@@ -11,17 +11,20 @@ use hl7_parser::Message;
 pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, MappingError> {
     let mut result = vec![];
     if let Some(department_org) = map_department_org(msg, config)? {
-        result.push(department_org)
+        result.push(bundle_entry(
+            department_org,
+            EntryRequestType::UpdateAsCreate,
+        )?)
     }
     if let Some(war_org) = map_ward_org(msg, config)? {
-        result.push(war_org)
+        result.push(bundle_entry(war_org, EntryRequestType::UpdateAsCreate)?)
     }
     Ok(result)
 }
 
-fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<BundleEntry>, MappingError> {
+fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
     if let Some(fab_ref) = parse_fab(msg)? {
-        Ok(Some(bundle_entry(
+        Ok(Some(
             Organization::builder()
                 .identifier(vec![Some(
                     Identifier::builder()
@@ -35,17 +38,16 @@ fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<BundleEntry
                     "http://terminology.hl7.org/CodeSystem/organization-type".to_string(),
                 )?)])
                 .build()?,
-            EntryRequestType::UpdateAsCreate,
-        )?))
+        ))
     } else {
         Ok(None)
     }
 }
 
-fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<BundleEntry>, MappingError> {
+fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
     // ward is sometimes empty
     if let Some(ward_name) = query(msg, PV1_WARD_NAME) {
-        Ok(Some(bundle_entry(
+        Ok(Some(
             Organization::builder()
                 .identifier(vec![Some(
                     Identifier::builder()
@@ -55,8 +57,7 @@ fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<BundleEntry>, Map
                         .build()?,
                 )])
                 .build()?,
-            EntryRequestType::UpdateAsCreate,
-        )?))
+        ))
     } else {
         Ok(None)
     }
