@@ -1306,4 +1306,33 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             Err(_) => panic!("error not expected"),
         }
     }
+
+    #[test]
+    fn test_service_type_unknown_department() {
+        let input = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|I|POL1234^BSP-2-2^2^XXX^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01||||9||||202511022120|202511022120||||||A
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+
+        match get_service_type(&msg, &get_dummy_resources()) {
+            Ok(actual) => {
+                if let Some(value) = actual
+                    .unwrap()
+                    .coding
+                    .first()
+                    .unwrap()
+                    .clone()
+                    .unwrap()
+                    .code
+                    .clone()
+                {
+                    assert_eq!(value, "3700");
+                }
+            }
+            Err(_) => panic!("error not expected here"),
+        }
+    }
 }
