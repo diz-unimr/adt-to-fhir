@@ -7,27 +7,16 @@ use hl7_parser::query::LocationQueryResult;
 use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
-/// message key
-///
-/// __note:__ always present
-pub(crate) const MSH_10: &str = "MSH.10";
 
 /// old patient identifier value
 ///
 /// __note:__ only used at correction of patient data (e.g. merge operation)
 pub(crate) const MRG_1: &str = "MRG.1";
-/// birth weight
+
+/// message key
 ///
-/// __note:__ segment only at birth context present
-pub(crate) const ZNG_7: &str = "ZNG.7";
-/// head circumference at birth
-///
-/// __note:__ segment only at birth context present
-pub(crate) const ZNG_11: &str = "ZNG.11";
-/// body length at birth
-///
-/// __note:__ segment only at birth context present
-pub(crate) const ZNG_6: &str = "ZNG.6";
+/// __note:__ always present
+pub(crate) const MSH_10: &str = "MSH.10";
 
 /// patient identifier
 ///
@@ -125,6 +114,19 @@ pub(crate) const ZBE_2: &str = "ZBE.2.1";
 ///
 /// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
 pub(crate) const ZBE_3: &str = "ZBE.3.1";
+
+/// birth weight
+///
+/// __note:__ segment only at birth context present
+pub(crate) const ZNG_7: &str = "ZNG.7";
+/// head circumference at birth
+///
+/// __note:__ segment only at birth context present
+pub(crate) const ZNG_11: &str = "ZNG.11";
+/// body length at birth
+///
+/// __note:__ segment only at birth context present
+pub(crate) const ZNG_6: &str = "ZNG.6";
 
 #[derive(PartialEq, Debug)]
 pub enum MessageType {
