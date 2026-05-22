@@ -40,12 +40,30 @@ pub(crate) const PID_3_1: &str = "PID.3.1";
 /// encounter identifier (medical case id)
 ///
 pub(crate) const PID_4: &str = "PID.4";
+/// patient name
+///
+/// PID.5.7 (L) legal name, (M) maiden name
+/// __note:__ repeats and components inside
+pub(crate) const PID_5: &str = "PID.5";
 /// patient birthdate
 pub(crate) const PID_7: &str = "PID.7";
+/// patient gender
+pub(crate) const PID_8: &str = "PID.8";
+/// marital status
+pub(crate) const PID_16_1: &str = "PID.16.1";
+
 /// mothers encounter number
 ///
 /// __note:__ only at birth context set
 pub(crate) const PID_21_1: &str = "PID.21.1";
+/// multiple birth indicator
+pub(crate) const PID_24: &str = "PID.24";
+/// Birth order
+pub(crate) const PID_25: &str = "PID.25";
+/// patient death datetime
+pub(crate) const PID_29: &str = "PID.29";
+/// patient death confirmation flag
+pub(crate) const PID_30: &str = "PID.30";
 
 /// patient class
 ///
@@ -281,9 +299,7 @@ pub(crate) fn segment_value<'a>(
 }
 
 pub(crate) fn get_message_key(msg: &Message) -> Result<String, MessageAccessError> {
-    if let Some(msg_key) = query(msg, MSH_10)
-        && !msg_key.is_empty()
-    {
+    if let Some(msg_key) = query(msg, MSH_10) {
         return Ok(msg_key.to_string());
     }
     Err(MessageAccessError::UnsupportedContentError(

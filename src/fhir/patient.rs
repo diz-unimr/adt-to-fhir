@@ -7,8 +7,9 @@ use crate::fhir::mapper::{
     patch_bundle_entry,
 };
 use crate::hl7::parser::{
-    MRG_1, MessageType, PID_2, PID_7, field_repeats, message_type, query, repeat_component,
-    repeat_subcomponents, segment_value,
+    MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29, PID_30,
+    field_repeats, get_message_key, message_type, query, repeat_component, repeat_subcomponents,
+    segment_value,
 };
 use anyhow::anyhow;
 use fhir_model::BuilderError;
@@ -283,7 +284,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
         patient.birth_date = Some(parse_date(b)?)
     }
     // gender
-    if let Some(g) = query(msg, "PID.8") {
+    if let Some(g) = query(msg, PID_8) {
         patient.gender = Some(map_gender(g));
     }
     // marital_status
@@ -298,8 +299,8 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
 
 pub fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
     // patient vital status
-    let death_time = query(msg, "PID.29");
-    let death_confirm = query(msg, "PID.30");
+    let death_time = query(msg, PID_29);
+    let death_confirm = query(msg, PID_30);
 
     match (death_time, death_confirm) {
         (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(death_time)?))),
@@ -309,9 +310,9 @@ pub fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingErr
 }
 
 fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, MappingError> {
-    let is_multi_birth = query(msg, "PID.24");
-    let multi_birth_number = query(msg, "PID.25");
-    let msg_id = query(msg, "MSH.10");
+    let is_multi_birth = query(msg, PID_24);
+    let multi_birth_number = query(msg, PID_25);
+    let msg_id = get_message_key(msg)?;
 
     #[derive(Debug, PartialEq, Eq)]
     enum MultiBirthFlags {
@@ -377,7 +378,7 @@ fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, Map
 
 fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingError> {
     // marital status
-    query(msg, "PID.16.1")
+    query(msg, PID_16_1)
         .map(|status| {
             match status {
                 "A" | "E" => Coding::builder()
@@ -454,7 +455,7 @@ fn map_gender(gender: &str) -> AdministrativeGender {
 fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
     let mut names = vec![];
 
-    if let Some(name_fields) = field_repeats(v2_msg, "PID.5") {
+    if let Some(name_fields) = field_repeats(v2_msg, PID_5) {
         for name_field in name_fields {
             let name_use = repeat_component(name_field, 7).and_then(|u| match u {
                 "L" => Some(NameUse::Official),
@@ -501,7 +502,7 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
             names.push(Some(name));
 
             // maiden name
-            if let Some(maiden_name) = query(v2_msg, "PID.24") {
+            if let Some(maiden_name) = query(v2_msg, PID_24) {
                 names.push(Some(
                     HumanName::builder()
                         .r#use(NameUse::Maiden)
