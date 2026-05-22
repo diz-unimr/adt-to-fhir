@@ -287,14 +287,16 @@ mod tests {
             let b: Bundle = serde_json::from_value(raw).unwrap();
 
             // assert resources
-            assert_eq!(b.entry.len(), 6);
+            assert_eq!(b.entry.len(), 8);
             assert!(
                 b.entry
                     .iter()
                     .map(|e| e.clone().unwrap().resource.unwrap().resource_type())
                     .all(|t| t == ResourceType::Patient
-                        || t == ResourceType::Encounter || t == ResourceType::Location
-                        || t == ResourceType::Observation)
+                        || t == ResourceType::Encounter
+                        || t == ResourceType::Location
+                        || t == ResourceType::Observation
+                        || t == ResourceType::Organization)
             );
             }
 

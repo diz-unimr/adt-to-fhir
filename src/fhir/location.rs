@@ -2,14 +2,12 @@ use crate::config::Fhir;
 use crate::error::MappingError;
 use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, get_meta,
-    is_inpatient_location, parse_fab,
+    is_inpatient_location, parse_fab, resource_ref,
 };
-use anyhow::anyhow;
-
-use crate::hl7::parser::{MessageType, message_type, query};
-
 use crate::fhir::resources::ResourceMap;
-use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location};
+use crate::hl7::parser::{MessageType, PV1_WARD_NAME, message_type, query};
+use anyhow::anyhow;
+use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
 use fhir_model::r4b::types::{CodeableConcept, Reference};
 use hl7_parser::Message;
 
@@ -21,26 +19,32 @@ pub(super) fn map(
     let mut r: Vec<BundleEntry> = vec![];
     if let Ok(msg_type) = message_type(msg) {
         match msg_type {
+            // location changes only at patient movement and admission
             MessageType::A02 | MessageType::A01 => {
                 if let Ok(Some(locations)) = create_locations(msg, &config, resources) {
                     for location in locations.iter() {
                         r.push(bundle_entry(
                             location.clone(),
-                            EntryRequestType::ConditionalCreate,
+                            EntryRequestType::UpdateAsCreate,
                         )?);
                     }
                 }
             }
 
+            // department stays the same - we have only a short contact at another location
             MessageType::A04 => {
                 if let Some(department) = parse_fab(msg)? {
                     r.push(bundle_entry(
                         map_ward_location(msg, department, &config, resources)?,
-                        EntryRequestType::ConditionalCreate,
+                        EntryRequestType::UpdateAsCreate,
                     )?);
                 }
             }
-            _ => { // skip other messages, since they should not add any locations.
+            _ => {
+
+                // skip other messages, since they should not add any locations.
+                // also delete is not necessary since locations stay in the system,
+                // even if a patient movement is revoked.
             }
         }
     }
@@ -56,7 +60,7 @@ pub(crate) fn create_locations(
 ) -> Result<Option<Vec<Location>>, MappingError> {
     let mut result: Vec<Location> = vec![];
     if is_inpatient_location(msg)? {
-        let pv1_3_1 = query(msg, "PV1.3.1");
+        let pv1_3_1 = query(msg, PV1_WARD_NAME);
         let pv1_3_2 = query(msg, "PV1.3.2");
         let pv1_3_3 = query(msg, "PV1.3.3");
 
@@ -123,6 +127,13 @@ pub(crate) fn map_ward_location(
         .and_then(|field_value| map_location_type_icu(field_value, resources).transpose())
     {
         location.r#type = icu_coding?;
+    }
+    if let Some(war_id) = query(msg, PV1_WARD_NAME) {
+        location.managing_organization = Some(resource_ref(
+            &ResourceType::Organization,
+            war_id,
+            config.organization.ward.system.as_str(),
+        )?)
     }
     Ok(location)
 }
