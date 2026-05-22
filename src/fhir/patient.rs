@@ -498,18 +498,7 @@ fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
                     ExtensionValue::String(vorsatzwort.to_string()),
                 )?);
             }
-
             names.push(Some(name));
-
-            // maiden name
-            if let Some(maiden_name) = query(v2_msg, PID_24) {
-                names.push(Some(
-                    HumanName::builder()
-                        .r#use(NameUse::Maiden)
-                        .family(maiden_name.to_string())
-                        .build()?,
-                ))
-            }
         }
     }
 
