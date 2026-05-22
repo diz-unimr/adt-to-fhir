@@ -7,8 +7,8 @@ use crate::fhir::mapper::{
     patch_bundle_entry,
 };
 use crate::hl7::parser::{
-    MessageType, field_repeats, message_type, query, repeat_component, repeat_subcomponents,
-    segment_value,
+    MRG_1, MessageType, PID_2, PID_7, field_repeats, message_type, query, repeat_component,
+    repeat_subcomponents, segment_value,
 };
 use anyhow::anyhow;
 use fhir_model::BuilderError;
@@ -183,9 +183,9 @@ fn create_patient_merge(
         params,
         Identifier::builder()
             .system(config.person.system.to_string())
-            .value(query(msg, "MRG.1").map(String::from).ok_or(anyhow!(
-                "Failed to map Patient merge: Missing MRG.1 segment"
-            ))?)
+            .value(query(msg, MRG_1).map(String::from).ok_or(
+                MessageAccessError::MissingMessageSegment("MRG.1".to_string()),
+            )?)
             .build()?,
     ))
 }
@@ -195,7 +195,7 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         .r#use(IdentifierUse::Usual)
         .system(config.person.system.to_owned())
         .value(
-            query(msg, "PID.2")
+            query(msg, PID_2)
                 .map(String::from)
                 .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
         )
@@ -279,7 +279,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
         .build()?;
 
     // birth_date
-    if let Some(b) = query(msg, "PID.7") {
+    if let Some(b) = query(msg, PID_7) {
         patient.birth_date = Some(parse_date(b)?)
     }
     // gender

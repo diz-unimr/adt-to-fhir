@@ -12,7 +12,8 @@ use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
 use crate::hl7::parser::{
-    MessageType, PID_MOTHERS_ENCOUNTER_NUMBER, PV1_CLINICAL_DEPARTMENT_CODE, PV1_WARD_NAME,
+    MessageType, PID_2, PID_4, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1,
+    PV1_19_1, PV1_36_1, PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3,
     get_message_key, message_type, query,
 };
 use anyhow::anyhow;
@@ -123,7 +124,7 @@ pub(super) fn map(
 }
 
 fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
-    Ok(query(msg, "PV1.2").is_some_and(|f| f == "H"))
+    Ok(query(msg, PV1_2).is_some_and(|f| f == "H"))
 }
 
 fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, MappingError> {
@@ -162,7 +163,7 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
 }
 
 fn map_mothers_encounter(msg: &Message, config: &Fhir) -> Result<Option<Reference>, MappingError> {
-    let mothers_enc_number = query(msg, PID_MOTHERS_ENCOUNTER_NUMBER);
+    let mothers_enc_number = query(msg, PID_21_1);
     match mothers_enc_number {
         Some(mothers_enc_number) => Ok(Some(resource_ref(
             &ResourceType::Encounter,
@@ -178,7 +179,7 @@ fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
 
     // Aufnahmegrund
     // 1. und 2. Stelle
-    if let Some(erste_und_zweite) = query(msg, "PV2.3.1")
+    if let Some(erste_und_zweite) = query(msg, PV2_3_1)
         .map(AufnahmeGrundStelle::ErsteUndZweite)
         .and_then(Option::<Coding>::from)
         .map(|c| {
@@ -192,7 +193,7 @@ fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     }
 
     // 3. und 4. Stelle
-    if let Some((Some(dritte), Some(vierte))) = query(msg, "PV1.4[2].1")
+    if let Some((Some(dritte), Some(vierte))) = query(msg, PV1_4__2_1)
         .filter(|r| r.chars().count() == 2)
         .map(|r| {
             let mut chars = r.chars().take(2);
@@ -235,7 +236,7 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     let mut result = vec![];
 
     // 1. und 2. Stelle
-    if let Some(erste_und_zweite) = query(msg, "PV1.36.1")
+    if let Some(erste_und_zweite) = query(msg, PV1_36_1)
         .map(EntlassgrundStelle::ErsteUndZweite)
         .and_then(Option::<Coding>::from)
         .map(|c| {
@@ -249,7 +250,7 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
     }
 
     // 3. Stelle
-    if let Some(dritte) = query(msg, "PV1.40.1")
+    if let Some(dritte) = query(msg, PV1_40_1)
         .map(EntlassgrundStelle::Dritte)
         .and_then(Option::<Coding>::from)
         .map(|c| {
@@ -314,7 +315,7 @@ fn get_service_type(
         }
     }
 
-    if let Some(fab_schluessel) = query(msg, PV1_CLINICAL_DEPARTMENT_CODE) {
+    if let Some(fab_schluessel) = query(msg, PV1_39_1) {
         Ok(Some(get_cc_with_one_code(
             fab_schluessel.to_string(),
             SYSTEM_FACHABTEILUNGS_SCHLUESSEL.to_string(),
@@ -384,7 +385,7 @@ fn map_level_identifier(
     config: &Fhir,
     msg: &Message,
 ) -> Result<Identifier, MappingError> {
-    let zbe_id = query(msg, "ZBE.1.1").ok_or(MessageAccessError::Other(anyhow!(
+    let zbe_id = query(msg, ZBE_1_1).ok_or(MessageAccessError::Other(anyhow!(
         "Failed to create Identifier: ZBE-1.1 is missing or empty"
     )));
     let visit_number = map_visit_number(msg)?;
@@ -442,7 +443,7 @@ fn fab_ref(fab: &str, config: &Fhir) -> Result<Reference, MappingError> {
 }
 
 fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
-    let pid = query(msg, "PID.2").ok_or(anyhow!("missing pid value in PID.2"))?;
+    let pid = query(msg, PID_2).ok_or(anyhow!("missing pid value in PID.2"))?;
 
     resource_ref(&ResourceType::Patient, pid, sid)
 }
@@ -469,7 +470,7 @@ fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>
 }
 
 fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
-    let code = query(msg, "PV1.4.1").ok_or(MappingError::Other(anyhow!(
+    let code = query(msg, PV1_4_1).ok_or(MappingError::Other(anyhow!(
         "Missing PV1-4.1 field / component for Encounter.hospitalization.admitSource"
     )))?;
 
@@ -504,17 +505,16 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     let end: Option<DateTime>;
     match lvl {
         EncounterType::Einrichtungskontakt => {
-            start =
-                parse_datetime(query(msg, "PV1.44").ok_or(anyhow!("empty datetime in PV1.44"))?)?;
+            start = parse_datetime(query(msg, PV1_44).ok_or(anyhow!("empty datetime in PV1.44"))?)?;
 
-            end = match query(msg, "PV1.45") {
+            end = match query(msg, PV1_45) {
                 Some(end) => Some(parse_datetime(end)?),
                 None => None,
             };
         }
         EncounterType::Fachabteilungskontakt | EncounterType::Versorgungsstellenkontakt => {
-            start = parse_datetime(query(msg, "ZBE.2").ok_or(anyhow!("empty datetime in ZBE-2"))?)?;
-            end = match query(msg, "ZBE.3") {
+            start = parse_datetime(query(msg, ZBE_2).ok_or(anyhow!("empty datetime in ZBE-2"))?)?;
+            end = match query(msg, ZBE_3) {
                 Some(end) => Some(parse_datetime(end)?),
                 None => {
                     // A04 get never an end date form source system - therefore we use start date here as well
@@ -552,8 +552,8 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
 
 fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> {
     match message_type(msg)? {
-        MessageType::A14 => Ok(query(msg, "PID.4").ok_or(anyhow!("empty visit number in PID.4"))?),
-        _ => Ok(query(msg, "PV1.19").ok_or(anyhow!("empty visit number in PV1.19"))?),
+        MessageType::A14 => Ok(query(msg, PID_4).ok_or(anyhow!("empty visit number in PID.4"))?),
+        _ => Ok(query(msg, PV1_19_1).ok_or(anyhow!("empty visit number in PV1.19"))?),
     }
 }
 
@@ -565,7 +565,7 @@ fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
 }
 
 fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
-    let code = query(msg, "PV1.2").ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
+    let code = query(msg, PV1_2).ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
     match code {
         "I" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
@@ -588,7 +588,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
 }
 
 fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
-    if let Some(code) = query(msg, "PV1.2") {
+    if let Some(code) = query(msg, PV1_2) {
         match code {
             // todo: the following are missing
             // O ("Ambulantes Operieren") => operation
@@ -652,7 +652,7 @@ fn map_versorgungsstellenkontakt(
         base_encounter(msg, config, &EncounterType::Versorgungsstellenkontakt)?
             .part_of(resource_ref(
                 &ResourceType::Encounter,
-                query(msg, "ZBE.1")
+                query(msg, ZBE_1_1)
                     .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
                 &config.fall.abteilungskontakt.system,
             )?)
@@ -666,7 +666,7 @@ fn map_versorgungsstellenkontakt(
         .build()
         .map_err(MappingError::BuilderError)?;
 
-    kontakt.service_provider = query(msg, PV1_WARD_NAME).and_then(|f| {
+    kontakt.service_provider = query(msg, PV1_3_1).and_then(|f| {
         resource_ref(
             &ResourceType::Organization,
             f,
@@ -692,9 +692,9 @@ fn map_lvl_3_locations(
         )?)?));
 
         if is_inpatient_location(msg)? {
-            let ward = query(msg, "PV1.3.1");
-            let room = query(msg, "PV1.3.2");
-            let bed = query(msg, "PV1.3.3");
+            let ward = query(msg, PV1_3_1);
+            let room = query(msg, PV1_3_2);
+            let bed = query(msg, PV1_3_3);
             if let (Some(ward), Some(room)) = (ward, room) {
                 locations.push(Some(to_encounter_location(map_room_location(
                     config, ward, room,

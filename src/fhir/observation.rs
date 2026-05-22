@@ -5,8 +5,7 @@ use crate::fhir::mapper::{
 };
 use crate::fhir::patient::map_deceased;
 use crate::hl7::parser::{
-    MessageType, PID_PID, PV1_VISIT_ID, ZBE_BEGINN_OF_MOVEMENT, ZNG_BODY_HEIGHT,
-    ZNG_HEAD_CIRCUMFERENCE, ZNG_WEIGHT, message_type, query,
+    MessageType, PID_2, PV1_19_1, ZBE_2, ZNG_6, ZNG_7, ZNG_11, message_type, query,
 };
 use anyhow::anyhow;
 use fhir_model::r4b::codes::ObservationStatus;
@@ -115,7 +114,7 @@ fn get_basic_observation_builder(msg: &Message) -> Result<ObservationBuilder, Ma
     Ok(Observation::builder()
         .status(ObservationStatus::Final)
         .effective(ObservationEffective::DateTime(parse_datetime(
-            query(msg, ZBE_BEGINN_OF_MOVEMENT).ok_or(MessageAccessError::Other(anyhow!(
+            query(msg, ZBE_2).ok_or(MessageAccessError::Other(anyhow!(
                 "ZBE.2 dateTime value missing!"
             )))?,
         )?)))
@@ -123,8 +122,8 @@ fn get_basic_observation_builder(msg: &Message) -> Result<ObservationBuilder, Ma
 
 pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, MappingError> {
     let mut result: Vec<BundleEntry> = vec![];
-    let pid = query(msg, PID_PID);
-    let visit = query(msg, PV1_VISIT_ID);
+    let pid = query(msg, PID_2);
+    let visit = query(msg, PV1_19_1);
 
     if let (Some(pid), Some(visit)) = (pid, visit) {
         if let Some(is_alive) = map_vital_status(msg, config, pid, visit)? {
@@ -200,7 +199,7 @@ fn map_body_length(
     pid: &str,
     visit: &str,
 ) -> Result<Option<Observation>, MappingError> {
-    if let Some(quantity_value) = query(msg, ZNG_BODY_HEIGHT)
+    if let Some(quantity_value) = query(msg, ZNG_6)
         .map(|val| val.parse::<f64>().map_err(FormattingError::ParseFloatError))
         .transpose()?
     {
@@ -232,7 +231,7 @@ fn map_body_weight(
     pid: &str,
     visit: &str,
 ) -> Result<Option<Observation>, MappingError> {
-    if let Some(quantity_value) = query(msg, ZNG_WEIGHT)
+    if let Some(quantity_value) = query(msg, ZNG_7)
         .map(|val| val.parse::<f64>().map_err(FormattingError::ParseFloatError))
         .transpose()?
     {
@@ -266,7 +265,7 @@ fn map_head_circumference(
     pid: &str,
     visit: &str,
 ) -> Result<Option<Observation>, MappingError> {
-    if let Some(quantity_value) = query(msg, ZNG_HEAD_CIRCUMFERENCE)
+    if let Some(quantity_value) = query(msg, ZNG_11)
         .map(|val| val.parse::<f64>().map_err(FormattingError::ParseFloatError))
         .transpose()?
     {

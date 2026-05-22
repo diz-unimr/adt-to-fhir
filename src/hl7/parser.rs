@@ -7,20 +7,106 @@ use hl7_parser::query::LocationQueryResult;
 use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
+/// message key
+///
+/// __note:__ always present
+pub(crate) const MSH_10: &str = "MSH.10";
 
-pub(crate) const MSH_HL7_KEY: &str = "MSH.10";
-pub(crate) const ZNG_WEIGHT: &str = "ZNG.7";
-pub(crate) const ZNG_HEAD_CIRCUMFERENCE: &str = "ZNG.11";
-pub(crate) const ZNG_BODY_HEIGHT: &str = "ZNG.6";
-pub(crate) const PID_PID: &str = "PID.3.1";
-pub(crate) const PV1_WARD_NAME: &str = "PV1.3.1";
-pub(crate) const PV1_DEPARTMENT_SHORT_NAME: &str = "PV1.3.4";
+/// old patient identifier value
+///
+/// __note:__ only used at correction of patient data (e.g. merge operation)
+pub(crate) const MRG_1: &str = "MRG.1";
+/// birth weight
+///
+/// __note:__ segment only at birth context present
+pub(crate) const ZNG_7: &str = "ZNG.7";
+/// head circumference at birth
+///
+/// __note:__ segment only at birth context present
+pub(crate) const ZNG_11: &str = "ZNG.11";
+/// body length at birth
+///
+/// __note:__ segment only at birth context present
+pub(crate) const ZNG_6: &str = "ZNG.6";
+
+/// patient identifier
+///
+/// __note:__ always present (preferred before PID.3)
+pub(crate) const PID_2: &str = "PID.2";
+/// patient identifier list
+///
+/// __note:__ always present
+pub(crate) const PID_3_1: &str = "PID.3.1";
+/// encounter identifier (medical case id)
+///
+pub(crate) const PID_4: &str = "PID.4";
+/// patient birthdate
+pub(crate) const PID_7: &str = "PID.7";
+/// mothers encounter number
+///
+/// __note:__ only at birth context set
+pub(crate) const PID_21_1: &str = "PID.21.1";
+
+/// patient class
+///
+/// inpatient(I), ambulatory(O), emergency (E)...
+pub(crate) const PV1_2: &str = "PV1.2";
+/// ward short name
+///
+/// __note:__ may be empty
+pub(crate) const PV1_3_1: &str = "PV1.3.1";
+/// patient location room
+pub(crate) const PV1_3_2: &str = "PV1.3.2";
+/// patient location bed number
+pub(crate) const PV1_3_3: &str = "PV1.3.3";
+/// department short name
+///
+/// __note:__ in rare cases empty (ambulatory bed status and ward visit)
+pub(crate) const PV1_3_4: &str = "PV1.3.4";
 /// based on message type this may be 'department' or 'private clinic department' or 'generic location'
-pub(crate) const PV1_PLACE_INSTITUT: &str = "PV1.3.5";
-pub(crate) const PV1_VISIT_ID: &str = "PV1.19.1";
-pub(crate) const PID_MOTHERS_ENCOUNTER_NUMBER: &str = "PID.21.1";
-pub(crate) const PV1_CLINICAL_DEPARTMENT_CODE: &str = "PV1.39.1";
-pub(crate) const ZBE_BEGINN_OF_MOVEMENT: &str = "ZBE.2";
+///
+/// __note:__ usually set
+pub(crate) const PV1_3_5: &str = "PV1.3.5";
+/// admission source
+pub(crate) const PV1_4_1: &str = "PV1.4.1";
+/// admission reason
+///
+/// digit 3 & 4
+pub(crate) const PV1_4__2_1: &str = "PV1.4[2].1";
+/// encounter number (medical case id)
+///
+/// __note:__ usually set, may be missing first messages at encounter planning
+pub(crate) const PV1_19_1: &str = "PV1.19.1";
+/// discharge reason
+pub(crate) const PV1_36_1: &str = "PV1.36.1";
+/// clinical department code (german §301 Fachabteilungsschlüssel)
+///
+/// __note:__ often set
+pub(crate) const PV1_39_1: &str = "PV1.39.1";
+/// discharge disposition
+pub(crate) const PV1_40_1: &str = "PV1.40.1";
+/// encounter beginn date time
+pub(crate) const PV1_44: &str = "PV1.44";
+/// encounter end date time
+pub(crate) const PV1_45: &str = "PV1.45";
+
+/// admission reason
+///
+/// digit 1 & 2
+pub(crate) const PV2_3_1: &str = "PV2.3.1";
+
+/// patient movement identifier
+///
+/// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
+pub(crate) const ZBE_1_1: &str = "ZBE.1.1";
+/// beginning of patient movement (timestamp)
+///
+/// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
+pub(crate) const ZBE_2: &str = "ZBE.2.1";
+/// end of patient movement (timestamp)
+///
+/// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
+pub(crate) const ZBE_3: &str = "ZBE.3.1";
 
 #[derive(PartialEq, Debug)]
 pub enum MessageType {
@@ -195,7 +281,7 @@ pub(crate) fn segment_value<'a>(
 }
 
 pub(crate) fn get_message_key(msg: &Message) -> Result<String, MessageAccessError> {
-    if let Some(msg_key) = query(msg, MSH_HL7_KEY)
+    if let Some(msg_key) = query(msg, MSH_10)
         && !msg_key.is_empty()
     {
         return Ok(msg_key.to_string());
@@ -274,11 +360,11 @@ PV1|1|I|WARD_1^room_1^bed_1^KJM^KLINIKUM^123445|R^^HL7~01^Normalfall^301||||||N|
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
 
-        let v1 = query(&msg, "PV1.3.1").unwrap();
+        let v1 = query(&msg, PV1_3_1).unwrap();
         assert_eq!("WARD_1", v1);
-        let v2 = query(&msg, "PV1.3.2").unwrap();
+        let v2 = query(&msg, PV1_3_2).unwrap();
         assert_eq!("room_1", v2);
-        let v3 = query(&msg, "PV1.3.3").unwrap();
+        let v3 = query(&msg, PV1_3_3).unwrap();
         assert_eq!("bed_1", v3);
     }
 
@@ -292,7 +378,7 @@ PV1|1|I|^^^KJM^KLINIKUM^123445|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
 
-        let v1 = query(&msg, "PV1.3.1");
+        let v1 = query(&msg, PV1_3_1);
         assert_eq!(None, v1);
     }
 

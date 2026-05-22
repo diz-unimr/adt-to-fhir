@@ -5,7 +5,7 @@ use crate::fhir::mapper::{
     is_inpatient_location, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
-use crate::hl7::parser::{MessageType, PV1_WARD_NAME, message_type, query};
+use crate::hl7::parser::{MessageType, PV1_3_1, PV1_3_2, PV1_3_3, message_type, query};
 use anyhow::anyhow;
 use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
 use fhir_model::r4b::types::{CodeableConcept, Reference};
@@ -60,9 +60,9 @@ pub(crate) fn create_locations(
 ) -> Result<Option<Vec<Location>>, MappingError> {
     let mut result: Vec<Location> = vec![];
     if is_inpatient_location(msg)? {
-        let pv1_3_1 = query(msg, PV1_WARD_NAME);
-        let pv1_3_2 = query(msg, "PV1.3.2");
-        let pv1_3_3 = query(msg, "PV1.3.3");
+        let pv1_3_1 = query(msg, PV1_3_1);
+        let pv1_3_2 = query(msg, PV1_3_2);
+        let pv1_3_3 = query(msg, PV1_3_3);
 
         if let Some(department) = parse_fab(msg)? {
             match (pv1_3_1, pv1_3_2, pv1_3_3) {
@@ -123,12 +123,12 @@ pub(crate) fn map_ward_location(
         )?)])
         .build()
         .map_err(MappingError::BuilderError)?;
-    if let Some(icu_coding) = query(msg, "PV1.3.1")
+    if let Some(icu_coding) = query(msg, PV1_3_1)
         .and_then(|field_value| map_location_type_icu(field_value, resources).transpose())
     {
         location.r#type = icu_coding?;
     }
-    if let Some(war_id) = query(msg, PV1_WARD_NAME) {
+    if let Some(war_id) = query(msg, PV1_3_1) {
         location.managing_organization = Some(resource_ref(
             &ResourceType::Organization,
             war_id,
