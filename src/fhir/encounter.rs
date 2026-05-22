@@ -12,8 +12,8 @@ use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
 use crate::hl7::parser::{
-    MessageType, PID_MOTHERS_ENCOUNTER_NUMBER, PV1_CLINICAL_DEPARTMENT_CODE, get_message_key,
-    message_type, query,
+    MessageType, PID_MOTHERS_ENCOUNTER_NUMBER, PV1_CLINICAL_DEPARTMENT_CODE, PV1_WARD_NAME,
+    get_message_key, message_type, query,
 };
 use anyhow::anyhow;
 use fhir_model::DateTime;
@@ -284,7 +284,7 @@ fn map_abteilungskontakt(
     }
 
     if let Some(fab) = parse_fab(msg)? {
-        enc.service_provider = Some(fab_ref(fab)?);
+        enc.service_provider = Some(fab_ref(fab, config)?);
     }
 
     Ok(enc)
@@ -433,11 +433,11 @@ fn map_encounter_type(
     )])
 }
 
-fn fab_ref(fab: &str) -> Result<Reference, MappingError> {
+fn fab_ref(fab: &str, config: &Fhir) -> Result<Reference, MappingError> {
     resource_ref(
         &ResourceType::Organization,
         fab,
-        "https://fhir.diz.uni-marburg.de/sid/department",
+        config.organization.department.system.as_str(),
     )
 }
 
@@ -666,7 +666,14 @@ fn map_versorgungsstellenkontakt(
         .build()
         .map_err(MappingError::BuilderError)?;
 
-    kontakt.service_provider = parse_fab(msg)?.and_then(|f| fab_ref(f).ok());
+    kontakt.service_provider = query(msg, PV1_WARD_NAME).and_then(|f| {
+        resource_ref(
+            &ResourceType::Organization,
+            f,
+            config.organization.ward.system.as_str(),
+        )
+        .ok()
+    });
 
     Ok(kontakt)
 }
