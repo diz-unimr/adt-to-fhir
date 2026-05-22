@@ -2,9 +2,11 @@ use crate::config::Fhir;
 use crate::error::MappingError;
 use fhir_model::r4b::codes::IdentifierUse;
 
-use crate::fhir::mapper::{EntryRequestType, bundle_entry, get_cc_with_one_code, parse_fab};
+use crate::fhir::mapper::{
+    EntryRequestType, bundle_entry, get_cc_with_one_code, parse_fab, resource_ref,
+};
 use crate::hl7::parser::{PV1_WARD_NAME, query};
-use fhir_model::r4b::resources::{BundleEntry, Organization};
+use fhir_model::r4b::resources::{BundleEntry, Organization, ResourceType};
 use fhir_model::r4b::types::Identifier;
 use hl7_parser::Message;
 
@@ -47,21 +49,30 @@ fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organizatio
 fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
     // ward is sometimes empty
     if let Some(ward_name) = query(msg, PV1_WARD_NAME) {
-        Ok(Some(
-            Organization::builder()
-                .identifier(vec![Some(
-                    Identifier::builder()
-                        .value(ward_name.to_string())
-                        .system(config.organization.ward.system.to_string())
-                        .r#use(IdentifierUse::Usual)
-                        .build()?,
-                )])
-                .r#type(vec![Some(get_cc_with_one_code(
-                    "other".to_string(),
-                    "http://terminology.hl7.org/CodeSystem/organization-type".to_string(),
-                )?)])
-                .build()?,
-        ))
+        if let Some(fab_ref) = parse_fab(msg)? {
+            Ok(Some(
+                Organization::builder()
+                    .part_of(resource_ref(
+                        &ResourceType::Organization,
+                        fab_ref,
+                        config.organization.department.system.as_str(),
+                    )?)
+                    .identifier(vec![Some(
+                        Identifier::builder()
+                            .value(ward_name.to_string())
+                            .system(config.organization.ward.system.to_string())
+                            .r#use(IdentifierUse::Usual)
+                            .build()?,
+                    )])
+                    .r#type(vec![Some(get_cc_with_one_code(
+                        "other".to_string(),
+                        "http://terminology.hl7.org/CodeSystem/organization-type".to_string(),
+                    )?)])
+                    .build()?,
+            ))
+        } else {
+            Ok(None)
+        }
     } else {
         Ok(None)
     }
