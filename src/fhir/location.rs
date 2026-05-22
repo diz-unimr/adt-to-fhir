@@ -128,11 +128,11 @@ pub(crate) fn map_ward_location(
     {
         location.r#type = icu_coding?;
     }
-    if let Some(dep_id) = parse_fab(msg)? {
+    if let Some(war_id) = query(msg, PV1_WARD_NAME) {
         location.managing_organization = Some(resource_ref(
             &ResourceType::Organization,
-            dep_id,
-            config.organization.department.system.as_str(),
+            war_id,
+            config.organization.ward.system.as_str(),
         )?)
     }
     Ok(location)
