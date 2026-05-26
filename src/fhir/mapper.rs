@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::error::{FormattingError, MappingError, MessageAccessError};
+use crate::error::{MappingError, ParsingError};
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::{encounter, location, patient};
 use crate::hl7::parser::query;
@@ -33,9 +33,9 @@ impl FhirMapper {
         })
     }
 
-    pub(crate) fn map(&self, msg: String) -> Result<Option<String>, anyhow::Error> {
+    pub(crate) fn map(&self, msg: &str) -> Result<Option<String>, MappingError> {
         // deserialize
-        let v2_msg = Message::parse_with_lenient_newlines(msg.as_str(), true)?;
+        let v2_msg = Message::parse_with_lenient_newlines(msg, true)?;
 
         // map hl7 message
         let resources = self.map_resources(&v2_msg)?;
@@ -166,7 +166,7 @@ fn identifier_search(system: &str, value: &str) -> String {
     format!("identifier={system}|{value}")
 }
 
-pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, FormattingError> {
+pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, ParsingError> {
     let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
     let dt_with_tz = Berlin
         .from_local_datetime(&dt)
@@ -187,7 +187,7 @@ pub(crate) fn resource_ref(
         .build()?)
 }
 
-pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
+pub(crate) fn parse_date(input: &str) -> Result<Date, ParsingError> {
     let dt = NaiveDate::parse_and_remainder(input, "%Y%m%d")?.0;
     let date = time::Date::from_calendar_date(
         dt.year(),
@@ -228,7 +228,7 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
         .build()
 }
 
-pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAccessError> {
+pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
     let facility = query(msg, "PV1.3.4");
     let location = query(msg, "PV1.3.1");
     let loc_status = query(msg, "PV1.3.5");
@@ -237,12 +237,12 @@ pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAcc
     // todo: kostenstelle lookup etc.
     match (facility, location, loc_status) {
         // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
-        (Some(f), Some(_), _) => Ok(Some(f)),
+        (Some(f), Some(_), _) => Some(f),
         // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
-        (None, Some(l), _) => Ok(Some(l)),
+        (None, Some(l), _) => Some(l),
         // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
-        (Some(_), None, Some(st)) => Ok(Some(st)),
-        _ => Ok(None),
+        (Some(_), None, Some(st)) => Some(st),
+        _ => None,
     }
 }
 
@@ -263,7 +263,7 @@ pub(crate) fn create_locations(
         let pv1_3_2 = query(msg, "PV1.3.2");
         let pv1_3_3 = query(msg, "PV1.3.3");
 
-        if let Some(department) = parse_fab(msg)? {
+        if let Some(department) = parse_fab(msg) {
             match (pv1_3_1, pv1_3_2, pv1_3_3) {
                 (Some(_), None, None) => {
                     result.push(map_ward_location(msg, department, config, resources)?)
@@ -277,7 +277,7 @@ pub(crate) fn create_locations(
                     result.push(map_room_location(config, pv1_3_1, pv1_3_2)?);
                     result.push(map_bed_location(config, pv1_3_1, pv1_3_2, pv1_3_3)?);
                 }
-                (_, _, _) => {}
+                _ => {}
             }
         }
     }
@@ -416,7 +416,7 @@ mod tests {
         };
 
         // act
-        let mapped = mapper.map(hl7).unwrap();
+        let mapped = mapper.map(&hl7).unwrap();
 
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();

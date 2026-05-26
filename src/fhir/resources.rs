@@ -81,10 +81,10 @@ impl ResourceMap {
         let dep = self
             .department_map
             .get(code)
-            .ok_or(MappingError::Other(anyhow!(
-                "Fachabteilungsschlüssel {} not found",
-                code
-            )))?;
+            .ok_or(MappingError::ResourceMappingError {
+                resource: "Fachabteilungsschlüssel".into(),
+                value: code.into(),
+            })?;
 
         Ok(Some(
             CodeableConcept::builder()

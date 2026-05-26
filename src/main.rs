@@ -7,10 +7,12 @@ mod hl7;
 pub mod test_utils;
 
 use crate::config::{Kafka, Ssl};
+use crate::error::{MappingError, ProcessingError};
 use crate::fhir::mapper::FhirMapper;
 use config::AppConfig;
+use futures::TryStreamExt;
+use futures::future::join_all;
 use futures::stream::FuturesUnordered;
-use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, info};
 use rdkafka::ClientConfig;
 use rdkafka::config::RDKafkaLogLevel;
@@ -20,7 +22,7 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use std::sync::Arc;
 
-async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
+async fn run(config: Kafka, mapper: FhirMapper, id: i32) -> Result<(), ProcessingError> {
     // create consumer
     let consumer: StreamConsumer = create_consumer(config.clone());
     match consumer.subscribe(&[&config.input_topic]) {
@@ -35,7 +37,7 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
     let consumer = Arc::new(consumer);
     let producer = Arc::new(create_producer(config.clone()));
 
-    let stream = consumer.stream().map_err(|e| e.into()).try_for_each(|m| {
+    let stream = consumer.stream().map_err(ProcessingError::Kafka).try_for_each(|m| {
         let consumer = consumer.clone();
         let producer = producer.clone();
         let output_topic = config.output_topic.clone();
@@ -62,17 +64,30 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
 
                 // filter tombstone records
                 if let Some(payload) = payload {
-                    let result = match mapper.map(payload) {
-                        Ok(mapped) => match mapped {
-                            None => {
-                                commit_offset(&consumer, &m);
-                                return Ok(());
-                            }
-                            Some(r) => r,
-                        },
-                        Err(err) => {
-                            error!("Failed to map payload with [key={key}]: {}", err);
-                            return Err(err);
+                    let result = match mapper.map(&payload) {
+                        Ok(Some(r)) => r,
+                        Ok(None) => {
+                            commit_offset(&consumer, &m);
+                            return Ok(());
+                        }
+                        // handle error
+                        Err(e) => {
+                            error!("Failed to map payload with [key={key}]: {e}");
+
+                            return match e {
+                                // TODO error metrics
+                                MappingError::ResourceMappingError {
+                                    resource: _,
+                                    value: _,
+                                } => {
+                                    error!("Fatal error, stopping Consumer[{id}].");
+                                    Err(ProcessingError::Mapping(e))
+                                }
+                                err => {
+                                    commit_offset(&consumer, &m);
+                                    Ok(())
+                                }
+                            };
                         }
                     };
 
@@ -101,10 +116,10 @@ async fn run(config: Kafka, mapper: FhirMapper) -> anyhow::Result<()> {
         }
     });
 
-    info!("Starting consumer");
-    let error = stream.await;
-    info!("Consumers terminated: {:?}", error);
-    error
+    info!("Starting Consumer[{id}]");
+    let error = stream.await.unwrap_err();
+    info!("Consumer[{id}] terminated: {error}");
+    Err(error)
 }
 
 fn commit_offset(consumer: &StreamConsumer, message: &BorrowedMessage) {
@@ -127,11 +142,11 @@ async fn main() {
 
     // run
     let num_partitions = 3;
-    (0..num_partitions)
-        .map(|_| tokio::spawn(run(config.kafka.clone(), mapper.clone())))
-        .collect::<FuturesUnordered<_>>()
-        .for_each(|_| async {})
-        .await
+    let tasks = (0..num_partitions)
+        .map(|id| tokio::spawn(run(config.kafka.clone(), mapper.clone(), id)))
+        .collect::<FuturesUnordered<_>>();
+    // .for_each(|_| async {})
+    join_all(tasks).await;
 }
 
 fn create_consumer(config: Kafka) -> StreamConsumer {
@@ -272,7 +287,7 @@ mod tests {
         // run processor
         let (tx, rx) = oneshot::channel();
         tokio::spawn(async move {
-            if let Err(e) = run(config.kafka, mapper).await {
+            if let Err(e) = run(config.kafka, mapper, 1).await {
                 tx.send(e).unwrap();
             }
         });

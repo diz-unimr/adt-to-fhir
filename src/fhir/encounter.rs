@@ -221,7 +221,7 @@ fn map_abteilungskontakt(
     // base encounter
     let mut enc = base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?.build()?;
 
-    let fab = parse_fab(msg)?;
+    let fab = parse_fab(msg);
     // fab related
     if let Some(f) = fab {
         // fab schluessel
@@ -567,7 +567,7 @@ fn map_versorgungsstellenkontakt(
         .build()
         .map_err(MappingError::BuilderError)?;
 
-    kontakt.service_provider = parse_fab(msg)?.and_then(|f| fab_ref(f).ok());
+    kontakt.service_provider = parse_fab(msg).and_then(|f| fab_ref(f).ok());
 
     Ok(kontakt)
 }
@@ -579,7 +579,7 @@ fn map_lvl_3_locations(
 ) -> Result<Vec<Option<EncounterLocation>>, MappingError> {
     let mut locations: Vec<Option<EncounterLocation>> = vec![];
 
-    if let Some(department) = parse_fab(msg)? {
+    if let Some(department) = parse_fab(msg) {
         // department location should be always available
         locations.push(Some(
             map_ward_location(msg, department, config, resources)?.to_encounter_location()?,

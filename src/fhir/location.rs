@@ -31,7 +31,7 @@ pub(super) fn map(
             }
 
             MessageType::A04 => {
-                if let Some(department) = parse_fab(msg)? {
+                if let Some(department) = parse_fab(msg) {
                     r.push(bundle_entry(
                         map_ward_location(msg, department, &config, resources)?,
                         EntryRequestType::ConditionalCreate,

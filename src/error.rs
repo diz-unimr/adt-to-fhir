@@ -1,32 +1,40 @@
 use chrono::ParseError;
-use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::{BuilderError, DateFormatError, time};
+use rdkafka::error::KafkaError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+pub(crate) enum ProcessingError {
+    #[error("Kafka error: {0}")]
+    Kafka(KafkaError),
+    #[error(transparent)]
+    Mapping(#[from] MappingError),
+}
+
+#[derive(Debug, Error)]
 pub(crate) enum MappingError {
-    #[error("fatal mapping error: `{0}`")]
-    FatalError(String),
     #[error(transparent)]
     MessageAccessError(#[from] MessageAccessError),
     #[error(transparent)]
     BuilderError(#[from] BuilderError),
     #[error(transparent)]
-    FormattingError(#[from] FormattingError),
+    FormattingError(#[from] ParsingError),
+    #[error("failed to lookup resource {resource} with value {value}")]
+    ResourceMappingError { resource: String, value: String },
+    #[error(transparent)]
+    ParseError(#[from] hl7_parser::parser::ParseError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum FormattingError {
+pub(crate) enum ParsingError {
     #[error(transparent)]
     DateFormatError(#[from] DateFormatError),
     #[error(transparent)]
     ParseError(#[from] ParseError),
     #[error(transparent)]
     ParseDateError(#[from] time::error::Parse),
-    #[error(transparent)]
-    InvalidFormatError(#[from] InvalidFormatDescription),
     #[error(transparent)]
     ComponentRangeError(#[from] time::error::ComponentRange),
     #[error(transparent)]
