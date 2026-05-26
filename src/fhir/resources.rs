@@ -1,5 +1,4 @@
 use crate::error::MappingError;
-use anyhow::anyhow;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
 use serde::Deserialize;
 use std::collections::HashMap;

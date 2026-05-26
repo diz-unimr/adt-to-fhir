@@ -83,7 +83,7 @@ async fn run(config: Kafka, mapper: FhirMapper, id: i32) -> Result<(), Processin
                                     error!("Fatal error, stopping Consumer[{id}].");
                                     Err(ProcessingError::Mapping(e))
                                 }
-                                err => {
+                                _ => {
                                     commit_offset(&consumer, &m);
                                     Ok(())
                                 }
