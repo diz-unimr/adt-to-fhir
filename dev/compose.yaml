@@ -22,6 +22,7 @@ services:
       KAFKA_MESSAGE_MAX_BYTES: 5242880
       KAFKA_REPLICA_FETCH_MAX_BYTES: 5242880
       KAFKA_COMPRESSION_TYPE: gzip
+      KAFKA_NUM_PARTITIONS: 3
     healthcheck:
       test: /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --list
       interval: 1s

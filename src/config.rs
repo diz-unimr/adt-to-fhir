@@ -15,6 +15,7 @@ pub(crate) struct Kafka {
     pub(crate) input_topic: String,
     pub(crate) output_topic: String,
     pub(crate) offset_reset: String,
+    pub(crate) num_partitions: i32,
 }
 
 #[derive(Default, Deserialize, Clone)]

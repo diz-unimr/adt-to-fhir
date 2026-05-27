@@ -13,6 +13,7 @@ kafka:
   input_topic: adt-hl7
   output_topic: adt-fhir
   offset_reset: earliest
+  num_partitions: 3
 
 fhir:
   meta_source: "#orbis_adt"

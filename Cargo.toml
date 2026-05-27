@@ -8,6 +8,7 @@ rdkafka = { version = "0.38.0", features = ["ssl", "cmake-build"] }
 tokio = { version = "1.50.0", features = ["full"] }
 log = "0.4.29"
 env_logger = "0.11.9"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 futures = "0.3.32"
 config = "0.15.19"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -19,6 +20,7 @@ thiserror = "2.0.18"
 chrono = "0.4.44"
 chrono-tz = "0.10.4"
 regex = "1.12.3"
+tokio-util = "0.7.18"
 
 [dev-dependencies]
 rstest = "0.26.1"
