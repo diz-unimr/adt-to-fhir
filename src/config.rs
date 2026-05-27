@@ -1,12 +1,14 @@
-use config::{Config, ConfigError, Environment, File};
+use anyhow::anyhow;
+use config::{Config, Environment, File};
 use serde::Deserialize;
+use validator::Validate;
 
 #[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct App {
     pub(crate) log_level: String,
 }
 
-#[derive(Default, Deserialize, Clone)]
+#[derive(Default, Deserialize, Clone, Debug, Validate)]
 pub(crate) struct Kafka {
     pub(crate) brokers: String,
     pub(crate) security_protocol: String,
@@ -15,6 +17,7 @@ pub(crate) struct Kafka {
     pub(crate) input_topic: String,
     pub(crate) output_topic: String,
     pub(crate) offset_reset: String,
+    #[validate(range(min = 1, max = 20))]
     pub(crate) num_partitions: i32,
 }
 
@@ -71,13 +74,19 @@ pub(crate) struct AppConfig {
 }
 
 impl AppConfig {
-    pub(crate) fn new() -> Result<Self, ConfigError> {
+    pub(crate) fn new() -> anyhow::Result<Self> {
         Config::builder()
             // default config from file
             .add_source(File::with_name("app.yaml"))
             // override values from environment variables
             .add_source(Environment::default().separator("."))
             .build()?
-            .try_deserialize()
+            // .map_err(|e| anyhow!(e))
+            .try_deserialize::<Self>()
+            // validate
+            .map(|c| match c.kafka.validate() {
+                Ok(()) => Ok(c),
+                Err(e) => Err(anyhow!(e)),
+            })?
     }
 }
