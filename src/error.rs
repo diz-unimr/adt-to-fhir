@@ -22,9 +22,8 @@ pub(crate) enum MappingError {
     BuilderError(#[from] BuilderError),
     #[error(transparent)]
     FormattingError(#[from] ParsingError),
-    // TODO duplicate resource error
     #[error("failed to lookup resource {resource} with value {value}")]
-    ResourceMappingError { resource: String, value: String },
+    MissingResourceError { resource: String, value: String },
     #[error(transparent)]
     ParseError(#[from] hl7_parser::parser::ParseError),
     #[error(transparent)]

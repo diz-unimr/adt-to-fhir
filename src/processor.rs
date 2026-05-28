@@ -208,7 +208,7 @@ impl Processor {
 
                     return match e {
                         // TODO error metrics
-                        MappingError::ResourceMappingError {
+                        MappingError::MissingResourceError {
                             resource: _,
                             value: _,
                         } => {

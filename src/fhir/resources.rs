@@ -79,7 +79,7 @@ impl ResourceMap {
         let dep = self
             .department_map
             .get(code)
-            .ok_or(MappingError::ResourceMappingError {
+            .ok_or(MappingError::MissingResourceError {
                 resource: "Fachabteilungsschlüssel".into(),
                 value: code.into(),
             })?;
