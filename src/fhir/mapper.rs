@@ -563,7 +563,7 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
     #[case("^^^POL^POLPOL^945400^^^", "POL")]
     #[case("^^^^POLPOL^945400^^^", "POLPOL")]
     #[case("Station^^^^KLINIKUM^945400^^^", "Station")]
-    fn test_parse_fab(#[case] pv1_3: String, #[case] expected: String) {
+    fn test_parse_fab(#[case] pv1_3: String, #[case] expected: &str) {
         let input = format!(
             r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.5||123456789|NE|NE||8859/1
 EVN|A01|202111221030|202111221029||EIDAMN
@@ -575,11 +575,6 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
 
         let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
 
-        match parse_fab(&msg) {
-            Some(actual) => {
-                assert_eq!(actual, expected);
-            }
-            None => panic!("did not find fab"),
-        }
+        assert_eq!(parse_fab(&msg), Some(expected));
     }
 }
