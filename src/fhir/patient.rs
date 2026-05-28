@@ -34,13 +34,15 @@ use std::vec;
 pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
     let msg_type = message_type(msg);
 
-    match msg_type.map_err(MessageAccessError::MessageTypeError)? {
+    let message_type_value = msg_type.map_err(MessageAccessError::MessageTypeError)?;
+    match message_type_value {
         MessageType::A01
         | MessageType::A04
         | MessageType::A05
         | MessageType::A06
         | MessageType::A07
-        | MessageType::A08 => {
+        | MessageType::A08
+        => {
             let patient = map_patient(msg, &config)?;
             // update-as-create
             Ok(vec![bundle_entry(patient, UpdateAsCreate)?])
@@ -61,11 +63,17 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         }
         // todo error?
         MessageType::A11
+        // patient stays unchanged
         | MessageType::A12
+        // At A13 no changes expected - we could update patient here,
+        // but an update follows shortly after this message with another message,
+        // therefore we can safely skip this on.
         | MessageType::A13
         | MessageType::A14
         | MessageType::A27 => {
             // ignore
+
+            // A11 & A27 should not create any patient resource
             Ok(vec![])
         }
         MessageType::A29 => {
@@ -288,7 +296,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
     Ok(patient)
 }
 
-fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
+pub fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
     // patient vital status
     let death_time = query(msg, "PID.29");
     let death_confirm = query(msg, "PID.30");

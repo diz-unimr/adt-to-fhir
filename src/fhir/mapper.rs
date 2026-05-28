@@ -1,8 +1,8 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, ParsingError};
 use crate::fhir::resources::ResourceMap;
-use crate::fhir::{encounter, location, patient};
-use crate::hl7::parser::query;
+use crate::fhir::{encounter, location, observation, organization, patient};
+use crate::hl7::parser::{PV1_DEPARTMENT_SHORT_NAME, PV1_PLACE_INSTITUT, PV1_WARD_NAME, query};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -10,7 +10,7 @@ use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::HTTPVerb::Patch;
 use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
 use fhir_model::r4b::resources::{
-    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Location, Parameters, Resource,
+    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Parameters, Resource,
     ResourceType,
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
@@ -19,7 +19,6 @@ use fhir_model::{BuilderError, Instant};
 use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 
-#[derive(Clone)]
 pub(crate) struct FhirMapper {
     pub(crate) config: Fhir,
     pub(crate) resources: ResourceMap,
@@ -59,8 +58,16 @@ impl FhirMapper {
         let p = patient::map(v2_msg, self.config.clone())?;
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
-        // TODO map observation
-        let res = p.into_iter().chain(e).chain(l).map(Some).collect();
+        let obs = observation::map(v2_msg, &self.config)?;
+        let org = organization::map(v2_msg, &self.config)?;
+        let res = p
+            .into_iter()
+            .chain(e)
+            .chain(l)
+            .chain(obs)
+            .chain(org)
+            .map(Some)
+            .collect();
 
         Ok(res)
     }
@@ -177,6 +184,7 @@ pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, ParsingError> {
         OffsetDateTime::from_unix_timestamp(dt_with_tz.timestamp())?,
     )))
 }
+
 pub(crate) fn resource_ref(
     res_type: &ResourceType,
     id: &str,
@@ -229,144 +237,27 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
 }
 
 pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
-    let facility = query(msg, "PV1.3.4");
-    let location = query(msg, "PV1.3.1");
-    let loc_status = query(msg, "PV1.3.5");
+    let ward = query(msg, PV1_WARD_NAME);
+    let department = query(msg, PV1_DEPARTMENT_SHORT_NAME);
+    let location = query(msg, PV1_PLACE_INSTITUT);
     // let kostenstelle = extract_repeat(assigned_loc, 6)?;
 
     // todo: kostenstelle lookup etc.
-    match (facility, location, loc_status) {
+    match (ward, department, location) {
         // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
-        (Some(f), Some(_), _) => Some(f),
-        // 2. wenn PV1-3.4 leer & PV1-3.1 hat Wert -> dann  PV1-3.1
-        (None, Some(l), _) => Some(l),
-        // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.5
-        (Some(_), None, Some(st)) => Some(st),
+        (Some(_), Some(f), _) => Some(f),
+        // 2. wenn PV1-3.1 & PV1-3.4 leer hat Wert -> dann  PV1-3.1
+        (Some(l), None, _) => Some(l),
+        // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.4
+        (None, Some(st), Some(_)) => Some(st),
+        // 4. wenn PV1-3.1 leer & PV1-3.4 leer -> dann  PV1-3.5
+        (None, None, Some(st)) => Some(st),
         _ => None,
     }
 }
 
 pub(crate) fn get_meta() -> Result<Meta, MappingError> {
     Ok(Meta::builder().source("#orbis".to_string()).build()?)
-}
-
-static LOCATION_TYPE_SYSTEM: &str = "http://terminology.hl7.org/CodeSystem/location-physical-type";
-
-pub(crate) fn create_locations(
-    msg: &Message,
-    config: &Fhir,
-    resources: &ResourceMap,
-) -> Result<Option<Vec<Location>>, MappingError> {
-    let mut result: Vec<Location> = vec![];
-    if is_inpatient_location(msg)? {
-        let pv1_3_1 = query(msg, "PV1.3.1");
-        let pv1_3_2 = query(msg, "PV1.3.2");
-        let pv1_3_3 = query(msg, "PV1.3.3");
-
-        if let Some(department) = parse_fab(msg) {
-            match (pv1_3_1, pv1_3_2, pv1_3_3) {
-                (Some(_), None, None) => {
-                    result.push(map_ward_location(msg, department, config, resources)?)
-                }
-                (Some(pv1_3_1), Some(pv1_3_2), None) => {
-                    result.push(map_ward_location(msg, department, config, resources)?);
-                    result.push(map_room_location(config, pv1_3_1, pv1_3_2)?)
-                }
-                (Some(pv1_3_1), Some(pv1_3_2), Some(pv1_3_3)) => {
-                    result.push(map_ward_location(msg, department, config, resources)?);
-                    result.push(map_room_location(config, pv1_3_1, pv1_3_2)?);
-                    result.push(map_bed_location(config, pv1_3_1, pv1_3_2, pv1_3_3)?);
-                }
-                _ => {}
-            }
-        }
-    }
-    if result.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(result))
-}
-
-fn map_location_type_icu(
-    pv1_3_1_value: &str,
-    resources: &ResourceMap,
-) -> Result<Option<Vec<Option<CodeableConcept>>>, MappingError> {
-    if let Some(ward_entry) = resources.ward_map.get(pv1_3_1_value)
-        && ward_entry.is_icu
-    {
-        Ok(Some(vec![Some(get_cc_with_one_code(
-            "ICU".to_string(),
-            "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
-        )?)]))
-    } else {
-        Ok(None)
-    }
-}
-
-pub(crate) fn map_ward_location(
-    msg: &Message,
-    department: &str,
-    config: &Fhir,
-    resources: &ResourceMap,
-) -> Result<Location, MappingError> {
-    let mut location = Location::builder()
-        .meta(get_meta()?)
-        .physical_type(get_cc_with_one_code(
-            "wa".to_string(),
-            config.location.system_ward.to_string(),
-        )?)
-        .identifier(vec![Some(build_usual_identifier(
-            vec![department],
-            config.location.system_ward.to_string(),
-        )?)])
-        .build()
-        .map_err(MappingError::BuilderError)?;
-    if let Some(icu_coding) = query(msg, "PV1.3.1")
-        .and_then(|field_value| map_location_type_icu(field_value, resources).transpose())
-    {
-        location.r#type = icu_coding?;
-    }
-    Ok(location)
-}
-
-pub(crate) fn map_room_location(
-    config: &Fhir,
-    pv1_3_1: &str,
-    pv1_3_2: &str,
-) -> Result<Location, MappingError> {
-    Location::builder()
-        .meta(get_meta()?)
-        .physical_type(get_cc_with_one_code(
-            "ro".to_string(),
-            LOCATION_TYPE_SYSTEM.to_string(),
-        )?)
-        .identifier(vec![Some(build_usual_identifier(
-            vec![pv1_3_1, pv1_3_2],
-            config.location.system_room.clone(),
-        )?)])
-        .build()
-        .map_err(MappingError::BuilderError)
-}
-
-pub(crate) fn map_bed_location(
-    config: &Fhir,
-    pv1_3_1: &str,
-    pv1_3_2: &str,
-    pv1_3_3: &str,
-) -> Result<Location, MappingError> {
-    Location::builder()
-        .meta(get_meta()?)
-        .physical_type(get_cc_with_one_code(
-            "bd".to_string(),
-            LOCATION_TYPE_SYSTEM.to_string(),
-        )?)
-        .identifier(vec![Some(build_usual_identifier(
-            vec![pv1_3_1, pv1_3_2, pv1_3_3],
-            config.location.system_bed.to_string(),
-        )?)])
-        .build()
-        .map_err(MappingError::BuilderError)
 }
 
 #[cfg(test)]
@@ -378,13 +269,14 @@ mod tests {
         Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
         ResourceType,
     };
+    use std::str::FromStr;
 
     use crate::test_utils::tests::{
-        filter_resources, get_dummy_resources, get_test_config, has_profile,
+        filter_resources, get_dummy_resources, get_test_config, has_profile, read_test_resource,
     };
-    use crate::tests::read_test_resource;
     use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};
+    use rstest::rstest;
 
     #[test]
     fn test_parse_datetime() {
@@ -407,7 +299,7 @@ mod tests {
 
     #[test]
     fn map_test() {
-        let hl7 = read_test_resource("a01_test.hl7");
+        let hl7 = read_test_resource("a08_test.hl7");
 
         let config = get_test_config();
         let mapper = FhirMapper {
@@ -421,7 +313,7 @@ mod tests {
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
-        assert_eq!(bundle.entry.len(), 5);
+        assert_eq!(bundle.entry.len(), 9);
 
         let patient: Vec<Patient> = filter_resources(&bundle);
         let encounter: Vec<Encounter> = filter_resources(&bundle);
@@ -466,5 +358,228 @@ mod tests {
                 .build()
                 .unwrap(),
         )
+    }
+
+    #[rstest]
+    #[case("A11", "DELETE", "", 5)]
+    #[case("A12", "DELETE", "", 4)]
+    #[case("A27", "DELETE", "", 5)]
+    #[case("A04", "PUT", "PUT", 8)]
+    #[case("A02", "PUT", "POST", 10)]
+    fn map_request_and_encounter_type_test(
+        #[case] msg_type: String,
+        #[case] request_type_encounter: String,
+        #[case] request_type_patient: String,
+        #[case] resource_count: usize,
+    ) {
+        let hl7 = format!(
+            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^{}_{}|62325574|P|2.5|||||D||DE
+EVN|{}|202111230904|202111230904||Muster
+PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
+PV1|1|I|UROST133^133-03^1^URO^KLINIKUM^900000|R^^HL7~01^Normalfall^301||UROST133^^^URO^KLINIKUM^900000||35576TEO^Test^Ulrike^^Frau^Dr. med.^Karl-Test-Ring 23^35576^Test^06441^45433^FÄ für Test|35576TEO^Test^Ulrike^^Frau^Dr. med.^Karl-Test-Ring 23^35576^Test^06441^45433^FÄ für Allgemeinmedizin|N||||||N|||23232323||K|||||||||||||||01|||2200|9||||202111190630|202111230904||||||A
+PV2||xxx|02^KH-Behandlung, vollstat. nach vorstat.^301||||||202112030000||||||||||||N|||I||||||||||||N
+ZBE|30674176^ORBIS|202111230904||DUMMY"#,
+            msg_type, msg_type, msg_type
+        );
+
+        let config = get_test_config();
+        let mapper = FhirMapper {
+            config: config.clone(),
+            resources: get_dummy_resources(),
+        };
+
+        let expected_request_type = HTTPVerb::from_str(request_type_encounter.as_str()).unwrap();
+
+        // act
+        let mapped = mapper.map(&hl7).unwrap();
+        let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
+
+        bundle.entry.iter().for_each(|entry| {
+            let entry_typ = entry
+                .as_ref()
+                .unwrap()
+                .resource
+                .as_ref()
+                .unwrap()
+                .resource_type();
+            match entry_typ {
+                ResourceType::Encounter => {
+                    check_request_type(&msg_type, expected_request_type, entry);
+                }
+
+                ResourceType::Location | ResourceType::Organization => {
+                    check_request_type(&msg_type, HTTPVerb::Put, entry);
+                }
+                ResourceType::Observation => {
+                    match msg_type.as_str() {
+                        "A04" | "A03" | "A02" => {}
+                        _ => {
+                            assert_eq!(
+                                "For message type '{}' patient resource should not be created.",
+                                msg_type
+                            );
+                        }
+                    }
+                    check_request_type(&msg_type, HTTPVerb::Put, entry);
+                }
+                ResourceType::Patient => {
+                    match msg_type.as_str() {
+                        "A04" | "A02" => {}
+                        _ => {
+                            assert_eq!(
+                                "For message type '{}' patient resource should not be created.",
+                                msg_type
+                            );
+                        }
+                    }
+
+                    check_request_type(
+                        &msg_type,
+                        HTTPVerb::from_str(request_type_patient.as_str()).unwrap(),
+                        entry,
+                    );
+                }
+                _ => {
+                    panic!(
+                        "unexpected resource type '{}' at message type '{}",
+                        entry_typ, msg_type
+                    );
+                }
+            }
+        });
+
+        assert_eq!(
+            bundle.entry.len(),
+            resource_count,
+            "For message type '{}' we expect {} resource to be created.",
+            msg_type,
+            resource_count
+        );
+
+        if msg_type == "A11" || msg_type == "A27" {
+            assert!(
+                bundle
+                    .entry
+                    .iter()
+                    .find(|entry| {
+                        entry
+                            .as_ref()
+                            .unwrap()
+                            .request
+                            .as_ref()
+                            .unwrap()
+                            .url
+                            .eq(format!(
+                                "Encounter?identifier={}|{}",
+                                config.fall.einrichtungskontakt.system, "23232323"
+                            )
+                            .as_str())
+                    })
+                    .is_some()
+            );
+        }
+        assert!(
+            bundle
+                .entry
+                .iter()
+                .find(|entry| {
+                    entry
+                        .as_ref()
+                        .unwrap()
+                        .request
+                        .as_ref()
+                        .unwrap()
+                        .url
+                        .eq(format!(
+                            "Encounter?identifier={}|{}",
+                            config.fall.abteilungskontakt.system, "30674176"
+                        )
+                        .as_str())
+                })
+                .is_some()
+        );
+        assert!(
+            bundle
+                .entry
+                .iter()
+                .find(|entry| {
+                    entry
+                        .as_ref()
+                        .unwrap()
+                        .request
+                        .as_ref()
+                        .unwrap()
+                        .url
+                        .eq(format!(
+                            "Encounter?identifier={}|{}",
+                            config.fall.versorgungsstellenkontakt.system, "30674176"
+                        )
+                        .as_str())
+                })
+                .is_some()
+        )
+    }
+
+    fn check_request_type(
+        msg_type: &String,
+        expected_request_type: HTTPVerb,
+        entry: &Option<BundleEntry>,
+    ) {
+        let resource_name = entry
+            .as_ref()
+            .unwrap()
+            .resource
+            .as_ref()
+            .unwrap()
+            .resource_type()
+            .as_str();
+        assert_eq!(
+            expected_request_type,
+            entry.as_ref().unwrap().request.as_ref().unwrap().method,
+            "At msg_type {} resource {} must be send with {} request",
+            msg_type,
+            resource_name,
+            expected_request_type
+        );
+        if expected_request_type == HTTPVerb::Post {
+            assert!(
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .request
+                    .as_ref()
+                    .unwrap()
+                    .if_none_exist
+                    .is_some(),
+                "on msg type '{}' resource {} must be send with if-none-exists entry!",
+                msg_type,
+                resource_name
+            );
+        }
+    }
+    #[rstest]
+    #[case("POLPOLAMB^^^POL^POLPOL^945400^^^", "POL")]
+    #[case("POLPOLAMB^^^^POLPOL^945400^^^", "POLPOLAMB")]
+    #[case("^^^POL^POLPOL^945400^^^", "POL")]
+    #[case("^^^^POLPOL^945400^^^", "POLPOL")]
+    #[case("Station^^^^KLINIKUM^945400^^^", "Station")]
+    fn test_parse_fab(#[case] pv1_3: String, #[case] expected: String) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.5||123456789|NE|NE||8859/1
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
+PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331"#,
+            pv1_3
+        );
+
+        let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
+
+        match parse_fab(&msg) {
+            Some(actual) => {
+                assert_eq!(actual, expected);
+            }
+            None => panic!("did not find fab"),
+        }
     }
 }

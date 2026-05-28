@@ -36,3 +36,16 @@ fhir:
     system_ward: https://fhir.diz.uni-marburg.de/sid/location-caresite-id
     system_room: https://fhir.diz.uni-marburg.de/sid/location-room-id
     system_bed: https://fhir.diz.uni-marburg.de/sid/location-bed-id
+  condition:
+    system: https://fhir.diz.uni-marburg.de/sid/condition-id
+  observation:
+    system: https://fhir.diz.uni-marburg.de/sid/observation-id
+    profile_head_circumference: https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-kopfumfang|2026.0.1
+    profile_weight: https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergewicht|2026.0.1
+    profile_vital_status: https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Vitalstatus|2026.0.0
+    profile_height: https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergroesse|2026.0.0
+  organization:
+    department:
+      system: https://fhir.diz.uni-marburg.de/sid/department
+    ward:
+      system: https://fhir.diz.uni-marburg.de/sid/ward-id

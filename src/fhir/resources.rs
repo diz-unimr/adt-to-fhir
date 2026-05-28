@@ -38,7 +38,6 @@ pub(crate) struct Ward {
 }
 
 /// Mappings for Fachabteilung (encounter department and location)
-#[derive(Clone)]
 pub(crate) struct ResourceMap {
     /// Map with key: Fachabteilungsschlüssel
     pub(crate) department_map: HashMap<String, Department>,
