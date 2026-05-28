@@ -109,48 +109,50 @@ impl Processor {
 
             let consumer = Arc::new(consumer);
 
-            let stream = consumer
-                .stream()
-                .map_err(ProcessingError::from)
-                .try_for_each(|m| self.process_message(m, id, consumer.clone()));
+            select! {
+                _ = self.ctx.cancel.cancelled() =>  {
+                    info!("Consumer[{id}] for topic {topic} was stopped by cancellation");
+                    return
+                }
+                stream = consumer.stream().map_err(ProcessingError::from)
+                .try_for_each(|m| self.process_message(m, id, consumer.clone())) => {
+                    info!("Starting Consumer[{instance_id}] for topic {}",
+                        self.config.input_topic);
+                    match stream {
+                            // exit
+                            Err(ProcessingError::Cancelled(e)) => {
+                                consumer.unsubscribe();
+                                error!("{e}. Exiting.");
+                                // exit loop
+                                break;
+                            }
+                            Err(ProcessingError::Mapping(e)) => {
+                                consumer.unsubscribe();
+                                error!("{e}. Exiting.");
+                                // cancel all consumer instances
+                                self.ctx.cancel.cancel();
+                                // exit loop
+                                break;
+                            }
+                            // continue
+                            Err(ProcessingError::Kafka(e)) => {
+                                consumer.unsubscribe();
+                                error!("Failed to process message: {e}. Retrying..");
+                            }
+                            // exit
+                            Ok(()) => {
+                                warn!("Consumer stream for topic {id} unexpectedly ended");
+                                break;
+                            }
+                        };
 
-            info!(
-                "Starting Consumer[{instance_id}] for topic {}",
-                self.config.input_topic
-            );
-            match stream.await {
-                // exit
-                Err(ProcessingError::Cancelled(e)) => {
-                    consumer.unsubscribe();
-                    error!("{e}. Exiting.");
-                    // exit loop
-                    break;
+                        info!("Restarting consumer for topic {id} in 10 seconds...");
+                        if self.should_continue(Duration::from_secs(10)).await {
+                            // The token was cancelled
+                            info!("Consumer[{id}] for topic {topic} was stopped by cancellation");
+                            break;
+                        }
                 }
-                Err(ProcessingError::Mapping(e)) => {
-                    consumer.unsubscribe();
-                    error!("{e}. Exiting.");
-                    // cancel all consumer instances
-                    self.ctx.cancel.cancel();
-                    // exit loop
-                    break;
-                }
-                // continue
-                Err(ProcessingError::Kafka(e)) => {
-                    consumer.unsubscribe();
-                    error!("Failed to process message: {e}. Retrying..");
-                }
-                // exit
-                Ok(()) => {
-                    warn!("Consumer stream for topic {id} unexpectedly ended");
-                    break;
-                }
-            };
-
-            info!("Restarting consumer for topic {id} in 10 seconds...");
-            if self.should_continue(Duration::from_secs(10)).await {
-                // The token was cancelled
-                info!("Consumer[{id}] for topic {topic} was stopped by cancellation");
-                break;
             }
         }
     }
@@ -162,11 +164,6 @@ impl Processor {
         consumer: Arc<ProcessingConsumer>,
     ) -> Result<(), ProcessingError> {
         let topic = m.topic();
-        if self.ctx.cancel.is_cancelled() {
-            return Err(ProcessingError::Cancelled(format!(
-                "Consumer[{id}] for topic {topic} cancelled"
-            )));
-        }
 
         let (key, payload) = deserialize_message(&m);
 
@@ -243,12 +240,13 @@ impl Processor {
             }
         }
 
-        match self.ctx.cancel.is_cancelled() {
-            true => Err(ProcessingError::Cancelled(format!(
-                "Consumer[{id}] for topic {topic} cancelled"
-            ))),
-            false => Ok(()),
-        }
+        // match self.ctx.cancel.is_cancelled() {
+        //     true => Err(ProcessingError::Cancelled(format!(
+        //         "Consumer[{id}] for topic {topic} cancelled"
+        //     ))),
+        //     false => Ok(()),
+        // }
+        Ok(())
     }
 
     async fn should_continue(&self, wait: Duration) -> bool {
@@ -352,6 +350,7 @@ fn set_ssl_config(mut c: ClientConfig, ssl_config: Option<Ssl>) -> ClientConfig 
 mod tests {
     use crate::config::{AppConfig, Kafka};
     use crate::fhir::mapper::FhirMapper;
+    use crate::fhir::resources::ResourceMap;
     use crate::processor::{Context, Processor, deserialize_message};
     use crate::test_utils::tests::get_dummy_resources;
     use crate::tests::read_test_resource;
@@ -368,7 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run() {
-        let _r = env_logger::try_init();
+        init_logging();
         const INPUT_TOPIC: &str = "input_topic";
         const OUTPUT_TOPIC: &str = "output_topic";
 
@@ -381,12 +380,12 @@ mod tests {
             .create_topic(OUTPUT_TOPIC, 1, 1)
             .expect("Failed to create output topic");
 
-        let test_producer: FutureProducer = rdkafka::ClientConfig::new()
+        let test_producer: FutureProducer = ClientConfig::new()
             .set("bootstrap.servers", mock_cluster.bootstrap_servers())
             .create()
             .expect("Producer creation failed");
 
-        let output_consumer: StreamConsumer = rdkafka::ClientConfig::new()
+        let output_consumer: StreamConsumer = ClientConfig::new()
             .set("bootstrap.servers", mock_cluster.bootstrap_servers())
             .set("group.id", "test-consumer")
             .create()
@@ -454,6 +453,73 @@ mod tests {
                     || t == ResourceType::Observation
                     || t == ResourceType::Organization)
         );
+    }
+
+    #[tokio::test]
+    async fn cancellation_test() {
+        init_logging();
+
+        const INPUT_TOPIC: &str = "input_topic";
+        const OUTPUT_TOPIC: &str = "output_topic";
+
+        // create mock cluster
+        let mock_cluster = setup_kafka(vec![("test", "test")]).await;
+        mock_cluster
+            .create_topic(INPUT_TOPIC, 1, 1)
+            .expect("Failed to create input topic");
+        mock_cluster
+            .create_topic(OUTPUT_TOPIC, 1, 1)
+            .expect("Failed to create output topic");
+
+        // setup config
+        let config = AppConfig {
+            kafka: Kafka {
+                brokers: mock_cluster.bootstrap_servers(),
+                offset_reset: String::from("earliest"),
+                security_protocol: String::from("plaintext"),
+                consumer_group: String::from("test"),
+                input_topic: INPUT_TOPIC.to_owned(),
+                output_topic: OUTPUT_TOPIC.to_owned(),
+                num_partitions: 1,
+                ssl: None,
+            },
+            app: Default::default(),
+            fhir: Default::default(),
+        };
+
+        // mapper
+        let mapper = Arc::new(FhirMapper {
+            config: config.fhir,
+            resources: ResourceMap {
+                department_map: Default::default(),
+                location_map: Default::default(),
+                ward_map: Default::default(),
+            },
+        });
+
+        // cancellation token
+        let token = CancellationToken::new();
+        let cloned_token = token.clone();
+
+        // processor
+        let p = Processor::new(
+            config.kafka,
+            mapper,
+            Context {
+                cancel: token.clone(),
+                on_commit: None,
+            },
+        );
+
+        let processor = tokio::spawn(async move { p.start().await });
+
+        assert!(!processor.is_finished());
+        cloned_token.cancel();
+        assert!(processor.await.is_ok());
+    }
+
+    fn init_logging() {
+        let _ = env_logger::builder().is_test(true).try_init();
     }
 
     async fn send_record(

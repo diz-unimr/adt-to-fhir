@@ -31,7 +31,7 @@ async fn main() {
 
     // logging / tracing
     let filter = format!(
-        "{}={level},reqwest_retry={level}",
+        "{}={level}",
         env!("CARGO_CRATE_NAME"),
         level = config.app.log_level
     );
@@ -44,9 +44,18 @@ async fn main() {
     let cloned_token = cancel.clone();
     tokio::spawn(async move {
         let mut sigterm = signal(SignalKind::terminate()).unwrap();
-        sigterm.recv().await;
-        info!("🛑 SIGTERM received. Shutting down consumers..");
-        cloned_token.cancel();
+        let mut sigint = signal(SignalKind::interrupt()).unwrap();
+
+        tokio::select! {
+            _ = sigterm.recv() => {
+                info!("🛑 SIGTERM received. Shutting down consumers..");
+                cloned_token.cancel();
+            },
+            _ = sigint.recv() => {
+                info!("🛑 SIGINT received. Shutting down consumers..");
+                cloned_token.cancel();
+            }
+        }
     });
 
     let ctx = Context {
