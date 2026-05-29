@@ -240,12 +240,6 @@ impl Processor {
             }
         }
 
-        // match self.ctx.cancel.is_cancelled() {
-        //     true => Err(ProcessingError::Cancelled(format!(
-        //         "Consumer[{id}] for topic {topic} cancelled"
-        //     ))),
-        //     false => Ok(()),
-        // }
         Ok(())
     }
 
@@ -515,6 +509,7 @@ mod tests {
 
         assert!(!processor.is_finished());
         cloned_token.cancel();
+        // processor stopped
         assert!(processor.await.is_ok());
     }
 
