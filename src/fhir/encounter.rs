@@ -298,15 +298,6 @@ fn get_service_type(
     if let Some(fab) = parse_fab(msg) {
         match resources.map_fab_schluessel(fab) {
             Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
-            Err(MappingError::MissingResourceError {
-                resource: r,
-                value: v,
-            }) => {
-                warn!(
-                    "Resource lookup failed for resource: {r} with value: {v} and msg key: {}",
-                    get_message_key(msg)?,
-                );
-            }
             Err(e) => return Err(e),
             Ok(None) => {}
         };
