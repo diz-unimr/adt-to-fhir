@@ -120,12 +120,6 @@ impl Processor {
                         self.config.input_topic);
                     match stream {
                             // exit
-                            Err(ProcessingError::Cancelled(e)) => {
-                                consumer.unsubscribe();
-                                error!("{e}. Exiting.");
-                                // exit loop
-                                break;
-                            }
                             Err(ProcessingError::Mapping(e)) => {
                                 consumer.unsubscribe();
                                 error!("{e}. Exiting.");

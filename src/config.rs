@@ -92,11 +92,14 @@ pub(crate) struct AppConfig {
 
 impl AppConfig {
     pub(crate) fn new() -> anyhow::Result<Self> {
+        Self::with_env(Environment::default().separator("."))
+    }
+    fn with_env(env: Environment) -> anyhow::Result<Self> {
         Config::builder()
             // default config from file
             .add_source(File::with_name("app.yaml"))
             // override values from environment variables
-            .add_source(Environment::default().separator("."))
+            .add_source(env)
             .build()?
             // .map_err(|e| anyhow!(e))
             .try_deserialize::<Self>()
@@ -105,5 +108,31 @@ impl AppConfig {
                 Ok(()) => Ok(c),
                 Err(e) => Err(anyhow!(e)),
             })?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::AppConfig;
+    use config::Environment;
+    use std::collections::HashMap;
+
+    #[test]
+    fn default_config_validates() {
+        assert!(AppConfig::new().is_ok());
+    }
+
+    #[test]
+    fn invalid_config_fails() {
+        // override validated property with invalid data
+        let source = Environment::default().source(Some({
+            let mut env = HashMap::new();
+            env.insert("kafka.num_partitions".into(), "0".into());
+            env
+        }));
+
+        let c = AppConfig::with_env(source);
+
+        assert!(c.is_err());
     }
 }

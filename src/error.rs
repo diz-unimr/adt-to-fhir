@@ -8,8 +8,6 @@ use thiserror::Error;
 pub(crate) enum ProcessingError {
     #[error("kafka error: {0}")]
     Kafka(#[from] KafkaError),
-    #[error("consumer for topic {0} was cancelled")]
-    Cancelled(String),
     #[error(transparent)]
     Mapping(#[from] MappingError),
 }
