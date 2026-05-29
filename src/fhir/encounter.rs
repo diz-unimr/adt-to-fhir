@@ -1291,15 +1291,14 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let actual = get_service_type(&msg, &get_dummy_resources())
-            .unwrap()
-            .and_then(|c| {
-                c.coding
-                    .first()
-                    .and_then(|c| c.as_ref())
-                    .and_then(|c| c.code.clone())
-            });
+        let actual = get_service_type(&msg, &get_dummy_resources());
 
-        assert_eq!(actual, Some("3700".into()));
+        assert!(matches!(
+            actual,
+            Err(MappingError::MissingResourceError {
+                resource: _,
+                value: _
+            })
+        ));
     }
 }

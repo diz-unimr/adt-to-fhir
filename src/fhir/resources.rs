@@ -83,6 +83,9 @@ impl ResourceMap {
                 resource: "Fachabteilungsschlüssel".into(),
                 value: code.into(),
             })?;
+        if dep.fachabteilungs_schluessel.is_empty() {
+            return Ok(None);
+        }
 
         Ok(Some(
             CodeableConcept::builder()
