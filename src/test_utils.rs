@@ -71,6 +71,13 @@ pub(crate) mod tests {
                         fachabteilungs_schluessel: "2200".to_string(),
                     },
                 ),
+                (
+                    "KLINIKUM".to_string(),
+                    Department {
+                        abteilungs_bezeichnung: "".to_string(),
+                        fachabteilungs_schluessel: "".to_string(),
+                    },
+                ),
             ]),
             location_map: Default::default(),
             ward_map: HashMap::from([

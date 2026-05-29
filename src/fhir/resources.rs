@@ -4,7 +4,6 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::string::ToString;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,7 +38,6 @@ pub(crate) struct Ward {
 }
 
 /// Mappings for Fachabteilung (encounter department and location)
-#[derive(Clone)]
 pub(crate) struct ResourceMap {
     /// Map with key: Fachabteilungsschlüssel
     pub(crate) department_map: HashMap<String, Department>,
@@ -81,10 +79,13 @@ impl ResourceMap {
         let dep = self
             .department_map
             .get(code)
-            .ok_or(MappingError::MissingRessourceEntry(format!(
-                "Fachabteilungsschlüssel for fab name '{}' not found!",
-                code
-            )))?;
+            .ok_or(MappingError::MissingResourceError {
+                resource: "Fachabteilungsschlüssel".into(),
+                value: code.into(),
+            })?;
+        if dep.fachabteilungs_schluessel.is_empty() {
+            return Ok(None);
+        }
 
         Ok(Some(
             CodeableConcept::builder()

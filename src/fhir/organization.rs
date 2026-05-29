@@ -25,7 +25,7 @@ pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
 }
 
 fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
-    if let Some(fab_ref) = parse_fab(msg)? {
+    if let Some(fab_ref) = parse_fab(msg) {
         Ok(Some(
             Organization::builder()
                 .identifier(vec![Some(
@@ -49,7 +49,7 @@ fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organizatio
 fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
     // ward is sometimes empty
     if let Some(ward_name) = query(msg, PV1_WARD_NAME) {
-        if let Some(fab_ref) = parse_fab(msg)? {
+        if let Some(fab_ref) = parse_fab(msg) {
             Ok(Some(
                 Organization::builder()
                     .part_of(resource_ref(
@@ -92,7 +92,7 @@ PV1|1|I|^^^^^945400^^^|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||
 
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
         match map_ward_org(&msg, &get_test_config()) {
-            Ok(Some(actual)) => {
+            Ok(Some(_)) => {
                 panic!("bundle should not be created")
             }
             Err(_) => {
@@ -102,7 +102,7 @@ PV1|1|I|^^^^^945400^^^|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||
             }
         }
         match map_department_org(&msg, &get_test_config()) {
-            Ok(Some(actual)) => {
+            Ok(Some(_)) => {
                 panic!("expect None result")
             }
             Err(_) => {

@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::error::{FormattingError, MappingError, MessageAccessError};
+use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
@@ -283,7 +283,7 @@ fn map_abteilungskontakt(
         )));
     }
 
-    if let Some(fab) = parse_fab(msg)? {
+    if let Some(fab) = parse_fab(msg) {
         enc.service_provider = Some(fab_ref(fab, config)?);
     }
 
@@ -295,23 +295,12 @@ fn get_service_type(
     msg: &Message,
     resources: &ResourceMap,
 ) -> Result<Option<CodeableConcept>, MappingError> {
-    if let Some(fab) = parse_fab(msg)? {
-        let service_type_from_pv1_3 = match resources.map_fab_schluessel(fab) {
-            Ok(Some(fab_from_short_name)) => Some(fab_from_short_name),
-            Err(MappingError::MissingRessourceEntry(missed)) => {
-                warn!(
-                    "MissingRessourceEntry error for msg id '{}' with '{}'",
-                    get_message_key(msg)?,
-                    missed
-                );
-                None
-            }
+    if let Some(fab) = parse_fab(msg) {
+        match resources.map_fab_schluessel(fab) {
+            Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
             Err(e) => return Err(e),
-            Ok(None) => None,
+            Ok(None) => {}
         };
-        if service_type_from_pv1_3.is_some() {
-            return Ok(service_type_from_pv1_3);
-        }
     }
 
     if let Some(fab_schluessel) = query(msg, PV1_CLINICAL_DEPARTMENT_CODE) {
@@ -685,7 +674,7 @@ fn map_lvl_3_locations(
 ) -> Result<Vec<Option<EncounterLocation>>, MappingError> {
     let mut locations: Vec<Option<EncounterLocation>> = vec![];
 
-    if let Some(department) = parse_fab(msg)? {
+    if let Some(department) = parse_fab(msg) {
         // department location should be always available
         locations.push(Some(to_encounter_location(map_ward_location(
             msg, department, config, resources,
@@ -742,7 +731,7 @@ fn map_conditions(
             let priority_u32 = priority
                 .raw_value()
                 .parse::<f32>()
-                .map_err(FormattingError::ParseFloatError)?
+                .map_err(ParsingError::ParseFloatError)?
                 .floor() as u32;
 
             let rank_nz = NonZeroU32::new(priority_u32).ok_or_else(|| {
@@ -919,7 +908,6 @@ fn map_diagnose_local_codes(
 mod tests {
     use super::*;
     use crate::config::{FallConfig, LocationConfig, PatientConfig, SystemConfig};
-    use crate::error::FormattingError::ParseFloatError;
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use hl7_parser::Message;
@@ -1176,7 +1164,7 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
             (Err(MappingError::Other(_)), "-1") => {
                 println!("got MappingError for negativ rank as expected");
             }
-            (Err(MappingError::FormattingError(ParseFloatError(_))), _) => {
+            (Err(MappingError::FormattingError(ParsingError::ParseFloatError(_))), _) => {
                 println!("got ParseFloatError as expected");
             }
             (Err(c), _) => panic!("ParseFloatError was expected but found => '{}'", c),
@@ -1259,28 +1247,16 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        match get_service_type(&msg, &get_dummy_resources()) {
-            Ok(actual) => {
-                if let Some(value) = actual
-                    .unwrap()
-                    .coding
+        let actual = get_service_type(&msg, &get_dummy_resources())
+            .unwrap()
+            .and_then(|c| {
+                c.coding
                     .first()
-                    .unwrap()
-                    .clone()
-                    .unwrap()
-                    .code
-                    .clone()
-                {
-                    assert_eq!(value, "0800");
-                } else {
-                    panic!("we expect service type to have a code value")
-                }
-            }
-            Err(MappingError::FatalError(err_str)) => {
-                panic!("fatal error: {}", err_str)
-            }
-            Err(e) => panic!("error not expected - error {:?}", e),
-        }
+                    .and_then(|c| c.as_ref())
+                    .and_then(|c| c.code.clone())
+            });
+
+        assert_eq!(actual, Some("0800".into()));
     }
 
     #[test]
@@ -1293,25 +1269,16 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        match get_service_type(&msg, &get_dummy_resources()) {
-            Ok(actual) => {
-                if let Some(value) = actual
-                    .unwrap()
-                    .coding
+        let actual = get_service_type(&msg, &get_dummy_resources())
+            .unwrap()
+            .and_then(|c| {
+                c.coding
                     .first()
-                    .unwrap()
-                    .clone()
-                    .unwrap()
-                    .code
-                    .clone()
-                {
-                    assert_eq!(value, "0800");
-                } else {
-                    panic!("we expect service type to have a code value")
-                }
-            }
-            Err(_) => panic!("error not expected"),
-        }
+                    .and_then(|c| c.as_ref())
+                    .and_then(|c| c.code.clone())
+            });
+
+        assert_eq!(actual, Some("0800".into()));
     }
 
     #[test]
@@ -1324,22 +1291,14 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        match get_service_type(&msg, &get_dummy_resources()) {
-            Ok(actual) => {
-                if let Some(value) = actual
-                    .unwrap()
-                    .coding
-                    .first()
-                    .unwrap()
-                    .clone()
-                    .unwrap()
-                    .code
-                    .clone()
-                {
-                    assert_eq!(value, "3700");
-                }
-            }
-            Err(_) => panic!("error not expected here"),
-        }
+        let actual = get_service_type(&msg, &get_dummy_resources());
+
+        assert!(matches!(
+            actual,
+            Err(MappingError::MissingResourceError {
+                resource: _,
+                value: _
+            })
+        ));
     }
 }
