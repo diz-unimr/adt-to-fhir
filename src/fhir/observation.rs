@@ -434,7 +434,7 @@ mod tests {
             "expected value '{}' to be of Quantity {} f64 but got value {}",
             obs_code_value,
             expected,
-            value.to_string()
+            value
         );
     }
     #[test]
