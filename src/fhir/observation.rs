@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::error::{FormattingError, MappingError, MessageAccessError};
+use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, parse_datetime,
 };
@@ -200,7 +200,7 @@ fn map_body_length(
     visit: &str,
 ) -> Result<Option<Observation>, MappingError> {
     if let Some(quantity_value) = query(msg, ZNG_6)
-        .map(|val| val.parse::<f64>().map_err(FormattingError::ParseFloatError))
+        .map(|val| val.parse::<f64>().map_err(ParsingError::ParseFloatError))
         .transpose()?
     {
         return Ok(Some(
@@ -232,7 +232,7 @@ fn map_body_weight(
     visit: &str,
 ) -> Result<Option<Observation>, MappingError> {
     if let Some(quantity_value) = query(msg, ZNG_7)
-        .map(|val| val.parse::<f64>().map_err(FormattingError::ParseFloatError))
+        .map(|val| val.parse::<f64>().map_err(ParsingError::ParseFloatError))
         .transpose()?
     {
         let identifier = build_usual_identifier(
@@ -266,7 +266,7 @@ fn map_head_circumference(
     visit: &str,
 ) -> Result<Option<Observation>, MappingError> {
     if let Some(quantity_value) = query(msg, ZNG_11)
-        .map(|val| val.parse::<f64>().map_err(FormattingError::ParseFloatError))
+        .map(|val| val.parse::<f64>().map_err(ParsingError::ParseFloatError))
         .transpose()?
     {
         let identifier = build_usual_identifier(

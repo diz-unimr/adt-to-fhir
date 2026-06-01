@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::error::{FormattingError, MappingError, MessageAccessError};
+use crate::error::{MappingError, ParsingError};
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::{encounter, location, observation, organization, patient};
 use crate::hl7::parser::{PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, query};
@@ -19,7 +19,6 @@ use fhir_model::{BuilderError, Instant};
 use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 
-#[derive(Clone)]
 pub(crate) struct FhirMapper {
     pub(crate) config: Fhir,
     pub(crate) resources: ResourceMap,
@@ -33,9 +32,9 @@ impl FhirMapper {
         })
     }
 
-    pub(crate) fn map(&self, msg: String) -> Result<Option<String>, anyhow::Error> {
+    pub(crate) fn map(&self, msg: &str) -> Result<Option<String>, MappingError> {
         // deserialize
-        let v2_msg = Message::parse_with_lenient_newlines(msg.as_str(), true)?;
+        let v2_msg = Message::parse_with_lenient_newlines(msg, true)?;
 
         // map hl7 message
         let resources = self.map_resources(&v2_msg)?;
@@ -174,7 +173,7 @@ fn identifier_search(system: &str, value: &str) -> String {
     format!("identifier={system}|{value}")
 }
 
-pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, FormattingError> {
+pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, ParsingError> {
     let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
     let dt_with_tz = Berlin
         .from_local_datetime(&dt)
@@ -185,6 +184,7 @@ pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, FormattingError> {
         OffsetDateTime::from_unix_timestamp(dt_with_tz.timestamp())?,
     )))
 }
+
 pub(crate) fn resource_ref(
     res_type: &ResourceType,
     id: &str,
@@ -195,7 +195,7 @@ pub(crate) fn resource_ref(
         .build()?)
 }
 
-pub(crate) fn parse_date(input: &str) -> Result<Date, FormattingError> {
+pub(crate) fn parse_date(input: &str) -> Result<Date, ParsingError> {
     let dt = NaiveDate::parse_and_remainder(input, "%Y%m%d")?.0;
     let date = time::Date::from_calendar_date(
         dt.year(),
@@ -233,7 +233,7 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
         .build()
 }
 
-pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAccessError> {
+pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
     let ward = query(msg, PV1_3_1);
     let department = query(msg, PV1_3_4);
     let location = query(msg, PV1_3_5);
@@ -242,14 +242,14 @@ pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Result<Option<&'a str>, MessageAcc
     // todo: kostenstelle lookup etc.
     match (ward, department, location) {
         // 1. wenn PV1-3.1 und PV1-3.4 Wert haben -> PV1-3.4
-        (Some(_), Some(f), _) => Ok(Some(f)),
+        (Some(_), Some(f), _) => Some(f),
         // 2. wenn PV1-3.1 & PV1-3.4 leer hat Wert -> dann  PV1-3.1
-        (Some(l), None, _) => Ok(Some(l)),
+        (Some(l), None, _) => Some(l),
         // 3. wenn PV1-3.1 leer & PV1-3.4 hat Wert-> dann  PV1-3.4
-        (None, Some(st), Some(_)) => Ok(Some(st)),
+        (None, Some(st), Some(_)) => Some(st),
         // 4. wenn PV1-3.1 leer & PV1-3.4 leer -> dann  PV1-3.5
-        (None, None, Some(st)) => Ok(Some(st)),
-        _ => Ok(None),
+        (None, None, Some(st)) => Some(st),
+        _ => None,
     }
 }
 
@@ -305,7 +305,7 @@ mod tests {
         };
 
         // act
-        let mapped = mapper.map(hl7).unwrap();
+        let mapped = mapper.map(&hl7).unwrap();
 
         // map back to assert
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
@@ -388,7 +388,7 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
         let expected_request_type = HTTPVerb::from_str(request_type_encounter.as_str()).unwrap();
 
         // act
-        let mapped = mapper.map(hl7).unwrap();
+        let mapped = mapper.map(&hl7).unwrap();
         let bundle: Bundle = serde_json::from_str(mapped.unwrap().as_str()).unwrap();
 
         bundle.entry.iter().for_each(|entry| {
@@ -560,7 +560,7 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
     #[case("^^^POL^POLPOL^945400^^^", "POL")]
     #[case("^^^^POLPOL^945400^^^", "POLPOL")]
     #[case("Station^^^^KLINIKUM^945400^^^", "Station")]
-    fn test_parse_fab(#[case] pv1_3: String, #[case] expected: String) {
+    fn test_parse_fab(#[case] pv1_3: String, #[case] expected: &str) {
         let input = format!(
             r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.5||123456789|NE|NE||8859/1
 EVN|A01|202111221030|202111221029||EIDAMN
@@ -572,14 +572,6 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
 
         let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
 
-        match parse_fab(&msg) {
-            Ok(Some(actual)) => {
-                assert_eq!(actual, expected);
-            }
-            Ok(None) => panic!("did not find fab"),
-            Err(_) => {
-                panic!("did not find fab produced unexpected error")
-            }
-        }
+        assert_eq!(parse_fab(&msg), Some(expected));
     }
 }

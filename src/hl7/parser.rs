@@ -1,6 +1,7 @@
 use crate::error::MessageTypeError::MissingMessageType;
-use crate::error::{MessageAccessError, MessageTypeError};
+use crate::error::{MessageTypeError, ParsingError};
 use crate::hl7::parser::MessageType::*;
+use anyhow::anyhow;
 use hl7_parser::Message;
 use hl7_parser::message::{Repeat, Segment};
 use hl7_parser::query::LocationQueryResult;
@@ -300,13 +301,8 @@ pub(crate) fn segment_value<'a>(
         .and_then(|r| repeat_component(r, component_number))
 }
 
-pub(crate) fn get_message_key(msg: &Message) -> Result<String, MessageAccessError> {
-    if let Some(msg_key) = query(msg, MSH_10) {
-        return Ok(msg_key.to_string());
-    }
-    Err(MessageAccessError::UnsupportedContentError(
-        "HL7 message has no key or is missing MSH segment!".to_string(),
-    ))
+pub(crate) fn get_message_key<'a>(msg: &'a Message<'_>) -> Result<&'a str, ParsingError> {
+    query(msg, MSH_10).ok_or(ParsingError::Other(anyhow!("failed to parse message key")))
 }
 
 #[cfg(test)]
@@ -405,10 +401,7 @@ PV1|1|I|^^^KJM^KLINIKUM^123445|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000
         let hl7 = read_test_resource("a04_test.hl7");
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
 
-        match get_message_key(&msg) {
-            Ok(actual) => assert_eq!(actual, "12332112".to_string()),
-            Err(_) => panic!("get_message_key failed"),
-        }
+        assert!(matches!(get_message_key(&msg), Ok("12332112")));
     }
 
     #[test]
@@ -418,15 +411,6 @@ EVN|A01|202111221030|202111221029||
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
 
-        match get_message_key(&msg) {
-            Ok(actual) => panic!(
-                "get_message_key returned {:?} but a FatalError was expected",
-                actual
-            ),
-            Err(MessageAccessError::UnsupportedContentError(str)) => {
-                assert_eq!(str, "HL7 message has no key or is missing MSH segment!")
-            }
-            Err(_) => panic!("we expected FatalError!"),
-        }
+        assert!(matches!(get_message_key(&msg), Err(ParsingError::Other(_))));
     }
 }

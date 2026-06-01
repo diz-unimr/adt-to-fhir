@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::error::{FormattingError, MappingError, MessageAccessError};
+use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
@@ -284,7 +284,7 @@ fn map_abteilungskontakt(
         )));
     }
 
-    if let Some(fab) = parse_fab(msg)? {
+    if let Some(fab) = parse_fab(msg) {
         enc.service_provider = Some(fab_ref(fab, config)?);
     }
 
@@ -296,23 +296,12 @@ fn get_service_type(
     msg: &Message,
     resources: &ResourceMap,
 ) -> Result<Option<CodeableConcept>, MappingError> {
-    if let Some(fab) = parse_fab(msg)? {
-        let service_type_from_pv1_3 = match resources.map_fab_schluessel(fab) {
-            Ok(Some(fab_from_short_name)) => Some(fab_from_short_name),
-            Err(MappingError::MissingRessourceEntry(missed)) => {
-                warn!(
-                    "MissingRessourceEntry error for msg id '{}' with '{}'",
-                    get_message_key(msg)?,
-                    missed
-                );
-                None
-            }
+    if let Some(fab) = parse_fab(msg) {
+        match resources.map_fab_schluessel(fab) {
+            Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
             Err(e) => return Err(e),
-            Ok(None) => None,
+            Ok(None) => {}
         };
-        if service_type_from_pv1_3.is_some() {
-            return Ok(service_type_from_pv1_3);
-        }
     }
 
     if let Some(fab_schluessel) = query(msg, PV1_39_1) {
@@ -404,16 +393,6 @@ fn map_level_identifier(
         .system(system.clone())
         .value(value.to_string())
         .r#use(IdentifierUse::Usual)
-        .r#type(
-            CodeableConcept::builder()
-                .coding(vec![Some(
-                    Coding::builder()
-                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
-                        .code("VN".to_string())
-                        .build()?,
-                )])
-                .build()?,
-        )
         .build()?)
 }
 
@@ -685,7 +664,7 @@ fn map_lvl_3_locations(
 ) -> Result<Vec<Option<EncounterLocation>>, MappingError> {
     let mut locations: Vec<Option<EncounterLocation>> = vec![];
 
-    if let Some(department) = parse_fab(msg)? {
+    if let Some(department) = parse_fab(msg) {
         // department location should be always available
         locations.push(Some(to_encounter_location(map_ward_location(
             msg, department, config, resources,
@@ -742,7 +721,7 @@ fn map_conditions(
             let priority_u32 = priority
                 .raw_value()
                 .parse::<f32>()
-                .map_err(FormattingError::ParseFloatError)?
+                .map_err(ParsingError::ParseFloatError)?
                 .floor() as u32;
 
             let rank_nz = NonZeroU32::new(priority_u32).ok_or_else(|| {
@@ -919,7 +898,6 @@ fn map_diagnose_local_codes(
 mod tests {
     use super::*;
     use crate::config::{FallConfig, LocationConfig, PatientConfig, SystemConfig};
-    use crate::error::FormattingError::ParseFloatError;
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use hl7_parser::Message;
@@ -966,18 +944,6 @@ ZBE|zbe_id^SAP-ISH~615^MEDOS|20030901163000||UPDATE"#;
             .system(expected.0.into())
             .value(expected.1.into())
             .r#use(IdentifierUse::Usual)
-            .r#type(
-                CodeableConcept::builder()
-                    .coding(vec![Some(
-                        Coding::builder()
-                            .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
-                            .code("VN".to_string())
-                            .build()
-                            .unwrap(),
-                    )])
-                    .build()
-                    .unwrap(),
-            )
             .build()
             .unwrap();
 
@@ -1176,7 +1142,7 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
             (Err(MappingError::Other(_)), "-1") => {
                 println!("got MappingError for negativ rank as expected");
             }
-            (Err(MappingError::FormattingError(ParseFloatError(_))), _) => {
+            (Err(MappingError::FormattingError(ParsingError::ParseFloatError(_))), _) => {
                 println!("got ParseFloatError as expected");
             }
             (Err(c), _) => panic!("ParseFloatError was expected but found => '{}'", c),
@@ -1259,28 +1225,16 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        match get_service_type(&msg, &get_dummy_resources()) {
-            Ok(actual) => {
-                if let Some(value) = actual
-                    .unwrap()
-                    .coding
+        let actual = get_service_type(&msg, &get_dummy_resources())
+            .unwrap()
+            .and_then(|c| {
+                c.coding
                     .first()
-                    .unwrap()
-                    .clone()
-                    .unwrap()
-                    .code
-                    .clone()
-                {
-                    assert_eq!(value, "0800");
-                } else {
-                    panic!("we expect service type to have a code value")
-                }
-            }
-            Err(MappingError::FatalError(err_str)) => {
-                panic!("fatal error: {}", err_str)
-            }
-            Err(e) => panic!("error not expected - error {:?}", e),
-        }
+                    .and_then(|c| c.as_ref())
+                    .and_then(|c| c.code.clone())
+            });
+
+        assert_eq!(actual, Some("0800".into()));
     }
 
     #[test]
@@ -1293,25 +1247,16 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        match get_service_type(&msg, &get_dummy_resources()) {
-            Ok(actual) => {
-                if let Some(value) = actual
-                    .unwrap()
-                    .coding
+        let actual = get_service_type(&msg, &get_dummy_resources())
+            .unwrap()
+            .and_then(|c| {
+                c.coding
                     .first()
-                    .unwrap()
-                    .clone()
-                    .unwrap()
-                    .code
-                    .clone()
-                {
-                    assert_eq!(value, "0800");
-                } else {
-                    panic!("we expect service type to have a code value")
-                }
-            }
-            Err(_) => panic!("error not expected"),
-        }
+                    .and_then(|c| c.as_ref())
+                    .and_then(|c| c.code.clone())
+            });
+
+        assert_eq!(actual, Some("0800".into()));
     }
 
     #[test]
@@ -1324,22 +1269,82 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        match get_service_type(&msg, &get_dummy_resources()) {
-            Ok(actual) => {
-                if let Some(value) = actual
-                    .unwrap()
-                    .coding
-                    .first()
-                    .unwrap()
-                    .clone()
-                    .unwrap()
-                    .code
-                    .clone()
-                {
-                    assert_eq!(value, "3700");
-                }
-            }
-            Err(_) => panic!("error not expected here"),
-        }
+        let actual = get_service_type(&msg, &get_dummy_resources());
+
+        assert!(matches!(
+            actual,
+            Err(MappingError::MissingResourceError {
+                resource: _,
+                value: _
+            })
+        ));
+    }
+
+    #[test]
+    fn encounter_identifier_type_entries_different_systems() {
+        let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.5||123456789|NE|NE||8859/1
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
+PV1|1|I|POLPOLAMB^^^POL^POLPOL^945400^^^|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331
+PV2|||01^KH-Behandlung, vollstat.^301||||||202203040000|||||||||||||N||I||||||||||||N
+IN2|1||||||||||||||||||||||||||||^PC^100^K
+ZBE|30674176^ORBIS|202208221309||INSERT
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+
+        let result = map(&msg, get_test_config(), &get_dummy_resources());
+
+        result
+            .map_err(|e| panic!("failed with error: {}", e.to_string()))
+            .unwrap()
+            .iter()
+            .for_each(|entry| {
+                if let Some(enc) = entry.resource.as_ref() {
+                    match Encounter::try_from(enc.clone()).unwrap() {
+                        Encounter(e) => {
+                            let first_identifier: Identifier =
+                                e.identifier.first().unwrap().clone().unwrap();
+
+                            let first_identifier_type_coding: Option<&Coding> = first_identifier
+                                .r#type
+                                .as_ref()
+                                .ok_or(None::<&Coding>)
+                                .map(|a| a.coding.first())
+                                .map(|a| a.unwrap().as_ref())
+                                .ok()
+                                .and_then(|a| a);
+
+                            let second_identifier = e.identifier.last().unwrap().clone().unwrap();
+                            let second_identifier_type_coding: Option<&Coding> = second_identifier
+                                .r#type
+                                .as_ref()
+                                .ok_or(None::<&Coding>)
+                                .unwrap()
+                                .coding
+                                .last()
+                                .unwrap()
+                                .as_ref();
+                            if let (
+                                Some(first_identifier_type_coding),
+                                Some(second_identifier_type_coding),
+                            ) = (first_identifier_type_coding, second_identifier_type_coding)
+                            {
+                                assert_ne!(
+                                    first_identifier_type_coding.system.as_ref().unwrap(),
+                                    second_identifier_type_coding.system.as_ref().unwrap()
+                                );
+                            } else {
+                                assert!(first_identifier.value.is_some());
+                                assert!(first_identifier_type_coding.is_none());
+                                assert!(second_identifier_type_coding.is_some())
+                            }
+                        }
+                        _ => {
+                            //ignore other resource
+                        }
+                    }
+                };
+            });
     }
 }

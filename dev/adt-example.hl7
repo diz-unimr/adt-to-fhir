@@ -10,18 +10,6 @@ DG1|3||U99.0!^Spezielle Verfahren zur Untersuchung auf SARS-CoV-2^icd10gm2022||2
 ZBE|30674176^ORBIS|202208221309||UPDATE
 ZNG||||||35|
 
-#test2:MSH|^~\&|ORBIS|KH|WEBEPA|KH|20220218211631||ADT^A08^ADT_A01|64569465|P|2.5||634947521|NE|NE||8859/1
-EVN|A08|202202182116||12020_634947521|SASCHNE|202202182113
-PID|1|3678324|3678324|47130953|Schuster^Regine^^^^^L||19350101|F|||Talstraße 16&Talstraße&13^^Holzhausen^^67184^DE^L|||||U||||||||||DE||||N
-PV1|1|O|^ZNA-S2^^^^^^^|E^^HL7~07^Notfall^301||||||N||||||N|||47130953||K|||||||||||||||||||||||202202182113|||||||A
-PV2|||01^KH-Behandlung, vollstat.^301||||||202203040000|||||||||||||N||I||||||||||||N
-IN1|1||230571234^^^^NII~DAK GESUND^^^^XX|DAK Gesundheit|Sommerfelderstr.  120&Sommerfelderstr. &120^^Leipzig^^04316^DE^L||||Ersatzkassen^13^^^1&gesetzliche Krankenkasse^^NII~Ersatzkassen^13^^^^^U|||||||Schuster^Regine||19350101|Talstraße 16&Talstraße&13^^Holzhausen^^67184^DE^L|||H|||||||||R|||||C496215443|||||||F||||||C496215443
-IN2|1|C496215443|||||||||||||||||||||||||||^PC^100.0||||DE|||N
-ZBE|30521686^ORBIS|202202182113||UPDATE
-ZBK|WebEPA+ Einwilligung^Ärzteportal eingewilligt|nicht ausgewählt^Auswahlbox nicht angewählt|1|||47130953^Fall
-ZVK||Regine||Schuster|19350101|Talstraße 16|DE|67184|Holzhausen|C496215443|5||230571234|DAK-Gesundheit|00046|||20220218
-IN1|1||230571234^^^^NII~DAK GESUND^^^^XX|DAK Gesundheit|Sommerfelderstr.  120&Sommerfelderstr. &120^^Leipzig^^04316^DE^L||||Ersatzkassen^13^^^1&gesetzliche Krankenkasse^^NII~Ersatzkassen^13^^^^^U|||||||Schuster^Regine||19350101ZVK||Regine||Schuster|19350101|Talstraße 16|DE|67184|Holzhausen|C496215443|5||230571234|DAK-Gesundheit|00046|||20220218ll
-
 #test3:MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
 PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|N|1|DE||||N

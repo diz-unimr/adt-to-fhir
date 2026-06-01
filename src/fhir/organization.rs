@@ -25,7 +25,7 @@ pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
 }
 
 fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
-    if let Some(fab_ref) = parse_fab(msg)? {
+    if let Some(fab_ref) = parse_fab(msg) {
         Ok(Some(
             Organization::builder()
                 .identifier(vec![Some(
@@ -49,7 +49,7 @@ fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organizatio
 fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
     // ward is sometimes empty
     if let Some(ward_name) = query(msg, PV1_3_1) {
-        if let Some(fab_ref) = parse_fab(msg)? {
+        if let Some(fab_ref) = parse_fab(msg) {
             Ok(Some(
                 Organization::builder()
                     .part_of(resource_ref(
