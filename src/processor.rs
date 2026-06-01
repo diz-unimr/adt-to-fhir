@@ -2,6 +2,7 @@ use crate::ClientConfig;
 use crate::config::{Kafka, Ssl};
 use crate::error::{MappingError, ProcessingError};
 use crate::fhir::mapper::FhirMapper;
+use crate::metrics::record_counter;
 use futures::TryStreamExt;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -208,6 +209,7 @@ impl Processor {
                         }
                         _ => {
                             consumer.store_offset_from_message(&m)?;
+                            record_counter().add(1, &[]);
                             Ok(())
                         }
                     };

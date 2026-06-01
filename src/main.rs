@@ -4,13 +4,15 @@ mod config;
 mod error;
 mod fhir;
 mod hl7;
+mod metrics;
 mod processor;
 pub mod test_utils;
 
 use crate::fhir::mapper::FhirMapper;
+use crate::metrics::init_meter_provider;
 use crate::processor::{Context, Processor};
 use config::AppConfig;
-use log::info;
+use log::{error, info};
 use rdkafka::ClientConfig;
 use std::process;
 use std::sync::Arc;
@@ -38,6 +40,7 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| filter.into()))
         .init();
+    let meter_provider = init_meter_provider();
 
     // cancellation
     let cancel = CancellationToken::new();
@@ -66,6 +69,10 @@ async fn main() {
     let mapper = Arc::new(FhirMapper::new(config.fhir).expect("failed to create mapper"));
 
     Processor::new(config.kafka, mapper, ctx).start().await;
+
+    if let Err(e) = meter_provider.shutdown() {
+        error!("Error shutting down meter provider: {e:?}");
+    }
 }
 
 #[cfg(test)]
