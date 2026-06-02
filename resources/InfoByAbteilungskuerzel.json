@@ -1,7 +1,11 @@
 {
   "ACH": {
-    "abteilungsBezeichnung": "Visceral-, Thorax- und Gefäßchirurgie",
+    "abteilungsBezeichnung": "Allgemeine Chirurgie",
     "fachabteilungsSchluessel": "1500"
+  },
+  "ANA": {
+    "abteilungsBezeichnung": "Anaesthesie und Intensivtherapie",
+    "fachabteilungsSchluessel": "3600"
   },
   "AUG": {
     "abteilungsBezeichnung": "Augenheilkunde",
@@ -10,5 +14,146 @@
   "DER": {
     "abteilungsBezeichnung": "Dermatologie und Allergologie",
     "fachabteilungsSchluessel": "3400"
+  },
+  "GEB": {
+    "abteilungsBezeichnung": "Geburtshilfe u. Perinatalmedizin",
+    "fachabteilungsSchluessel": "2500"
+  },
+  "GYN": {
+    "abteilungsBezeichnung": "Gynäkologie, gyn. Endokrin., Onkologie",
+    "fachabteilungsSchluessel": "2425"
+  },
+  "HAE": {
+    "abteilungsBezeichnung": "Hämatologie, Onkologie, Immunologie",
+    "fachabteilungsSchluessel": "0500"
+  },
+  "HCH": {
+    "abteilungsBezeichnung": "Herz- und thorakale Gefäßchirurgie",
+    "fachabteilungsSchluessel": "2100"
+  },
+  "HNO": {
+    "abteilungsBezeichnung": "Hals-, Nasen- Ohrenheilkunde",
+    "fachabteilungsSchluessel": "2600"
+  },
+  "HUMG": {
+    "abteilungsBezeichnung": "Allgemeine Humangenetik",
+    "fachabteilungsSchluessel": ""
+  },
+  "KAR": {
+    "abteilungsBezeichnung": "Kardiologie",
+    "fachabteilungsSchluessel": "0300"
+  },
+  "KCH": {
+    "abteilungsBezeichnung": "Kinderchirurgie",
+    "fachabteilungsSchluessel": "1300"
+  },
+  "KDZ": {
+    "abteilungsBezeichnung": "Kinderzahnheilkunde",
+    "fachabteilungsSchluessel": "3500"
+  },
+  "KIE": {
+    "abteilungsBezeichnung": "Kieferorthopädie",
+    "fachabteilungsSchluessel": "2300"
+  },
+  "KJP": {
+    "abteilungsBezeichnung": "Kinder- u Jugendpsychiatrie u -psychotherapie",
+    "fachabteilungsSchluessel": "3000"
+  },
+  "MICRO": {
+    "abteilungsBezeichnung": "Med. Mikrobiologie und Krankenhaushygiene",
+    "fachabteilungsSchluessel": ""
+  },
+  "MKG": {
+    "abteilungsBezeichnung": "Mund-, Kiefer- und Gesichtschirurgie",
+    "fachabteilungsSchluessel": "3500"
+  },
+  "NAR": {
+    "abteilungsBezeichnung": "Neuroradiologie",
+    "fachabteilungsSchluessel": "3751"
+  },
+  "NCH": {
+    "abteilungsBezeichnung": "Neurochirurgie",
+    "fachabteilungsSchluessel": "1700"
+  },
+  "NEP": {
+    "abteilungsBezeichnung": "Nephrologie",
+    "fachabteilungsSchluessel": "0400"
+  },
+  "NEU": {
+    "abteilungsBezeichnung": "Neurologie",
+    "fachabteilungsSchluessel": "2800"
+  },
+  "NOT": {
+    "abteilungsBezeichnung": "Zentrum Notfallmedizin",
+    "fachabteilungsSchluessel": "0100"
+  },
+  "NPT": {
+    "abteilungsBezeichnung": "Neuropathologie",
+    "fachabteilungsSchluessel": ""
+  },
+  "NUK": {
+    "abteilungsBezeichnung": "Nuklearmedizin",
+    "fachabteilungsSchluessel": "3200"
+  },
+  "ORT": {
+    "abteilungsBezeichnung": "Orthopädie und Rheumatologie",
+    "fachabteilungsSchluessel": "2309"
+  },
+  "KJM": {
+    "abteilungsBezeichnung": "Kinder- und Jugendmedizin",
+    "fachabteilungsSchluessel": "1000"
+  },
+  "PAL": {
+    "abteilungsBezeichnung": "Palliativmedizin",
+    "fachabteilungsSchluessel": "3752"
+  },
+  "KJN": {
+    "abteilungsBezeichnung": "Kinder- u. Jugendmedizin II Nephrologie",
+    "fachabteilungsSchluessel": "1004"
+  },
+  "PDL": {
+    "abteilungsBezeichnung": "Interdisziplinäre Stationen und Zentral-OP",
+    "fachabteilungsSchluessel": ""
+  },
+  "PHYS": {
+    "abteilungsBezeichnung": "Bereich Physiotherapie",
+    "fachabteilungsSchluessel": "2900"
+  },
+  "POL": {
+    "abteilungsBezeichnung": "Pneumologie",
+    "fachabteilungsSchluessel": "0800"
+  },
+  "PSO": {
+    "abteilungsBezeichnung": "Psychosomatische Medizin und Psychotherapie",
+    "fachabteilungsSchluessel": "3100"
+  },
+  "PSY": {
+    "abteilungsBezeichnung": "Psychiatrie u. Psychotherapie",
+    "fachabteilungsSchluessel": "2900"
+  },
+  "RAD": {
+    "abteilungsBezeichnung": "Radiologie",
+    "fachabteilungsSchluessel": "3751"
+  },
+  "STT": {
+    "abteilungsBezeichnung": "Strahlenheilkunde",
+    "fachabteilungsSchluessel": "3300"
+  },
+  "UCH": {
+    "abteilungsBezeichnung": "Unfall-, Hand- und Wiederherstellungschirurgie",
+    "fachabteilungsSchluessel": "1600"
+  },
+  "URO": {
+    "abteilungsBezeichnung": "Urologie und Kinderurologie",
+    "fachabteilungsSchluessel": "2200"
+  },
+  "VIR": {
+    "abteilungsBezeichnung": "Virologie",
+    "fachabteilungsSchluessel": ""
+  },
+  "VSW": {
+    "abteilungsBezeichnung": "Gastroenterologie/Schwerpunkt Endokrinologie",
+    "fachabteilungsSchluessel": "0706"
   }
 }
+
