@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use time::OffsetDateTime;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,15 +35,18 @@ pub(crate) struct Department {
 #[derive(Clone)]
 pub(crate) struct Ward {
     pub(crate) display: String,
+    #[serde(default)]
     pub(crate) is_icu: bool,
+    #[serde(with = "time::serde::iso8601")]
+    pub(crate) valid_from: OffsetDateTime,
+    #[serde(with = "time::serde::iso8601::option", default)]
+    pub(crate) valid_to: Option<OffsetDateTime>,
 }
 
 /// Mappings for Fachabteilung (encounter department and location)
 pub(crate) struct ResourceMap {
     /// Map with key: Fachabteilungsschlüssel
     pub(crate) department_map: HashMap<String, Department>,
-    /// Map with key: Kostenstelle
-    pub(crate) location_map: HashMap<String, Location>,
     /// Map with key: Stationskürzel
     pub(crate) ward_map: HashMap<String, Ward>,
 }
@@ -55,13 +59,10 @@ impl ResourceMap {
     ///
     /// [department_map](ResourceMap::department_map): `InfoByAbteilungskuerzel.json`
     ///
-    /// [location_map](ResourceMap::location_map): `InfoByKostenstelle.json`
-    ///
     /// [ward_map](ResourceMap::ward_map): `InfoStation.json`
     pub(crate) fn new() -> Result<Self, anyhow::Error> {
         Ok(ResourceMap {
             department_map: init_department_map()?,
-            location_map: init_location_map()?,
             ward_map: init_ward_map()?,
         })
     }
@@ -104,12 +105,6 @@ impl ResourceMap {
     }
 }
 
-fn init_location_map() -> Result<HashMap<String, Location>, anyhow::Error> {
-    let resource_data = read_mapping_resource("InfoByKostenstelle.json")?;
-
-    Ok(serde_json::from_str(&resource_data)?)
-}
-
 fn init_department_map() -> Result<HashMap<String, Department>, anyhow::Error> {
     let resource_data = read_mapping_resource("InfoByAbteilungskuerzel.json")?;
 
@@ -135,6 +130,7 @@ mod tests {
     use super::*;
     use crate::fhir::resources::{Department, ResourceMap};
     use std::collections::HashMap;
+    use time::format_description::well_known::Iso8601;
 
     #[test]
     fn test_map_fab_schluessel() {
@@ -146,7 +142,6 @@ mod tests {
                     fachabteilungs_schluessel: "0800".to_string(),
                 },
             )]),
-            location_map: Default::default(),
             ward_map: Default::default(),
         };
 
@@ -168,5 +163,39 @@ mod tests {
             .unwrap();
 
         assert_eq!(actual, expected);
+    }
+    #[test]
+    fn test_init_ward_map() {
+        let r = init_ward_map();
+        let description: &Iso8601 = &Iso8601;
+
+        match r {
+            Ok(m) => {
+                assert!(!m.get("POLST22").unwrap().is_icu);
+                assert!(!m.get("POLST12").unwrap().is_icu);
+                assert!(m.get("POLST12").unwrap().valid_to.is_none());
+                assert!(m.get("ANA").unwrap().is_icu);
+                assert!(m.get("ANA2").unwrap().valid_to.is_some());
+
+                assert_eq!(
+                    m.get("ANA2").unwrap().valid_to,
+                    Some(OffsetDateTime::parse("1984-02-01T00:00:00+01:00", description).unwrap())
+                );
+            }
+            Err(e) => {
+                panic!("could not initialize resource map - reason: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_init_department_map() {
+        let r = init_department_map();
+        match r {
+            Ok(_) => {}
+            Err(e) => {
+                panic!("could not initialize resource map - reason: {}", e);
+            }
+        }
     }
 }

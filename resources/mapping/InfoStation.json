@@ -1,0 +1,22 @@
+{
+  "ANA": {
+    "display": "Anaesthesie u. Intensivtherapie",
+    "isIcu": true,
+    "validFrom": "1984-02-01T02:22:19+01:00"
+  },
+  "ANA2": {
+    "display": "Anaesthesie",
+    "isIcu": true,
+    "validFrom": "1984-02-01T02:22:19+01:00",
+    "validTo": "1984-02-01T00:00:00+01:00"
+  },
+  "POLST12": {
+    "display": "Pol 12",
+    "isIcu": false,
+    "validFrom": "1984-02-01T02:22:19+01:00"
+  },
+  "POLST22": {
+    "display": "Pol 22",
+    "validFrom": "1984-02-02T02:22:19+01:00"
+  }
+}
