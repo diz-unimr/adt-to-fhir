@@ -11,6 +11,7 @@ pub(crate) mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
+    use time::{Date, Month, OffsetDateTime, Time};
 
     pub fn get_test_config() -> Fhir {
         Fhir {
@@ -79,13 +80,17 @@ pub(crate) mod tests {
                     },
                 ),
             ]),
-            location_map: Default::default(),
             ward_map: HashMap::from([
                 (
                     "ANA".to_string(),
                     Ward {
                         display: "Aneasthesie u. Intensivtherapie".to_string(),
                         is_icu: true,
+                        valid_from: OffsetDateTime::new_utc(
+                            Date::from_calendar_date(1984, Month::February, 1).unwrap(),
+                            Time::MIDNIGHT,
+                        ),
+                        valid_to: None,
                     },
                 ),
                 (
@@ -93,6 +98,11 @@ pub(crate) mod tests {
                     Ward {
                         display: "IDIST1I".to_string(),
                         is_icu: true,
+                        valid_from: OffsetDateTime::new_utc(
+                            Date::from_calendar_date(1984, Month::February, 1).unwrap(),
+                            Time::MIDNIGHT,
+                        ),
+                        valid_to: None,
                     },
                 ),
                 (
@@ -100,6 +110,11 @@ pub(crate) mod tests {
                     Ward {
                         display: "Iterdisziplinaere Station 121".to_string(),
                         is_icu: false,
+                        valid_from: OffsetDateTime::new_utc(
+                            Date::from_calendar_date(1984, Month::February, 1).unwrap(),
+                            Time::MIDNIGHT,
+                        ),
+                        valid_to: None,
                     },
                 ),
             ]),

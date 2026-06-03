@@ -480,7 +480,6 @@ mod tests {
             config: config.fhir,
             resources: ResourceMap {
                 department_map: Default::default(),
-                location_map: Default::default(),
                 ward_map: Default::default(),
             },
         });

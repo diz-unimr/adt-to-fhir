@@ -5,7 +5,7 @@ use fhir_model::r4b::codes::IdentifierUse;
 use crate::fhir::mapper::{
     EntryRequestType, bundle_entry, get_cc_with_one_code, parse_fab, resource_ref,
 };
-use crate::hl7::parser::{PV1_WARD_NAME, query};
+use crate::hl7::parser::{PV1_3_1, query};
 use fhir_model::r4b::resources::{BundleEntry, Organization, ResourceType};
 use fhir_model::r4b::types::Identifier;
 use hl7_parser::Message;
@@ -48,7 +48,7 @@ fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organizatio
 
 fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
     // ward is sometimes empty
-    if let Some(ward_name) = query(msg, PV1_WARD_NAME) {
+    if let Some(ward_name) = query(msg, PV1_3_1) {
         if let Some(fab_ref) = parse_fab(msg) {
             Ok(Some(
                 Organization::builder()

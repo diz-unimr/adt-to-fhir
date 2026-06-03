@@ -2,7 +2,7 @@ use crate::config::Fhir;
 use crate::error::{MappingError, ParsingError};
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::{encounter, location, observation, organization, patient};
-use crate::hl7::parser::{PV1_DEPARTMENT_SHORT_NAME, PV1_PLACE_INSTITUT, PV1_WARD_NAME, query};
+use crate::hl7::parser::{PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, query};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -219,10 +219,7 @@ pub(crate) fn build_usual_identifier(
 }
 
 pub fn is_inpatient_location(msg: &Message) -> Result<bool, MappingError> {
-    Ok(
-        query(msg, "PV1.2") == Some("I")
-            && query(msg, "PV1.3.5").map(|v| v == "KLINIKUM").is_some(),
-    )
+    Ok(query(msg, PV1_2) == Some("I") && query(msg, PV1_3_5).map(|v| v == "KLINIKUM").is_some())
 }
 
 pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConcept, BuilderError> {
@@ -237,9 +234,9 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
 }
 
 pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
-    let ward = query(msg, PV1_WARD_NAME);
-    let department = query(msg, PV1_DEPARTMENT_SHORT_NAME);
-    let location = query(msg, PV1_PLACE_INSTITUT);
+    let ward = query(msg, PV1_3_1);
+    let department = query(msg, PV1_3_4);
+    let location = query(msg, PV1_3_5);
     // let kostenstelle = extract_repeat(assigned_loc, 6)?;
 
     // todo: kostenstelle lookup etc.
