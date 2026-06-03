@@ -166,36 +166,25 @@ mod tests {
     }
     #[test]
     fn test_init_ward_map() {
-        let r = init_ward_map();
+        let m = init_ward_map().unwrap();
         let description: &Iso8601 = &Iso8601;
 
-        match r {
-            Ok(m) => {
-                assert!(!m.get("POLST22").unwrap().is_icu);
-                assert!(!m.get("POLST12").unwrap().is_icu);
-                assert!(m.get("POLST12").unwrap().valid_to.is_none());
-                assert!(m.get("ANA").unwrap().is_icu);
-                assert!(m.get("ANA2").unwrap().valid_to.is_some());
+        assert!(!m.get("POLST22").unwrap().is_icu);
+        assert!(!m.get("POLST12").unwrap().is_icu);
+        assert!(m.get("POLST12").unwrap().valid_to.is_none());
+        assert!(m.get("ANA").unwrap().is_icu);
+        assert!(m.get("ANA2").unwrap().valid_to.is_some());
 
-                assert_eq!(
-                    m.get("ANA2").unwrap().valid_to,
-                    Some(OffsetDateTime::parse("1984-02-01T00:00:00+01:00", description).unwrap())
-                );
-            }
-            Err(e) => {
-                panic!("could not initialize resource map - reason: {}", e);
-            }
-        }
+        assert_eq!(
+            m.get("ANA2").unwrap().valid_to,
+            Some(OffsetDateTime::parse("1984-02-01T00:00:00+01:00", description).unwrap())
+        );
     }
 
     #[test]
     fn test_init_department_map() {
-        let r = init_department_map();
-        match r {
-            Ok(_) => {}
-            Err(e) => {
-                panic!("could not initialize resource map - reason: {}", e);
-            }
-        }
+        let r = ResourceMap::new().unwrap();
+        assert!(r.department_map.len() > 0);
+        assert!(r.ward_map.len() > 0);
     }
 }
