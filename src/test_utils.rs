@@ -18,12 +18,12 @@ pub(crate) mod tests {
             facility_id: "260620431".to_string(),
             meta_source: "test".to_string(),
             person: PatientConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2025.0.0".to_string(),
+                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2026.0.1".to_string(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
                 other_insurance_system: "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id".to_string(),
             },
             fall: FallConfig {
-                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2025.0.0".to_string(),
+                profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1".to_string(),
                 system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
                 einrichtungskontakt: SystemConfig { system: "einrichtungskontakt-id".to_string() },
                 abteilungskontakt: SystemConfig { system: "abteilungskontakt-id".to_string() },
@@ -37,10 +37,10 @@ pub(crate) mod tests {
             condition: SystemConfig { system: "https://fhir.diz.uni-marburg.de/sid/condition-id".to_string() },
             observation: ObservationConfig {
                 system: "https://fhir.diz.uni-marburg.de/sid/observation-id".to_string(),
-                profile_weight: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergewicht|2026.0.1".to_string(),
-                profile_head_circumference: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-kopfumfang|2026.0.1".to_string(),
+                profile_weight: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergewicht|2025.0.4".to_string(),
+                profile_head_circumference: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-kopfumfang|2025.0.4".to_string(),
                 profile_vital_status: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Vitalstatus|2026.0.0".to_string(),
-                profile_height: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergroesse|2026.0.0".to_string(),
+                profile_height: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergroesse|2025.0.4".to_string(),
             },
             organization: OrganizationConfig {
                 department: SystemConfig { system: "https://fhir.diz.uni-marburg.de/sid/department".to_string() },

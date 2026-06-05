@@ -29,7 +29,7 @@ use fhir_model::r4b::types::{
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 use hl7_parser::message::Field;
-use log::warn;
+use log::{Level, log, warn};
 use std::num::NonZeroU32;
 
 enum EncounterType {
@@ -87,14 +87,16 @@ pub(super) fn map(
             let enc_admit = map_einrichtungskontakt(msg, &config)?;
             result.push(bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?);
 
-            let enc_dep = map_abteilungskontakt(msg, &config, resources)?;
-            result.push(bundle_entry(enc_dep, EntryRequestType::UpdateAsCreate)?);
+            if let Some(enc_dep) = map_abteilungskontakt(msg, &config, resources)? {
+                result.push(bundle_entry(enc_dep, EntryRequestType::UpdateAsCreate)?);
+            }
 
-            let care_site_enc = map_versorgungsstellenkontakt(msg, &config, resources)?;
-            result.push(bundle_entry(
-                care_site_enc,
-                EntryRequestType::UpdateAsCreate,
-            )?);
+            if let Some(care_site_enc) = map_versorgungsstellenkontakt(msg, &config, resources)? {
+                result.push(bundle_entry(
+                    care_site_enc,
+                    EntryRequestType::UpdateAsCreate,
+                )?);
+            }
             Ok(result)
         }
         // create only basic encounter data for delete
@@ -270,32 +272,35 @@ fn map_abteilungskontakt(
     msg: &Message,
     config: &Fhir,
     resources: &ResourceMap,
-) -> Result<Encounter, MappingError> {
-    // base encounter
-    let mut enc = base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?.build()?;
-
+) -> Result<Option<Encounter>, MappingError> {
     if let Some(service_type) = get_service_type(msg, resources)? {
-        enc.service_type = Some(service_type)
+        // base encounter
+        let mut enc =
+            base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?.build()?;
+
+        enc.service_type = Some(service_type);
+        if let Some(fab) = parse_fab(msg) {
+            enc.service_provider = Some(fab_ref(fab, config)?);
+        }
+
+        Ok(Some(enc))
     } else {
-        // fixme: returning error may be to much. check if e.g. messages with empty PV1-3 or '^^^^^' content should be skipped whole
-        return Err(MappingError::Other(anyhow!(
+        log!(
+            Level::Debug,
             "Missing service type at msg-id '{}' - cannot build valid encounter at department level!",
             get_message_key(msg)?
-        )));
+        );
+        Ok(None)
     }
-
-    if let Some(fab) = parse_fab(msg) {
-        enc.service_provider = Some(fab_ref(fab, config)?);
-    }
-
-    Ok(enc)
 }
-pub(crate) const SYSTEM_FACHABTEILUNGS_SCHLUESSEL: &str =
-    "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
+
 fn get_service_type(
     msg: &Message,
     resources: &ResourceMap,
 ) -> Result<Option<CodeableConcept>, MappingError> {
+    let system_fachabteilungs_schluessel: &str =
+        "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
+
     if let Some(fab) = parse_fab(msg) {
         match resources.map_fab_schluessel(fab) {
             Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
@@ -307,18 +312,10 @@ fn get_service_type(
     if let Some(fab_schluessel) = query(msg, PV1_39_1) {
         Ok(Some(get_cc_with_one_code(
             fab_schluessel.to_string(),
-            SYSTEM_FACHABTEILUNGS_SCHLUESSEL.to_string(),
+            system_fachabteilungs_schluessel.to_string(),
         )?))
     } else {
-        warn!(
-            "Fachabteilungsschlüssel mapping is missing at msg-id '{}' - fallback to value 3700",
-            get_message_key(msg)?
-        );
-        // fallback department code is unknown or does not exist
-        Ok(Some(get_cc_with_one_code(
-            "3700".to_string(),
-            SYSTEM_FACHABTEILUNGS_SCHLUESSEL.to_string(),
-        )?))
+        Ok(None)
     }
 }
 
@@ -626,7 +623,11 @@ fn map_versorgungsstellenkontakt(
     msg: &Message,
     config: &Fhir,
     resources: &ResourceMap,
-) -> Result<Encounter, MappingError> {
+) -> Result<Option<Encounter>, MappingError> {
+    let mapped_locations = map_lvl_3_locations(msg, config, resources)?;
+    if mapped_locations.is_empty() {
+        return Ok(None);
+    }
     let versorgungskontakt =
         base_encounter(msg, config, &EncounterType::Versorgungsstellenkontakt)?
             .part_of(resource_ref(
@@ -635,7 +636,7 @@ fn map_versorgungsstellenkontakt(
                     .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
                 &config.fall.abteilungskontakt.system,
             )?)
-            .location(map_lvl_3_locations(msg, config, resources)?)
+            .location(mapped_locations)
             .status(map_encounter_status(&map_period(
                 msg,
                 &EncounterType::Versorgungsstellenkontakt,
@@ -654,7 +655,7 @@ fn map_versorgungsstellenkontakt(
         .ok()
     });
 
-    Ok(kontakt)
+    Ok(Some(kontakt))
 }
 
 fn map_lvl_3_locations(
@@ -688,9 +689,12 @@ fn map_lvl_3_locations(
         }
         Ok(locations)
     } else {
-        Err(MappingError::Other(anyhow!(
-            "could not determinate patient location"
-        )))
+        log!(
+            Level::Debug,
+            "Skipping 'Versorgungsstellenkontakt' - patient location is unknown at msg-id {}",
+            get_message_key(msg)?
+        );
+        Ok(locations)
     }
 }
 
@@ -961,9 +965,11 @@ PV1|1|I|POL1234^BSP-2-2^2^POL^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^
 ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#, true).unwrap();
         let actual =
-            map_versorgungsstellenkontakt(&msg, &get_test_config(), &get_dummy_resources());
+            map_versorgungsstellenkontakt(&msg, &get_test_config(), &get_dummy_resources())
+                .unwrap()
+                .unwrap();
 
-        assert_eq!(actual.unwrap().location.len(), 3);
+        assert_eq!(actual.location.len(), 3);
     }
 
     #[test]
@@ -1346,5 +1352,21 @@ ZBE|30674176^ORBIS|202208221309||INSERT
                     }
                 };
             });
+    }
+
+    #[test]
+    fn test_encounter_no_location() {
+        let input = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|I|^^^^KLINIKUM^000000|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01||||9||||202511022120|202511022120||||||A
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+
+        let actual = map(&msg, get_test_config(), &get_dummy_resources()).unwrap();
+
+        let as_json = serde_json::to_string_pretty(&actual).unwrap();
+        assert_eq!(actual.len(), 1);
     }
 }

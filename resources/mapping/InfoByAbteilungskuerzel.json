@@ -37,7 +37,7 @@
   },
   "HUMG": {
     "abteilungsBezeichnung": "Allgemeine Humangenetik",
-    "fachabteilungsSchluessel": ""
+    "fachabteilungsSchluessel": "3700"
   },
   "KAR": {
     "abteilungsBezeichnung": "Kardiologie",
@@ -61,7 +61,7 @@
   },
   "MICRO": {
     "abteilungsBezeichnung": "Med. Mikrobiologie und Krankenhaushygiene",
-    "fachabteilungsSchluessel": ""
+    "fachabteilungsSchluessel": "3700"
   },
   "MKG": {
     "abteilungsBezeichnung": "Mund-, Kiefer- und Gesichtschirurgie",
@@ -74,6 +74,10 @@
   "NCH": {
     "abteilungsBezeichnung": "Neurochirurgie",
     "fachabteilungsSchluessel": "1700"
+  },
+  "NEC": {
+    "abteilungsBezeichnung": "Nephrologie",
+    "fachabteilungsSchluessel": "0400"
   },
   "NEP": {
     "abteilungsBezeichnung": "Nephrologie",
@@ -89,7 +93,7 @@
   },
   "NPT": {
     "abteilungsBezeichnung": "Neuropathologie",
-    "fachabteilungsSchluessel": ""
+    "fachabteilungsSchluessel": "3700"
   },
   "NUK": {
     "abteilungsBezeichnung": "Nuklearmedizin",
@@ -113,7 +117,11 @@
   },
   "PDL": {
     "abteilungsBezeichnung": "Interdisziplinäre Stationen und Zentral-OP",
-    "fachabteilungsSchluessel": ""
+    "fachabteilungsSchluessel": "3700"
+  },
+  "PDR": {
+    "abteilungsBezeichnung": "Pflegedirektion",
+    "fachabteilungsSchluessel": "3700"
   },
   "PHYS": {
     "abteilungsBezeichnung": "Bereich Physiotherapie",
@@ -149,7 +157,7 @@
   },
   "VIR": {
     "abteilungsBezeichnung": "Virologie",
-    "fachabteilungsSchluessel": ""
+    "fachabteilungsSchluessel": "3700"
   },
   "VSW": {
     "abteilungsBezeichnung": "Gastroenterologie/Schwerpunkt Endokrinologie",
