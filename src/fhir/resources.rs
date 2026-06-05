@@ -129,6 +129,10 @@ impl ResourceMap {
                     && self.department_map.contains_key(sub_4)
                 {
                     search_code = Some(sub_4.to_string())
+                } else if let Some(sub_5) = code.get(0..5)
+                    && self.department_map.contains_key(sub_5)
+                {
+                    search_code = Some(sub_5.to_string())
                 } else {
                     search_code = None
                 }
@@ -168,13 +172,22 @@ mod tests {
     #[test]
     fn test_map_fab_schluessel() {
         let resources = ResourceMap {
-            department_map: HashMap::from([(
-                "POL".to_string(),
-                Department {
-                    abteilungs_bezeichnung: "Pneumologie".to_string(),
-                    fachabteilungs_schluessel: "0800".to_string(),
-                },
-            )]),
+            department_map: HashMap::from([
+                (
+                    "POL".to_string(),
+                    Department {
+                        abteilungs_bezeichnung: "Pneumologie".to_string(),
+                        fachabteilungs_schluessel: "0800".to_string(),
+                    },
+                ),
+                (
+                    "MICRO".to_string(),
+                    Department {
+                        abteilungs_bezeichnung: "Microbiologie".to_string(),
+                        fachabteilungs_schluessel: "3700".to_string(),
+                    },
+                ),
+            ]),
             ward_map: Default::default(),
         };
 
@@ -187,6 +200,36 @@ mod tests {
 
         let actual = resources
             .map_fab_schluessel("POL")
+            .unwrap()
+            .unwrap()
+            .coding
+            .first()
+            .unwrap()
+            .clone()
+            .unwrap();
+
+        assert_eq!(actual, expected);
+
+        let actual = resources
+            .map_fab_schluessel("POLAMB")
+            .unwrap()
+            .unwrap()
+            .coding
+            .first()
+            .unwrap()
+            .clone()
+            .unwrap();
+
+        assert_eq!(actual, expected);
+
+        let expected = Coding::builder()
+            .system("http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert".into())
+            .code("3700".into())
+            .display("Microbiologie".into())
+            .build()
+            .unwrap();
+        let actual = resources
+            .map_fab_schluessel("MICROYXZ")
             .unwrap()
             .unwrap()
             .coding
