@@ -624,6 +624,7 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
     #[case("NS", "^^^HNOPOLAMB^HNOPOL^12335", "HNOPOLAMB")]
     #[case("NS", "^^^GYN^KLINIKUM^12335", "GYN")]
     #[case("VS", "ANAFSGO^^^ANA^KLINIKUM^12335", "ANA")]
+    #[case("H", "ANAFSGO^^^ANA^KLINIKUM^12335", "ANA")]
     fn test_parse_fab(#[case] bed_status: String, #[case] pv1_3: String, #[case] expected: &str) {
         let input = format!(
             r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.5||123456789|NE|NE||8859/1
