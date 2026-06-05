@@ -613,6 +613,8 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
 
     #[rstest]
     #[case("O", "POLPOLAMB^^^POL^POLPOL^945400^^^", "POL")]
+    #[case("O", "^^^^KLINIKUM", "")]
+    #[case("O", "ACH^^^^KLINIKUM", "ACH")]
     #[case("I", "^^^NEUPOLAMB^NEUPOL^12335", "NEUPOLAMB")]
     #[case("I", "PRDFSENTL^^^PDR^KLINIKUM", "PDR")]
     #[case("O", "UROPOLXXX^^^^UROYYYYYYY^0^^^", "UROYYYYYYY")]
@@ -633,7 +635,10 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
         );
 
         let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
-
-        assert_eq!(parse_fab(&msg), Some(expected));
+        if expected.is_empty() {
+            assert!(parse_fab(&msg).is_none());
+        } else {
+            assert_eq!(parse_fab(&msg), Some(expected));
+        }
     }
 }
