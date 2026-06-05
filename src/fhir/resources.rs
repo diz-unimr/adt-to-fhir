@@ -1,4 +1,5 @@
 use crate::error::MappingError;
+use crate::error::MappingError::MissingResourceError;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -77,20 +78,23 @@ impl ResourceMap {
         &self,
         code: &str,
     ) -> Result<Option<CodeableConcept>, MappingError> {
-        let dep = self
-            .department_map
-            .get(code)
-            .ok_or(MappingError::MissingResourceError {
-                resource: "Fachabteilungsschlüssel".into(),
-                value: code.into(),
-            })?;
-        if dep.fachabteilungs_schluessel.is_empty() {
-            return Ok(None);
-        }
+        let key = self.find_key(code);
 
-        Ok(Some(
-            CodeableConcept::builder()
-                .coding(vec![Some(
+        if let Some(code) = key {
+            let dep = self
+                .department_map
+                .get(code.as_str())
+                .ok_or(MissingResourceError {
+                    resource: "Fachabteilungsschlüssel".into(),
+                    value: code,
+                })?;
+            if dep.fachabteilungs_schluessel.is_empty() {
+                return Ok(None);
+            }
+
+            Ok(Some(
+                CodeableConcept::builder()
+                    .coding(vec![Some(
                     Coding::builder()
                         .system(
                             "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
@@ -100,8 +104,37 @@ impl ResourceMap {
                         .display(dep.abteilungs_bezeichnung.to_string())
                         .build()?,
                 )])
-                .build()?,
-        ))
+                    .build()?,
+            ))
+        } else {
+            Err(MissingResourceError {
+                resource: "InfoByAbteilungskuerzel".into(),
+                value: code.into(),
+            })
+        }
+    }
+
+    fn find_key(&self, code: &str) -> Option<String> {
+        let search_code: Option<String>;
+
+        if self.department_map.contains_key(code) {
+            search_code = Some(code.to_string());
+        } else {
+            if let Some(sub_3) = code.get(0..3)
+                && self.department_map.contains_key(sub_3)
+            {
+                search_code = Some(sub_3.to_string())
+            } else {
+                if let Some(sub_4) = code.get(0..4)
+                    && self.department_map.contains_key(sub_4)
+                {
+                    search_code = Some(sub_4.to_string())
+                } else {
+                    search_code = None
+                }
+            }
+        }
+        search_code
     }
 }
 

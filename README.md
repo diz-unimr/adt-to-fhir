@@ -46,6 +46,13 @@ Application properties are read from a properties file ([app.yaml](./app.yaml)) 
 | `fhir.fall.versorgungsstellenkontakt.system` | `https://fhir.diz.uni-marburg.de/sid/encounter-caresite-id`                                                                    | `Encounter` (_Versorgungsstellenkontakt_) identifier system                                                               |
 | ...                                          | ...                                                                                                                            | ...                                                                                                                       |
 
+### InfoByAbteilungskuerzel.json
+
+We do not want false mapping result to 'unknown' by
+default. Therefore, we expect every department to have a valid entry. If
+department has no valid department identification code you may map "3700" value.
+Missing entries will result in mapping error and processing will stop.
+
 ### Environment variables
 
 Override configuration properties by providing environment variables with their respective property names.
