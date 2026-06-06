@@ -99,6 +99,12 @@ pub(super) fn map(
             }
             Ok(result)
         }
+        MessageType::A06 => {
+            todo!("out patient to in patient")
+        }
+        MessageType::A07 => {
+            todo!("in patient to out patient")
+        }
         // create only basic encounter data for delete
         MessageType::A11 | MessageType::A27 | MessageType::A12 => {
             // A12 deletes only  Fachabteilungskontakt & Versorgungsstellenkontakt
