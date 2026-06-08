@@ -1406,9 +1406,6 @@ ZBE|30674176^ORBIS|202208221309||INSERT
                                 assert!(second_identifier_type_coding.is_some())
                             }
                         }
-                        _ => {
-                            //ignore other resource
-                        }
                     }
                 };
             });
@@ -1428,5 +1425,57 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 
         let as_json = serde_json::to_string_pretty(&actual).unwrap();
         assert_eq!(actual.len(), 1);
+    }
+
+    #[test]
+    fn test_nachstationaer() {
+        let hl7 = read_test_resource("a07_nachstationaer_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let config = get_test_config();
+        let res = get_dummy_resources();
+        let abteilung_result = map_abteilungskontakt(&msg, &get_test_config(), &res)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            abteilung_result
+                .r#type
+                .get(0)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .coding
+                .clone()
+                .get(1)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "nachstationaer"
+        );
+        assert_eq!(abteilung_result.class.code.as_ref().unwrap(), "AMB");
+
+        let einrichtung_result = map_einrichtungskontakt(&msg, &get_test_config(), &res).unwrap();
+        assert_eq!(
+            einrichtung_result
+                .r#type
+                .get(0)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .coding
+                .clone()
+                .get(1)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "nachstationaer"
+        );
+        assert_eq!(einrichtung_result.class.code.as_ref().unwrap(), "IMP");
     }
 }
