@@ -82,9 +82,11 @@ pub(super) fn map(
         | MessageType::A03
         | MessageType::A04
         | MessageType::A05
+        | MessageType::A06
+        | MessageType::A07
         | MessageType::A08
         | MessageType::A13 => {
-            let enc_admit = map_einrichtungskontakt(msg, &config)?;
+            let enc_admit = map_einrichtungskontakt(msg, &config, resources)?;
             result.push(bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?);
 
             if let Some(enc_dep) = map_abteilungskontakt(msg, &config, resources)? {
@@ -99,28 +101,35 @@ pub(super) fn map(
             }
             Ok(result)
         }
-        MessageType::A06 => {
-            todo!("out patient to in patient")
-        }
-        MessageType::A07 => {
-            todo!("in patient to out patient")
-        }
         // create only basic encounter data for delete
         MessageType::A11 | MessageType::A27 | MessageType::A12 => {
             // A12 deletes only  Fachabteilungskontakt & Versorgungsstellenkontakt
             if message_type == MessageType::A11 || message_type == MessageType::A27 {
                 let enc_admit =
-                    base_encounter(msg, &config, &EncounterType::Einrichtungskontakt)?.build()?;
+                    base_encounter(msg, &config, resources, &EncounterType::Einrichtungskontakt)?
+                        .build()?;
                 result.push(bundle_entry(enc_admit, EntryRequestType::Delete)?)
             }
 
             result.push(bundle_entry(
-                base_encounter(msg, &config, &EncounterType::Fachabteilungskontakt)?.build()?,
+                base_encounter(
+                    msg,
+                    &config,
+                    resources,
+                    &EncounterType::Fachabteilungskontakt,
+                )?
+                .build()?,
                 EntryRequestType::Delete,
             )?);
 
             result.push(bundle_entry(
-                base_encounter(msg, &config, &EncounterType::Versorgungsstellenkontakt)?.build()?,
+                base_encounter(
+                    msg,
+                    &config,
+                    resources,
+                    &EncounterType::Versorgungsstellenkontakt,
+                )?
+                .build()?,
                 EntryRequestType::Delete,
             )?);
 
@@ -135,9 +144,13 @@ fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
     Ok(query(msg, PV1_2).is_some_and(|f| f == "H"))
 }
 
-fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, MappingError> {
+fn map_einrichtungskontakt(
+    msg: &Message,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Encounter, MappingError> {
     // base encounter
-    let mut enc = base_encounter(msg, config, &EncounterType::Einrichtungskontakt)?
+    let mut enc = base_encounter(msg, config, resources, &EncounterType::Einrichtungskontakt)?
         // serviceProvider -> Hospital
         .service_provider(
             Reference::builder()
@@ -167,6 +180,16 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
         enc.part_of = mothers_encounter
     }
 
+    if let Some(bed_status) = query(msg, PV1_2)
+        && bed_status == "NS"
+    {
+        // case status change 'nachstationär'
+        // Here we do not want to change in-patient encounter status after discharge.
+        // With bed status 'NS' we get only some additional ambulatory treatment,
+        // which will be represented by ambulatory class 'Abteilungskontakt' and
+        // 'Versorgungsstellenkontakt'
+        enc.class.code = Some("IMP".to_string());
+    }
     Ok(enc)
 }
 
@@ -281,8 +304,13 @@ fn map_abteilungskontakt(
 ) -> Result<Option<Encounter>, MappingError> {
     if let Some(service_type) = get_service_type(msg, resources)? {
         // base encounter
-        let mut enc =
-            base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?.build()?;
+        let mut enc = base_encounter(
+            msg,
+            config,
+            resources,
+            &EncounterType::Fachabteilungskontakt,
+        )?
+        .build()?;
 
         enc.service_type = Some(service_type);
         if let Some(fab) = parse_fab(msg) {
@@ -328,6 +356,7 @@ fn get_service_type(
 fn base_encounter(
     msg: &Message,
     config: &Fhir,
+    resources: &ResourceMap,
     enc_type: &EncounterType,
 ) -> Result<EncounterBuilder, MappingError> {
     let visit_number = map_visit_number(msg)?;
@@ -344,7 +373,7 @@ fn base_encounter(
             )?),
         ])
         .class(map_encounter_class(msg)?)
-        .r#type(map_encounter_type(msg, enc_type)?)
+        .r#type(map_encounter_type(msg, enc_type, resources)?)
         .subject(subject_ref(msg, &config.person.system)?)
         .period(map_period(msg, enc_type)?)
         // set status depends on period.start / period.end
@@ -402,11 +431,12 @@ fn map_level_identifier(
 fn map_encounter_type(
     msg: &Message,
     enc_type: &EncounterType,
+    resources: &ResourceMap,
 ) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
     // Kontaktebene
     let mut coding = vec![Some(enc_type.into())];
 
-    if let Some(c) = map_kontaktart(msg)? {
+    if let Some(c) = map_kontaktart(msg, resources)? {
         // Kontaktart
         coding.push(Some(c));
     }
@@ -554,7 +584,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
             .code("IMP".to_string())
             .display("inpatient encounter".to_string())
             .build()?),
-        "O" => Ok(Coding::builder()
+        "O" | "NS" | "VS" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
             .code("AMB".to_string())
             .display("ambulatory".to_string())
@@ -564,18 +594,32 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
             .code("PRENC".to_string())
             .display("pre-admission".to_string())
             .build()?),
-        // todo ... VR / SS / HH
+        "TS" => Ok(Coding::builder()
+            .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
+            .code("SS".to_string())
+            .display("short-stay".to_string())
+            .build()?),
         _ => Err(anyhow!("Invalid encounter_class code (PV1.2): {}", code)),
     }
 }
 
-fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
+fn map_kontaktart(msg: &Message, resources: &ResourceMap) -> Result<Option<Coding>, MappingError> {
+    if resources
+        .ward_map
+        .get(query(msg, PV1_2).unwrap_or(""))
+        .is_some_and(|ward| ward.is_icu)
+    {
+        return Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                .code("intensivstationaer".to_string())
+                .display("Intensivstationär".to_string())
+                .build()?,
+        ));
+    }
+
     if let Some(code) = query(msg, PV1_2) {
         match code {
-            // todo: the following are missing
-            // O ("Ambulantes Operieren") => operation
-            // I ("Normalstationär") => normalstationaer
-            // I ("Intensivstationär") => intensivstationaer
             "I" | "O" => {
                 if message_type(msg).ok() == Some(MessageType::A04) {
                     Ok(Some(
@@ -617,6 +661,13 @@ fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
                     .display("Untersuchung und Behandlung".to_string())
                     .build()?,
             )),
+            "VS" => Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                    .code("vorstationaer".to_string())
+                    .display("Vorstationär".to_string())
+                    .build()?,
+            )),
             _ => Err(anyhow!("Invalid kontakt_art code (PV1.2): {}", code))
                 .map_err(MappingError::Other)?,
         }
@@ -634,19 +685,22 @@ fn map_versorgungsstellenkontakt(
     if mapped_locations.is_empty() {
         return Ok(None);
     }
-    let versorgungskontakt =
-        base_encounter(msg, config, &EncounterType::Versorgungsstellenkontakt)?
-            .part_of(resource_ref(
-                &ResourceType::Encounter,
-                query(msg, ZBE_1_1)
-                    .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
-                &config.fall.abteilungskontakt.system,
-            )?)
-            .location(mapped_locations)
-            .status(map_encounter_status(&map_period(
-                msg,
-                &EncounterType::Versorgungsstellenkontakt,
-            )?));
+    let versorgungskontakt = base_encounter(
+        msg,
+        config,
+        resources,
+        &EncounterType::Versorgungsstellenkontakt,
+    )?
+    .part_of(resource_ref(
+        &ResourceType::Encounter,
+        query(msg, ZBE_1_1).ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
+        &config.fall.abteilungskontakt.system,
+    )?)
+    .location(mapped_locations)
+    .status(map_encounter_status(&map_period(
+        msg,
+        &EncounterType::Versorgungsstellenkontakt,
+    )?));
 
     let mut kontakt = versorgungskontakt
         .build()
