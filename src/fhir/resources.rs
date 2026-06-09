@@ -1,11 +1,11 @@
 use crate::error::MappingError;
 use crate::error::MappingError::MissingResourceError;
+use chrono::NaiveDate;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
-use serde::Deserialize;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
-use time::OffsetDateTime;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,10 +38,16 @@ pub(crate) struct Ward {
     pub(crate) display: String,
     #[serde(default)]
     pub(crate) is_icu: bool,
-    #[serde(with = "time::serde::iso8601")]
-    pub(crate) valid_from: OffsetDateTime,
-    #[serde(with = "time::serde::iso8601::option", default)]
-    pub(crate) valid_to: Option<OffsetDateTime>,
+    pub(crate) valid_period: HashSet<ValidPeriod>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub(crate) struct ValidPeriod {
+    pub(crate) valid_from: NaiveDate,
+
+    pub(crate) valid_to: Option<NaiveDate>,
 }
 
 /// Mappings for Fachabteilung (encounter department and location)
@@ -167,7 +173,7 @@ mod tests {
     use super::*;
     use crate::fhir::resources::{Department, ResourceMap};
     use std::collections::HashMap;
-    use time::format_description::well_known::Iso8601;
+    use time::macros::format_description;
 
     #[test]
     fn test_map_fab_schluessel() {
@@ -243,24 +249,42 @@ mod tests {
     #[test]
     fn test_init_ward_map() {
         let m = init_ward_map().unwrap();
-        let description: &Iso8601 = &Iso8601;
+        let format = format_description!("[year]-[month]-[day]");
 
         assert!(!m.get("POLST22").unwrap().is_icu);
         assert!(!m.get("POLST12").unwrap().is_icu);
-        assert!(m.get("POLST12").unwrap().valid_to.is_none());
+        assert!(
+            m.get("POLST12")
+                .unwrap()
+                .valid_period
+                .iter()
+                .all(|a| a.valid_to.is_none())
+        );
         assert!(m.get("ANA").unwrap().is_icu);
-        assert!(m.get("ANA2").unwrap().valid_to.is_some());
+        assert!(
+            m.get("ANA2")
+                .unwrap()
+                .valid_period
+                .iter()
+                .all(|a| a.valid_to.is_some())
+        );
 
         assert_eq!(
-            m.get("ANA2").unwrap().valid_to,
-            Some(OffsetDateTime::parse("1984-02-01T00:00:00+01:00", description).unwrap())
+            m.get("ANA2")
+                .unwrap()
+                .valid_period
+                .iter()
+                .find(|v| v.valid_to.is_some())
+                .unwrap()
+                .valid_to,
+            Some(NaiveDate::from_ymd_opt(1984, 2, 1).unwrap())
         );
     }
 
     #[test]
     fn test_init_department_map() {
         let r = ResourceMap::new().unwrap();
-        assert!(r.department_map.len() > 0);
-        assert!(r.ward_map.len() > 0);
+        assert!(!r.department_map.is_empty());
+        assert!(!r.ward_map.is_empty());
     }
 }

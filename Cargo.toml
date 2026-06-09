@@ -17,7 +17,7 @@ fhir-model = { version = "0.12.1", default-features = false, features = ["builde
 hl7-parser = "0.3.0"
 anyhow = "1.0.102"
 thiserror = "2.0.18"
-chrono = "0.4.44"
+chrono = { version = "0.4.44", features = ["serde"] }
 chrono-tz = "0.10.4"
 regex = "1.12.3"
 tokio-util = "0.7.18"
