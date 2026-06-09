@@ -1,0 +1,8 @@
+MSH|^~\&|ORBIS|KH|WEBEPA|KH|202609301308||ADT^A07^ADT_A01|103601138|P|2.5||994767228|NE|NE||8859/1
+EVN|A07|202609301308|190005050000|12044_994767228|OPERATOR|202608280834
+PID|1|1212121|1212121|87654321|Sokolovski^Muster^^^^^L^^^^^^B||19820101|M|||Hexengasse 1^^Traumstadt^^12345^D^L|||||S|ev|||||||||D||||N
+PV1|1|NS|UROPOL^^^URO^^123456^^^|R^^HL7~01^Normalfall^301||||||N||||||N|||87654321||S|||SRGA||||||||||||||||||||202604271301|||||||A
+PV2|||^^301|||||||||||||||||||N||O||||||||||||
+IN1|1||99999999^^^^NII~P Kranken^^^^XX|Kranken Krankenversicherungsverein|Krankenkassen-Str. 1&^^^^^DE^L|||||||||||||19700101|^^^^^DE^L|||N|||||||||P|||||01010101|||||||M|^^^^^DE^L|||||01010101
+IN2|1|01010101|PENSIONÄR^Pensionär||||||||||||||||||||||||||^PC^0.0||||DE|||N|||ev|||||||Beruf||||||||||||||||||||||||Pensionär
+ZBE|88888888^ORBIS|202608280834||UPDATE

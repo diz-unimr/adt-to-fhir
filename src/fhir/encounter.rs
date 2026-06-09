@@ -1,5 +1,6 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError, ParsingError};
+use crate::fhir::encounter::EncounterType::Versorgungsstellenkontakt;
 use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
@@ -30,8 +31,10 @@ use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 use hl7_parser::message::Field;
 use log::{Level, log, warn};
+use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
+#[derive(PartialEq, Debug)]
 enum EncounterType {
     Einrichtungskontakt,
     Fachabteilungskontakt,
@@ -82,9 +85,11 @@ pub(super) fn map(
         | MessageType::A03
         | MessageType::A04
         | MessageType::A05
+        | MessageType::A06
+        | MessageType::A07
         | MessageType::A08
         | MessageType::A13 => {
-            let enc_admit = map_einrichtungskontakt(msg, &config)?;
+            let enc_admit = map_einrichtungskontakt(msg, &config, resources)?;
             result.push(bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?);
 
             if let Some(enc_dep) = map_abteilungskontakt(msg, &config, resources)? {
@@ -104,17 +109,30 @@ pub(super) fn map(
             // A12 deletes only  Fachabteilungskontakt & Versorgungsstellenkontakt
             if message_type == MessageType::A11 || message_type == MessageType::A27 {
                 let enc_admit =
-                    base_encounter(msg, &config, &EncounterType::Einrichtungskontakt)?.build()?;
+                    base_encounter(msg, &config, resources, &EncounterType::Einrichtungskontakt)?
+                        .build()?;
                 result.push(bundle_entry(enc_admit, EntryRequestType::Delete)?)
             }
 
             result.push(bundle_entry(
-                base_encounter(msg, &config, &EncounterType::Fachabteilungskontakt)?.build()?,
+                base_encounter(
+                    msg,
+                    &config,
+                    resources,
+                    &EncounterType::Fachabteilungskontakt,
+                )?
+                .build()?,
                 EntryRequestType::Delete,
             )?);
 
             result.push(bundle_entry(
-                base_encounter(msg, &config, &EncounterType::Versorgungsstellenkontakt)?.build()?,
+                base_encounter(
+                    msg,
+                    &config,
+                    resources,
+                    &EncounterType::Versorgungsstellenkontakt,
+                )?
+                .build()?,
                 EntryRequestType::Delete,
             )?);
 
@@ -129,9 +147,13 @@ fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
     Ok(query(msg, PV1_2).is_some_and(|f| f == "H"))
 }
 
-fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, MappingError> {
+fn map_einrichtungskontakt(
+    msg: &Message,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Encounter, MappingError> {
     // base encounter
-    let mut enc = base_encounter(msg, config, &EncounterType::Einrichtungskontakt)?
+    let mut enc = base_encounter(msg, config, resources, &EncounterType::Einrichtungskontakt)?
         // serviceProvider -> Hospital
         .service_provider(
             Reference::builder()
@@ -161,6 +183,16 @@ fn map_einrichtungskontakt(msg: &Message, config: &Fhir) -> Result<Encounter, Ma
         enc.part_of = mothers_encounter
     }
 
+    if let Some(bed_status) = query(msg, PV1_2)
+        && bed_status == "NS"
+    {
+        // case status change 'nachstationär'
+        // Here we do not want to change in-patient encounter status after discharge.
+        // With bed status 'NS' we get only some additional ambulatory treatment,
+        // which will be represented by ambulatory class 'Abteilungskontakt' and
+        // 'Versorgungsstellenkontakt'
+        enc.class.code = Some("IMP".to_string());
+    }
     Ok(enc)
 }
 
@@ -275,8 +307,13 @@ fn map_abteilungskontakt(
 ) -> Result<Option<Encounter>, MappingError> {
     if let Some(service_type) = get_service_type(msg, resources)? {
         // base encounter
-        let mut enc =
-            base_encounter(msg, config, &EncounterType::Fachabteilungskontakt)?.build()?;
+        let mut enc = base_encounter(
+            msg,
+            config,
+            resources,
+            &EncounterType::Fachabteilungskontakt,
+        )?
+        .build()?;
 
         enc.service_type = Some(service_type);
         if let Some(fab) = parse_fab(msg) {
@@ -322,6 +359,7 @@ fn get_service_type(
 fn base_encounter(
     msg: &Message,
     config: &Fhir,
+    resources: &ResourceMap,
     enc_type: &EncounterType,
 ) -> Result<EncounterBuilder, MappingError> {
     let visit_number = map_visit_number(msg)?;
@@ -338,7 +376,7 @@ fn base_encounter(
             )?),
         ])
         .class(map_encounter_class(msg)?)
-        .r#type(map_encounter_type(msg, enc_type)?)
+        .r#type(map_encounter_type(msg, enc_type, resources)?)
         .subject(subject_ref(msg, &config.person.system)?)
         .period(map_period(msg, enc_type)?)
         // set status depends on period.start / period.end
@@ -396,11 +434,12 @@ fn map_level_identifier(
 fn map_encounter_type(
     msg: &Message,
     enc_type: &EncounterType,
+    resources: &ResourceMap,
 ) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
     // Kontaktebene
     let mut coding = vec![Some(enc_type.into())];
 
-    if let Some(c) = map_kontaktart(msg)? {
+    if let Some(c) = map_kontaktart(msg, resources, enc_type)? {
         // Kontaktart
         coding.push(Some(c));
     }
@@ -548,7 +587,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
             .code("IMP".to_string())
             .display("inpatient encounter".to_string())
             .build()?),
-        "O" => Ok(Coding::builder()
+        "O" | "NS" | "VS" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
             .code("AMB".to_string())
             .display("ambulatory".to_string())
@@ -558,18 +597,37 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
             .code("PRENC".to_string())
             .display("pre-admission".to_string())
             .build()?),
-        // todo ... VR / SS / HH
+        "TS" => Ok(Coding::builder()
+            .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
+            .code("SS".to_string())
+            .display("short-stay".to_string())
+            .build()?),
         _ => Err(anyhow!("Invalid encounter_class code (PV1.2): {}", code)),
     }
 }
 
-fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
+fn map_kontaktart(
+    msg: &Message,
+    resources: &ResourceMap,
+    enc_type: &EncounterType,
+) -> Result<Option<Coding>, MappingError> {
+    if &Versorgungsstellenkontakt == enc_type
+        && resources
+            .ward_map
+            .get(query(msg, PV1_3_1).unwrap_or(""))
+            .is_some_and(|ward| ward.is_icu)
+    {
+        return Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                .code("intensivstationaer".to_string())
+                .display("Intensivstationär".to_string())
+                .build()?,
+        ));
+    }
+
     if let Some(code) = query(msg, PV1_2) {
         match code {
-            // todo: the following are missing
-            // O ("Ambulantes Operieren") => operation
-            // I ("Normalstationär") => normalstationaer
-            // I ("Intensivstationär") => intensivstationaer
             "I" | "O" => {
                 if message_type(msg).ok() == Some(MessageType::A04) {
                     Ok(Some(
@@ -611,6 +669,13 @@ fn map_kontaktart(msg: &Message) -> Result<Option<Coding>, MappingError> {
                     .display("Untersuchung und Behandlung".to_string())
                     .build()?,
             )),
+            "VS" => Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                    .code("vorstationaer".to_string())
+                    .display("Vorstationär".to_string())
+                    .build()?,
+            )),
             _ => Err(anyhow!("Invalid kontakt_art code (PV1.2): {}", code))
                 .map_err(MappingError::Other)?,
         }
@@ -628,19 +693,18 @@ fn map_versorgungsstellenkontakt(
     if mapped_locations.is_empty() {
         return Ok(None);
     }
-    let versorgungskontakt =
-        base_encounter(msg, config, &EncounterType::Versorgungsstellenkontakt)?
-            .part_of(resource_ref(
-                &ResourceType::Encounter,
-                query(msg, ZBE_1_1)
-                    .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
-                &config.fall.abteilungskontakt.system,
-            )?)
-            .location(mapped_locations)
-            .status(map_encounter_status(&map_period(
-                msg,
-                &EncounterType::Versorgungsstellenkontakt,
-            )?));
+    let versorgungskontakt = base_encounter(msg, config, resources, &Versorgungsstellenkontakt)?
+        .part_of(resource_ref(
+            &ResourceType::Encounter,
+            query(msg, ZBE_1_1)
+                .ok_or(MessageAccessError::MissingMessageSegment("ZBE".to_string()))?,
+            &config.fall.abteilungskontakt.system,
+        )?)
+        .location(mapped_locations)
+        .status(map_encounter_status(&map_period(
+            msg,
+            &Versorgungsstellenkontakt,
+        )?));
 
     let mut kontakt = versorgungskontakt
         .build()
@@ -1346,9 +1410,6 @@ ZBE|30674176^ORBIS|202208221309||INSERT
                                 assert!(second_identifier_type_coding.is_some())
                             }
                         }
-                        _ => {
-                            //ignore other resource
-                        }
                     }
                 };
             });
@@ -1368,5 +1429,194 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 
         let as_json = serde_json::to_string_pretty(&actual).unwrap();
         assert_eq!(actual.len(), 1);
+    }
+
+    #[test]
+    fn test_encounter_intensiv_ward() {
+        let input = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|I|ANA^3^4^POL^KLINIKUM^000000|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01||||9||||202511022120|202511022120||||||A
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+
+        let actual =
+            map_versorgungsstellenkontakt(&msg, &get_test_config(), &get_dummy_resources())
+                .unwrap()
+                .unwrap();
+
+        let type_coding = actual
+            .r#type
+            .first()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .coding
+            .get(1)
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            type_coding.code.clone().unwrap().as_str(),
+            "intensivstationaer"
+        );
+
+        let actual = map_abteilungskontakt(&msg, &get_test_config(), &get_dummy_resources())
+            .unwrap()
+            .unwrap();
+
+        let type_coding = actual
+            .r#type
+            .first()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .coding
+            .clone();
+        assert_eq!(type_coding.clone().len(), 1);
+
+        let f = type_coding.first().unwrap().as_ref().unwrap();
+        assert_eq!(f.code.clone().unwrap().as_str(), "abteilungskontakt");
+
+        let actual =
+            map_einrichtungskontakt(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
+
+        let type_coding = actual
+            .r#type
+            .first()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .coding
+            .clone();
+        assert_eq!(type_coding.clone().len(), 1);
+
+        let f = type_coding.first().unwrap().as_ref().unwrap();
+        assert_eq!(f.code.clone().unwrap().as_str(), "einrichtungskontakt");
+    }
+
+    #[test]
+    fn test_encounter_invalid_bed_status() {
+        let input = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|INVALID|^^^^KLINIKUM^000000|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01||||9||||202511022120|202511022120||||||A
+ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
+"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+
+        let actual = map(&msg, get_test_config(), &get_dummy_resources());
+        assert!(actual.is_err());
+        assert_eq!(
+            actual.unwrap_err().to_string(),
+            MappingError::Other(anyhow!("Invalid encounter_class code (PV1.2): INVALID"))
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn test_nachstationaer() {
+        let hl7 = read_test_resource("a07_nachstationaer_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let config = get_test_config();
+        let res = get_dummy_resources();
+        let abteilung_result = map_abteilungskontakt(&msg, &get_test_config(), &res)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            abteilung_result
+                .r#type
+                .get(0)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .coding
+                .clone()
+                .get(1)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "nachstationaer"
+        );
+        assert_eq!(abteilung_result.class.code.as_ref().unwrap(), "AMB");
+
+        let einrichtung_result = map_einrichtungskontakt(&msg, &get_test_config(), &res).unwrap();
+        assert_eq!(
+            einrichtung_result
+                .r#type
+                .get(0)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .coding
+                .clone()
+                .get(1)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "nachstationaer"
+        );
+        assert_eq!(einrichtung_result.class.code.as_ref().unwrap(), "IMP");
+    }
+
+    #[test]
+    fn test_teilsstationaer() {
+        let hl7 = read_test_resource("a06_teilsstationaer_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let config = get_test_config();
+        let res = get_dummy_resources();
+        let abteilung_result = map_abteilungskontakt(&msg, &get_test_config(), &res)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            abteilung_result
+                .r#type
+                .get(0)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .coding
+                .clone()
+                .get(1)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "teilstationaer"
+        );
+        assert_eq!(abteilung_result.class.code.as_ref().unwrap(), "SS");
+
+        let einrichtung_result = map_einrichtungskontakt(&msg, &get_test_config(), &res).unwrap();
+        assert_eq!(
+            einrichtung_result
+                .r#type
+                .get(0)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .coding
+                .clone()
+                .get(1)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "teilstationaer"
+        );
+        assert_eq!(einrichtung_result.class.code.as_ref().unwrap(), "SS");
     }
 }
