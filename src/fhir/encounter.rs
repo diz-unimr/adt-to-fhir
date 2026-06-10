@@ -1,6 +1,6 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError, ParsingError};
-use crate::fhir::encounter::EncounterType::Versorgungsstellenkontakt;
+use crate::fhir::encounter::EncounterType::{Fachabteilungskontakt, Versorgungsstellenkontakt};
 use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
@@ -612,7 +612,7 @@ fn map_kontaktart(
     resources: &ResourceMap,
     enc_type: &EncounterType,
 ) -> Result<Option<Coding>, MappingError> {
-    if &Versorgungsstellenkontakt == enc_type {
+    if &Versorgungsstellenkontakt == enc_type || &Fachabteilungskontakt == enc_type {
         let is_valid_ward = is_ward_valid_icu(msg, resources);
         if is_valid_ward {
             return Ok(Some(
@@ -1463,18 +1463,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
                 .unwrap()
                 .unwrap();
 
-        let type_coding = actual
-            .r#type
-            .first()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .coding
-            .get(1)
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .clone();
+        let type_coding = get_enc_type_coding(&actual, 1);
         assert_eq!(
             type_coding.code.clone().unwrap().as_str(),
             "intensivstationaer"
@@ -1484,17 +1473,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             .unwrap()
             .unwrap();
 
-        let type_coding = actual
-            .r#type
-            .first()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .coding
-            .clone();
-        assert_eq!(type_coding.clone().len(), 1);
+        let type_coding = get_enc_type_coding(&actual, 1);
+        assert_eq!(
+            type_coding.code.clone().unwrap().as_str(),
+            "intensivstationaer"
+        );
 
-        let f = type_coding.first().unwrap().as_ref().unwrap();
+        let f = get_enc_type_coding(&actual, 0);
         assert_eq!(f.code.clone().unwrap().as_str(), "abteilungskontakt");
 
         let actual =
@@ -1512,6 +1497,22 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 
         let f = type_coding.first().unwrap().as_ref().unwrap();
         assert_eq!(f.code.clone().unwrap().as_str(), "einrichtungskontakt");
+    }
+
+    fn get_enc_type_coding(actual: &Encounter, index: usize) -> Coding {
+        let type_coding = actual
+            .r#type
+            .first()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .coding
+            .get(index)
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .clone();
+        type_coding
     }
 
     #[test]
