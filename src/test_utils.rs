@@ -9,7 +9,7 @@ pub(crate) mod tests {
     use fhir_model::WrongResourceType;
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
     use fhir_model::r4b::types::Meta;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
 
@@ -86,10 +86,16 @@ pub(crate) mod tests {
                     Ward {
                         display: "Aneasthesie u. Intensivtherapie".to_string(),
                         is_icu: true,
-                        valid_period: HashSet::from([ValidPeriod {
-                            valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
-                            valid_to: None,
-                        }]),
+                        valid_period: Vec::from([
+                            ValidPeriod {
+                                valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
+                                valid_to: Some(NaiveDate::from_ymd_opt(2000, 12, 31).unwrap()),
+                            },
+                            ValidPeriod {
+                                valid_from: NaiveDate::from_ymd_opt(2005, 1, 1).unwrap(),
+                                valid_to: None,
+                            },
+                        ]),
                     },
                 ),
                 (
@@ -97,7 +103,7 @@ pub(crate) mod tests {
                     Ward {
                         display: "IDIST1I".to_string(),
                         is_icu: true,
-                        valid_period: HashSet::from([ValidPeriod {
+                        valid_period: Vec::from([ValidPeriod {
                             valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
 
                             valid_to: None,
@@ -109,7 +115,7 @@ pub(crate) mod tests {
                     Ward {
                         display: "Iterdisziplinaere Station 121".to_string(),
                         is_icu: false,
-                        valid_period: HashSet::from([ValidPeriod {
+                        valid_period: Vec::from([ValidPeriod {
                             valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
 
                             valid_to: None,

@@ -8,7 +8,7 @@ use crate::fhir::mapper::{
     EntryRequestType, bundle_entry, get_cc_with_one_code, is_inpatient_location, parse_datetime,
     parse_fab, resource_ref,
 };
-use crate::fhir::resources::ResourceMap;
+use crate::fhir::resources::{ResourceMap, is_valid_date};
 use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
@@ -18,6 +18,7 @@ use crate::hl7::parser::{
     get_message_key, message_type, query,
 };
 use anyhow::anyhow;
+use chrono::NaiveDate;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
@@ -611,19 +612,17 @@ fn map_kontaktart(
     resources: &ResourceMap,
     enc_type: &EncounterType,
 ) -> Result<Option<Coding>, MappingError> {
-    if &Versorgungsstellenkontakt == enc_type
-        && resources
-            .ward_map
-            .get(query(msg, PV1_3_1).unwrap_or(""))
-            .is_some_and(|ward| ward.is_icu)
-    {
-        return Ok(Some(
-            Coding::builder()
-                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-                .code("intensivstationaer".to_string())
-                .display("Intensivstationär".to_string())
-                .build()?,
-        ));
+    if &Versorgungsstellenkontakt == enc_type {
+        let is_valid_ward = is_ward_valid_icu(msg, resources);
+        if is_valid_ward {
+            return Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                    .code("intensivstationaer".to_string())
+                    .display("Intensivstationär".to_string())
+                    .build()?,
+            ));
+        }
     }
 
     if let Some(code) = query(msg, PV1_2) {
@@ -682,6 +681,24 @@ fn map_kontaktart(
     } else {
         Ok(None)
     }
+}
+
+fn is_ward_valid_icu(msg: &Message, resources: &ResourceMap) -> bool {
+    query(msg, PV1_3_1)
+        .and_then(|ward_id| resources.ward_map.get(ward_id))
+        .is_some_and(|ward| {
+            ward.is_icu
+                && query(msg, ZBE_2)
+                    .and_then(|zbe_start| {
+                        let option = NaiveDate::parse_from_str(zbe_start, "%Y%m%d%H%M");
+                        option.ok()
+                    })
+                    .is_some_and(|n_date| {
+                        ward.valid_period
+                            .iter()
+                            .any(|period| is_valid_date(period, &n_date))
+                    })
+        })
 }
 
 fn map_versorgungsstellenkontakt(

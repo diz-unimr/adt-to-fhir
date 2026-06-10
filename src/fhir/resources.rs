@@ -3,7 +3,7 @@ use crate::error::MappingError::MissingResourceError;
 use chrono::NaiveDate;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -38,7 +38,7 @@ pub(crate) struct Ward {
     pub(crate) display: String,
     #[serde(default)]
     pub(crate) is_icu: bool,
-    pub(crate) valid_period: HashSet<ValidPeriod>,
+    pub(crate) valid_period: Vec<ValidPeriod>,
 }
 
 #[derive(Deserialize)]
@@ -147,6 +147,10 @@ impl ResourceMap {
         search_code
     }
 }
+pub(crate) fn is_valid_date(period: &ValidPeriod, date: &NaiveDate) -> bool {
+    date.ge(&period.valid_from)
+        && (period.valid_to.is_none() || date.le(&period.valid_to.unwrap_or(NaiveDate::MAX)))
+}
 
 fn init_department_map() -> Result<HashMap<String, Department>, anyhow::Error> {
     let resource_data = read_mapping_resource("InfoByAbteilungskuerzel.json")?;
@@ -173,7 +177,6 @@ mod tests {
     use super::*;
     use crate::fhir::resources::{Department, ResourceMap};
     use std::collections::HashMap;
-    use time::macros::format_description;
 
     #[test]
     fn test_map_fab_schluessel() {
@@ -249,7 +252,6 @@ mod tests {
     #[test]
     fn test_init_ward_map() {
         let m = init_ward_map().unwrap();
-        let format = format_description!("[year]-[month]-[day]");
 
         assert!(!m.get("POLST22").unwrap().is_icu);
         assert!(!m.get("POLST12").unwrap().is_icu);
