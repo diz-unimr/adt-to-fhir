@@ -268,7 +268,7 @@ fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
 }
 
 fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
-    let mut result = vec![];
+    let mut extension_components = vec![];
 
     // 1. und 2. Stelle
     if let Some(erste_und_zweite) = query(msg, PV1_36_1)
@@ -281,7 +281,7 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
                 .build()
         })
     {
-        result.push(erste_und_zweite?);
+        extension_components.push(erste_und_zweite?);
     }
 
     // 3. Stelle
@@ -295,10 +295,17 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
                 .build()
         })
     {
-        result.push(dritte?);
+        extension_components.push(dritte?);
     }
-
-    Ok(result)
+    if !extension_components.is_empty() {
+        return Ok(vec![
+            Extension::builder()
+                .extension(extension_components)
+                .url("http://fhir.de/StructureDefinition/Entlassungsgrund".to_string())
+                .build()?,
+        ]);
+    }
+    Ok(vec![])
 }
 
 fn map_abteilungskontakt(
@@ -1096,7 +1103,9 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 
         let actual = map_entlassgrund(&msg).unwrap();
 
-        assert_eq!(actual, expected);
+        assert!(actual.len() == 1);
+
+        assert_eq!(actual.first().unwrap().extension, expected);
     }
 
     #[rstest]
