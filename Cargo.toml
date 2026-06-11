@@ -22,10 +22,10 @@ chrono-tz = "0.10.4"
 regex = "1.12.3"
 tokio-util = "0.7.18"
 validator = { version = "0.20.0", features = ["derive"] }
-time = "0.3.47"
 opentelemetry = "0.32.0"
 opentelemetry_sdk = "0.32.1"
 opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
+itertools = "0.14.0"
 
 [dev-dependencies]
 rstest = "0.26.1"
