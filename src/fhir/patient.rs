@@ -432,7 +432,7 @@ fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingE
                     .display("Unmarried".to_string())
                     .build(),
                 _a => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .system("http://terminology.hl7.org/CodeSystem/v3-NullFlavor".to_string())
                     .code("UNK".to_string())
                     .display("Unknown".to_string())
                     .build(),

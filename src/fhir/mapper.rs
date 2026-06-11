@@ -642,4 +642,19 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
             assert_eq!(parse_fab(&msg), Some(expected));
         }
     }
+    #[test]
+    fn test_all() {
+        let binding = read_test_resource("a08_test.hl7");
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(bundle)) => {
+                println!("{:?}", bundle);
+            }
+            Ok(None) => panic!("empty bundle"),
+            Err(err) => {
+                println!("{}", err);
+            }
+        }
+    }
 }
