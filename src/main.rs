@@ -41,8 +41,8 @@ async fn main() {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| filter.into()))
         .init();
 
-    let meter_provider =
-        init_meter_provider("http://localhost:4317").expect("failed to initialize meter provider");
+    let meter_provider = init_meter_provider(&config.app.telemetry_endpoint)
+        .expect("failed to initialize meter provider");
 
     // cancellation
     let cancel = CancellationToken::new();
