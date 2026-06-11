@@ -1,17 +1,31 @@
 use opentelemetry::global;
-use opentelemetry::metrics::Counter;
+use opentelemetry::metrics::{Counter, Histogram};
 use opentelemetry_otlp::{MetricExporter, WithExportConfig};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
 use std::sync::OnceLock;
 
-static RECORD_COUNTER: OnceLock<Counter<u64>> = OnceLock::new();
+static PROCESS_COUNTER: OnceLock<Counter<u64>> = OnceLock::new();
+static PROCESS_LATENCY: OnceLock<Histogram<u64>> = OnceLock::new();
 
-pub(crate) fn record_counter() -> &'static Counter<u64> {
-    RECORD_COUNTER.get_or_init(|| {
+pub(crate) fn process_count() -> &'static Counter<u64> {
+    PROCESS_COUNTER.get_or_init(|| {
         global::meter("processor")
             .u64_counter("records_processed_total")
             .with_description("The number of records processed")
+            .build()
+    })
+}
+
+pub(crate) fn process_latency() -> &'static Histogram<u64> {
+    PROCESS_LATENCY.get_or_init(|| {
+        global::meter("processor")
+            .u64_histogram("process_duration_nanos_bucket")
+            .with_description("The time to fully process a record")
+            // Setting boundaries is optional. By default, the boundaries are set to
+            // [0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 250.0, 500.0, 750.0, 1000.0, 2500.0, 5000.0, 7500.0, 10000.0]
+            //
+            // .with_boundaries(vec![...])
             .build()
     })
 }
@@ -33,7 +47,7 @@ pub(crate) fn init_meter_provider(endpoint: &str) -> anyhow::Result<SdkMeterProv
 
 #[cfg(test)]
 mod tests {
-    use crate::metrics::{init_meter_provider, record_counter};
+    use crate::metrics::{init_meter_provider, process_count, process_latency};
     use mock_collector::{MockServer, Protocol};
     use opentelemetry::KeyValue;
 
@@ -50,7 +64,12 @@ mod tests {
         // add metric
         let addr = format!("http://{}", server.addr());
         let provider = init_meter_provider(&addr).unwrap();
-        record_counter().add(1, &[KeyValue::new("status", "ok")]);
+
+        // processed counter
+        process_count().add(1, &[KeyValue::new("status", "ok")]);
+
+        // process latency
+        process_latency().record(400, &[]);
 
         provider.shutdown().unwrap();
 
@@ -59,15 +78,20 @@ mod tests {
 
         server
             .with_collector(|collector| {
-                // single metric
-                assert_eq!(collector.metric_count(), 1);
-
-                // metric exists
+                // counter metric exists
                 collector
                     .expect_metric_with_name("records_processed_total")
                     .with_resource_attributes([("service.name", "adt-to-fhir")])
                     .with_attribute("status", "ok")
                     .assert_exists();
+
+                // latency histogram exists
+                collector
+                    .expect_histogram("process_duration_nanos_bucket")
+                    .with_sum_eq(400)
+                    .assert_exists();
+
+                assert_eq!(collector.metric_count(), 2);
             })
             .await;
 
