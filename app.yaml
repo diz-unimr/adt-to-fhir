@@ -1,5 +1,6 @@
 app:
   log_level: info
+  telemetry_endpoint: http://localhost:4317
 
 kafka:
   brokers: localhost:9092

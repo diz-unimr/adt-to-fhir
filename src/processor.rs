@@ -7,6 +7,7 @@ use futures::TryStreamExt;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use log::{debug, error, info, trace, warn};
+use opentelemetry::KeyValue;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{BaseConsumer, Consumer, ConsumerContext, Rebalance, StreamConsumer};
 use rdkafka::error::KafkaResult;
@@ -209,6 +210,7 @@ impl Processor {
                         }
                         _ => {
                             consumer.store_offset_from_message(&m)?;
+                            record_counter().add(1, &[KeyValue::new("status", "error")]);
                             Ok(())
                         }
                     };
@@ -230,7 +232,7 @@ impl Processor {
                     );
                     // store offset
                     consumer.store_offset_from_message(&m)?;
-                    record_counter().add(1, &[]);
+                    record_counter().add(1, &[KeyValue::new("status", "ok")]);
                 }
                 Err((e, _)) => error!("Error producing record: {:?}", e),
             }

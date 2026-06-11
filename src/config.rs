@@ -6,6 +6,7 @@ use validator::Validate;
 #[derive(Default, Debug, Deserialize, Clone)]
 pub(crate) struct App {
     pub(crate) log_level: String,
+    pub(crate) telemetry_endpoint: String,
 }
 
 #[derive(Default, Deserialize, Clone, Debug, Validate)]

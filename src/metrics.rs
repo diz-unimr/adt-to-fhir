@@ -10,7 +10,7 @@ static RECORD_COUNTER: OnceLock<Counter<u64>> = OnceLock::new();
 pub(crate) fn record_counter() -> &'static Counter<u64> {
     RECORD_COUNTER.get_or_init(|| {
         global::meter("processor")
-            .u64_counter("records_processed")
+            .u64_counter("records_processed_total")
             .with_description("The number of records processed")
             .build()
     })
@@ -35,6 +35,7 @@ pub(crate) fn init_meter_provider(endpoint: &str) -> anyhow::Result<SdkMeterProv
 mod tests {
     use crate::metrics::{init_meter_provider, record_counter};
     use mock_collector::{MockServer, Protocol};
+    use opentelemetry::KeyValue;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_record_counter() {
@@ -49,7 +50,7 @@ mod tests {
         // add metric
         let addr = format!("http://{}", server.addr());
         let provider = init_meter_provider(&addr).unwrap();
-        record_counter().add(1, &[]);
+        record_counter().add(1, &[KeyValue::new("status", "ok")]);
 
         provider.shutdown().unwrap();
 
@@ -63,8 +64,9 @@ mod tests {
 
                 // metric exists
                 collector
-                    .expect_metric_with_name("records_processed")
+                    .expect_metric_with_name("records_processed_total")
                     .with_resource_attributes([("service.name", "adt-to-fhir")])
+                    .with_attribute("status", "ok")
                     .assert_exists();
             })
             .await;
