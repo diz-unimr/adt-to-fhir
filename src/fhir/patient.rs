@@ -110,7 +110,11 @@ fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
                 addr.country = Some(country.to_string());
             }
 
-            res.push(Some(addr));
+            if !addr.line.is_empty() && addr.line.iter().all(|l| l.is_some()) && addr.city.is_some()
+            {
+                // street must have at least 1 line and city must also have a value
+                res.push(Some(addr));
+            }
         }
     }
 
