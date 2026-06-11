@@ -4,14 +4,14 @@ pub(crate) mod tests {
         FallConfig, Fhir, LocationConfig, ObservationConfig, OrganizationConfig, PatientConfig,
         SystemConfig,
     };
-    use crate::fhir::resources::{Department, ResourceMap, Ward};
+    use crate::fhir::resources::{Department, ResourceMap, ValidPeriod, Ward};
+    use chrono::NaiveDate;
     use fhir_model::WrongResourceType;
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
     use fhir_model::r4b::types::Meta;
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
-    use time::{Date, Month, OffsetDateTime, Time};
 
     pub fn get_test_config() -> Fhir {
         Fhir {
@@ -86,11 +86,16 @@ pub(crate) mod tests {
                     Ward {
                         display: "Aneasthesie u. Intensivtherapie".to_string(),
                         is_icu: true,
-                        valid_from: OffsetDateTime::new_utc(
-                            Date::from_calendar_date(1984, Month::February, 1).unwrap(),
-                            Time::MIDNIGHT,
-                        ),
-                        valid_to: None,
+                        valid_period: Vec::from([
+                            ValidPeriod {
+                                valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
+                                valid_to: Some(NaiveDate::from_ymd_opt(2000, 12, 31).unwrap()),
+                            },
+                            ValidPeriod {
+                                valid_from: NaiveDate::from_ymd_opt(2005, 1, 1).unwrap(),
+                                valid_to: None,
+                            },
+                        ]),
                     },
                 ),
                 (
@@ -98,11 +103,11 @@ pub(crate) mod tests {
                     Ward {
                         display: "IDIST1I".to_string(),
                         is_icu: true,
-                        valid_from: OffsetDateTime::new_utc(
-                            Date::from_calendar_date(1984, Month::February, 1).unwrap(),
-                            Time::MIDNIGHT,
-                        ),
-                        valid_to: None,
+                        valid_period: Vec::from([ValidPeriod {
+                            valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
+
+                            valid_to: None,
+                        }]),
                     },
                 ),
                 (
@@ -110,11 +115,11 @@ pub(crate) mod tests {
                     Ward {
                         display: "Iterdisziplinaere Station 121".to_string(),
                         is_icu: false,
-                        valid_from: OffsetDateTime::new_utc(
-                            Date::from_calendar_date(1984, Month::February, 1).unwrap(),
-                            Time::MIDNIGHT,
-                        ),
-                        valid_to: None,
+                        valid_period: Vec::from([ValidPeriod {
+                            valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
+
+                            valid_to: None,
+                        }]),
                     },
                 ),
             ]),
