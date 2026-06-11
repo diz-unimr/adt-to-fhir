@@ -54,3 +54,12 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.153.0
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+      #- "55679:55679" # zpages extension
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml
+      - /var/run/docker.sock:/var/run/docker.sock:ro

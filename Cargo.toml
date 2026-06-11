@@ -25,7 +25,8 @@ validator = { version = "0.20.0", features = ["derive"] }
 time = "0.3.47"
 opentelemetry = "0.32.0"
 opentelemetry_sdk = "0.32.1"
-opentelemetry-stdout = "0.32.0"
+opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
 
 [dev-dependencies]
 rstest = "0.26.1"
+mock-collector = "0.2.12"

@@ -40,14 +40,18 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| filter.into()))
         .init();
-    let meter_provider = init_meter_provider();
+
+    let meter_provider =
+        init_meter_provider("http://localhost:4317").expect("failed to initialize meter provider");
 
     // cancellation
     let cancel = CancellationToken::new();
     let cloned_token = cancel.clone();
     tokio::spawn(async move {
-        let mut sigterm = signal(SignalKind::terminate()).unwrap();
-        let mut sigint = signal(SignalKind::interrupt()).unwrap();
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("failed to register terminate signal handler");
+        let mut sigint =
+            signal(SignalKind::interrupt()).expect("failed to register interrupt signal handler");
 
         tokio::select! {
             _ = sigterm.recv() => {

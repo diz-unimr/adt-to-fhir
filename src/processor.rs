@@ -209,7 +209,6 @@ impl Processor {
                         }
                         _ => {
                             consumer.store_offset_from_message(&m)?;
-                            record_counter().add(1, &[]);
                             Ok(())
                         }
                     };
@@ -231,6 +230,7 @@ impl Processor {
                     );
                     // store offset
                     consumer.store_offset_from_message(&m)?;
+                    record_counter().add(1, &[]);
                 }
                 Err((e, _)) => error!("Error producing record: {:?}", e),
             }
