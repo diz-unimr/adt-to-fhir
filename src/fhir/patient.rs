@@ -110,7 +110,11 @@ fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
                 addr.country = Some(country.to_string());
             }
 
-            res.push(Some(addr));
+            if !addr.line.is_empty() && addr.line.iter().all(|l| l.is_some()) && addr.city.is_some()
+            {
+                // street must have at least 1 line and city must also have a value
+                res.push(Some(addr));
+            }
         }
     }
 
@@ -432,7 +436,7 @@ fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingE
                     .display("Unmarried".to_string())
                     .build(),
                 _a => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
+                    .system("http://terminology.hl7.org/CodeSystem/v3-NullFlavor".to_string())
                     .code("UNK".to_string())
                     .display("Unknown".to_string())
                     .build(),
