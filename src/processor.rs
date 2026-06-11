@@ -2,7 +2,7 @@ use crate::ClientConfig;
 use crate::config::{Kafka, Ssl};
 use crate::error::{MappingError, ProcessingError};
 use crate::fhir::mapper::FhirMapper;
-use crate::metrics::record_counter;
+use crate::metrics::{process_count, process_latency};
 use futures::TryStreamExt;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -16,7 +16,7 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, TopicPartitionList};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::select;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -117,7 +117,18 @@ impl Processor {
                     return
                 }
                 stream = consumer.stream().map_err(ProcessingError::from)
-                .try_for_each(|m| self.process_message(m, id, consumer.clone())) => {
+                .try_for_each(|m| {
+                    let start = Instant::now();
+                    let result= self.process_message(m, id, consumer.clone());
+                    let duration = start.elapsed().as_nanos();
+
+                    // record latency
+                    process_latency().record(
+                        duration as u64,
+                        &[]
+                    );
+                    result
+                }) => {
                     info!("Starting Consumer[{instance_id}] for topic {}",
                         self.config.input_topic);
                     match stream {
@@ -210,7 +221,7 @@ impl Processor {
                         }
                         _ => {
                             consumer.store_offset_from_message(&m)?;
-                            record_counter().add(1, &[KeyValue::new("status", "error")]);
+                            process_count().add(1, &[KeyValue::new("status", "error")]);
                             Ok(())
                         }
                     };
@@ -232,7 +243,7 @@ impl Processor {
                     );
                     // store offset
                     consumer.store_offset_from_message(&m)?;
-                    record_counter().add(1, &[KeyValue::new("status", "ok")]);
+                    process_count().add(1, &[KeyValue::new("status", "ok")]);
                 }
                 Err((e, _)) => error!("Error producing record: {:?}", e),
             }
