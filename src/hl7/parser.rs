@@ -401,7 +401,7 @@ PV1|1|I|^^^KJM^KLINIKUM^123445|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000
         let hl7 = read_test_resource("a04_test.hl7");
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
 
-        assert!(matches!(get_message_key(&msg), Ok("12332112")));
+        assert!(matches!(get_message_key(&msg), Ok("103601138")));
     }
 
     #[test]

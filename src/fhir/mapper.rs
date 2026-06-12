@@ -644,16 +644,28 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
     }
     #[test]
     fn test_all() {
-        let binding = read_test_resource("a08_test.hl7");
+        let test_files = vec![
+            "a01_test.hl7",
+            "a03_test.hl7",
+            "a04_test.hl7",
+            "a04_test2.hl7",
+            "a08_test.hl7",
+            "a06_teilsstationaer_test.hl7",
+            "a07_nachstationaer_test.hl7",
+            "a11_test.hl7",
+        ];
+        for test_file in test_files {
+            let binding = read_test_resource(test_file);
 
-        let mapper = FhirMapper::new(get_test_config()).unwrap();
-        match mapper.map(binding.as_str()) {
-            Ok(Some(bundle)) => {
-                println!("{:?}", bundle);
-            }
-            Ok(None) => panic!("empty bundle"),
-            Err(err) => {
-                println!("{}", err);
+            let mapper = FhirMapper::new(get_test_config()).unwrap();
+            match mapper.map(binding.as_str()) {
+                Ok(Some(bundle)) => {
+                    println!("{:?}", bundle);
+                }
+                Ok(None) => panic!("empty bundle"),
+                Err(err) => {
+                    println!("FAILD processing input '{}' with error: {}", test_file, err);
+                }
             }
         }
     }
