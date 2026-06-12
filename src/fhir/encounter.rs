@@ -13,8 +13,8 @@ use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
 use crate::hl7::parser::{
-    MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1, PV1_19_1,
-    PV1_36_1, PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key,
+    MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1, PV1_36_1,
+    PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key,
     message_type, query,
 };
 use anyhow::anyhow;
@@ -1497,7 +1497,6 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         let hl7 = read_test_resource("a07_nachstationaer_test.hl7");
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
 
-        let config = get_test_config();
         let res = get_dummy_resources();
         let abteilung_result = map_abteilungskontakt(&msg, &get_test_config(), &res)
             .unwrap()
@@ -1548,8 +1547,6 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     fn test_teilsstationaer() {
         let hl7 = read_test_resource("a06_teilsstationaer_test.hl7");
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
-
-        let config = get_test_config();
         let res = get_dummy_resources();
         let abteilung_result = map_abteilungskontakt(&msg, &get_test_config(), &res)
             .unwrap()
