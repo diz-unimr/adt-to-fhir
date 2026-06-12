@@ -2,7 +2,7 @@ use crate::error::MappingError;
 use crate::error::MappingError::MissingResourceError;
 use chrono::NaiveDate;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
