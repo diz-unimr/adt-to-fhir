@@ -5,17 +5,17 @@ use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, get_cc_with_one_code, is_inpatient_location, parse_datetime,
-    parse_fab, resource_ref,
+    EntryRequestType, bundle_entry, get_cc_with_one_code, is_inpatient_location, map_visit_number,
+    parse_datetime, parse_fab, resource_ref, subject_ref,
 };
 use crate::fhir::resources::{ResourceMap, is_valid_date};
 use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
 use crate::hl7::parser::{
-    MessageType, PID_2, PID_4, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1,
-    PV1_19_1, PV1_36_1, PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3,
-    get_message_key, message_type, query,
+    MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1, PV1_19_1,
+    PV1_36_1, PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key,
+    message_type, query,
 };
 use anyhow::anyhow;
 use chrono::NaiveDate;
@@ -31,7 +31,7 @@ use fhir_model::r4b::types::{
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 use hl7_parser::message::Field;
-use log::{Level, log, warn};
+use log::{Level, log};
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -465,12 +465,6 @@ fn fab_ref(fab: &str, config: &Fhir) -> Result<Reference, MappingError> {
     )
 }
 
-fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
-    let pid = query(msg, PID_2).ok_or(anyhow!("missing pid value in PID.2"))?;
-
-    resource_ref(&ResourceType::Patient, pid, sid)
-}
-
 fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
     let discharge = map_entlassgrund(msg)?;
 
@@ -570,13 +564,6 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
                 EncounterStatus::Planned
             }
         }
-    }
-}
-
-fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> {
-    match message_type(msg)? {
-        MessageType::A14 => Ok(query(msg, PID_4).ok_or(anyhow!("empty visit number in PID.4"))?),
-        _ => Ok(query(msg, PV1_19_1).ok_or(anyhow!("empty visit number in PV1.19"))?),
     }
 }
 
@@ -1416,7 +1403,6 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 
         let actual = map(&msg, get_test_config(), &get_dummy_resources()).unwrap();
 
-        let as_json = serde_json::to_string_pretty(&actual).unwrap();
         assert_eq!(actual.len(), 1);
     }
 
