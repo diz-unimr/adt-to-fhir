@@ -25,9 +25,9 @@ pub(crate) mod tests {
             fall: FallConfig {
                 profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1".to_string(),
                 system: "https://fhir.diz.uni-marburg.de/sid/encounter-id".to_string(),
-                einrichtungskontakt: SystemConfig { system: "einrichtungskontakt-id".to_string() },
-                abteilungskontakt: SystemConfig { system: "abteilungskontakt-id".to_string() },
-                versorgungsstellenkontakt: SystemConfig { system: "versorgungsstellenkontakt-id".to_string() },
+                einrichtungskontakt: SystemConfig { system: "https://fhir.diz.uni-marburg.de/sid/encounter-admit-id".to_string() },
+                abteilungskontakt: SystemConfig { system: "https://fhir.diz.uni-marburg.de/sid/departement-id".to_string() },
+                versorgungsstellenkontakt: SystemConfig { system: "https://fhir.diz.uni-marburg.de/sid/ward-id".to_string() },
             },
             location: LocationConfig {
                 system_ward: "https://fhir.diz.uni-marburg.de/sid/location-caresite-id".to_string(),

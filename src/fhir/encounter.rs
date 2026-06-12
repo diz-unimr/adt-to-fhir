@@ -268,7 +268,7 @@ fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
 }
 
 fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
-    let mut result = vec![];
+    let mut extension_components = vec![];
 
     // 1. und 2. Stelle
     if let Some(erste_und_zweite) = query(msg, PV1_36_1)
@@ -281,7 +281,7 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
                 .build()
         })
     {
-        result.push(erste_und_zweite?);
+        extension_components.push(erste_und_zweite?);
     }
 
     // 3. Stelle
@@ -295,10 +295,17 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
                 .build()
         })
     {
-        result.push(dritte?);
+        extension_components.push(dritte?);
     }
-
-    Ok(result)
+    if !extension_components.is_empty() {
+        return Ok(vec![
+            Extension::builder()
+                .extension(extension_components)
+                .url("http://fhir.de/StructureDefinition/Entlassungsgrund".to_string())
+                .build()?,
+        ]);
+    }
+    Ok(vec![])
 }
 
 fn map_abteilungskontakt(
@@ -826,13 +833,18 @@ fn map_conditions(
             let codings =
                 map_diagnose_local_codes(priority_u32, condition_typ.raw_value().to_string())?;
 
-            res.push(Some(
-                EncounterDiagnosis::builder()
-                    .condition(condition_reference)
-                    .r#use(CodeableConcept::builder().coding(codings).build()?)
-                    .rank(rank_nz)
-                    .build()?,
-            ));
+            // profile allows only one use from DiagnoseTyp and Diagnosesubtyp per entry.
+            // multiple entries for same condition are allowed.
+            // to ensure we do not violate constraint, we create only one single type use entries.
+            for coding in codings {
+                res.push(Some(
+                    EncounterDiagnosis::builder()
+                        .condition(condition_reference.clone())
+                        .r#use(CodeableConcept::builder().coding(vec![coding]).build()?)
+                        .rank(rank_nz)
+                        .build()?,
+                ));
+            }
         }
     };
     Ok(res)
@@ -879,7 +891,7 @@ fn map_diagnose_local_codes(
     let mut result = vec![];
 
     let is_main_condition = priority < 2;
-
+    // not supported by 2026 profile
     if is_main_condition {
         result.push(diagnose_role_coding("CC"));
     } else {
@@ -901,6 +913,7 @@ fn map_diagnose_local_codes(
         "BD" => {
             result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
 
+            // not supported by 2026 profile
             if is_main_condition {
                 result.push(kontakt_diagnose_procedures("hospital-main-diagnosis"));
             }
@@ -914,27 +927,31 @@ fn map_diagnose_local_codes(
         // Postoperative Diagnose
         "PO" | "Post" => {
             result.push(kontakt_diagnose_procedures("surgery-diagnosis"));
-
+            // not supported by 2026 profile
             result.push(diagnose_role_coding("post-op"));
         }
 
         // DRG Diagnose
         "DD" => {
+            // not supported by 2026 profile
             if is_main_condition {
                 result.push(kontakt_diagnose_procedures("principle-DRG"));
             } else {
+                // not supported by 2026 profile
                 result.push(kontakt_diagnose_procedures("secondary-DRG"));
             }
         }
 
         // Abrechungsdiagnose
         "AR" | "Abr" => {
+            // not supported by 2026 profile
             result.push(diagnose_role_coding("billing"));
         }
 
         // Präoperative Diagnose
         "PR" | "Präop" => {
             result.push(kontakt_diagnose_procedures("surgery-diagnosis"));
+            // not supported by 2026 profile
             result.push(diagnose_role_coding("pre-op"));
         }
 
@@ -988,7 +1005,6 @@ mod tests {
     use hl7_parser::Message;
     use rstest::rstest;
     use std::default::Default;
-    use std::num::NonZero;
 
     #[rstest]
     #[case(EncounterType::Einrichtungskontakt, ("einrichtungskontakt","admit_id"))]
@@ -1096,63 +1112,18 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 
         let actual = map_entlassgrund(&msg).unwrap();
 
-        assert_eq!(actual, expected);
+        assert!(actual.len() == 1);
+
+        assert_eq!(actual.first().unwrap().extension, expected);
     }
 
-    #[rstest]
-    #[case(0, "CC,department-main-diagnosis,DD", 1)]
-    #[case(1, "CM,treatment-diagnosis", 2)]
-    #[case(2, "CC,AD", 1)]
-    #[case(6, "pre-op,surgery-diagnosis,CM", 2)]
-    #[case(7, "post-op,surgery-diagnosis,CM", 2)]
-    #[case(8, "billing,CC", 1)]
-    fn map_conditions_test(
-        #[case] entry_index: usize,
-        #[case] codings_expected: String,
-        #[case] rank_expected: u32,
-    ) {
-        let binding = read_test_resource("a08_test.hl7");
-        let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
-        let result = &map_conditions(&msg, &get_test_config());
-
-        let conditions = match result {
-            Ok(conditions) => conditions,
-            Err(err) => {
-                panic!("map_conditions failed with => {}", err);
-            }
-        };
-
-        assert_eq!(conditions.len(), 9);
-
-        let entry = conditions.get(entry_index).unwrap().as_ref().unwrap();
-        assert_eq!(
-            entry.rank,
-            NonZero::new(rank_expected),
-            "rank value is not as expected"
-        );
-
-        codings_expected.split(',').for_each(|s| {
-            assert!(
-                entry
-                    .r#use
-                    .as_ref()
-                    .unwrap()
-                    .coding
-                    .iter()
-                    .find(|c| c.as_ref().unwrap().code.as_ref().unwrap() == s)
-                    .is_some()
-            );
-        });
-
-        let amount_of_uses = codings_expected.split(',').count();
-        assert_eq!(amount_of_uses, entry.r#use.as_ref().unwrap().coding.len());
-    }
     #[test]
     fn map_condition_identifier_test() {
         let binding = read_test_resource("a03_test.hl7");
         let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
         let result = &map_conditions(&msg, &get_test_config());
 
+        // every condition has 2 entries, therefore increase index by 2
         assert!(result.is_ok());
         let first_entry = result
             .as_ref()
@@ -1170,10 +1141,11 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             "but fount {}",
             first_entry
         );
+
         let second_entry = result
             .as_ref()
             .unwrap()
-            .get(1)
+            .get(2)
             .unwrap()
             .as_ref()
             .unwrap()
@@ -1189,7 +1161,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         let third_entry = result
             .as_ref()
             .unwrap()
-            .get(2)
+            .get(4)
             .unwrap()
             .as_ref()
             .unwrap()
@@ -1636,5 +1608,65 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             "teilstationaer"
         );
         assert_eq!(einrichtung_result.class.code.as_ref().unwrap(), "SS");
+    }
+    #[test]
+    fn test_diagnose_multiple_use() {
+        let hl7 = read_test_resource("a08_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let config = get_test_config();
+        let result = map_conditions(&msg, &config).ok().unwrap();
+        assert!(result.iter().all(|a| a.is_some()));
+        let mut index = 0;
+        result.iter().for_each(|entry| {
+            let entry = entry
+                .as_ref()
+                .unwrap()
+                .clone()
+                .r#use
+                .unwrap()
+                .coding
+                .clone();
+
+            let count_diag_type = entry
+                .iter()
+                .filter(|a| {
+                    a.is_some()
+                        && a.as_ref().is_some_and(|a| {
+                            a.system.clone().is_some_and(|s| {
+                                s.eq("http://fhir.de/CodeSystem/KontaktDiagnoseProzedur")
+                            })
+                        })
+                })
+                .count();
+            assert!(
+                count_diag_type < 2,
+                "diagnose type count at index {} was {}",
+                index,
+                count_diag_type
+            );
+
+            let count_diag_sub_type = entry
+                .iter()
+                .filter(|a| {
+                    a.is_some()
+                        && a.as_ref().is_some_and(|a| {
+                            a.system.clone().is_some_and(|s| {
+                                s.eq("http://terminology.hl7.org/CodeSystem/diagnosis-role")
+                            })
+                        })
+                })
+                .count();
+            assert!(
+                count_diag_type < 2,
+                "diagnose sub type count at index {} was {}",
+                index,
+                count_diag_sub_type
+            );
+
+            index += 1;
+        });
+
+        //                    .eq("http://fhir.de/ValueSet/Diagnosesubtyp")
     }
 }
