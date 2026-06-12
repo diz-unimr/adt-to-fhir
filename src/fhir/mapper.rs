@@ -662,9 +662,9 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
                 Ok(Some(bundle)) => {
                     println!("{:?}", bundle);
                 }
-                Ok(None) => panic!("empty bundle"),
+                Ok(None) => panic!("empty bundle at input {}", test_file),
                 Err(err) => {
-                    println!("FAILD processing input '{}' with error: {}", test_file, err);
+                    panic!("FAILD processing input '{}' with error: {}", test_file, err)
                 }
             }
         }
