@@ -2,7 +2,9 @@ use crate::config::Fhir;
 use crate::error::{MappingError, ParsingError};
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::{encounter, location, observation, organization, patient};
-use crate::hl7::parser::{PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, query};
+use crate::hl7::parser::{
+    MessageType, PID_2, PID_4, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, PV1_19_1, message_type, query,
+};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -291,6 +293,18 @@ pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
 
 pub(crate) fn get_meta() -> Result<Meta, MappingError> {
     Ok(Meta::builder().source("#orbis".to_string()).build()?)
+}
+pub(crate) fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
+    let pid = query(msg, PID_2).ok_or(anyhow!("missing pid value in PID.2"))?;
+
+    resource_ref(&ResourceType::Patient, pid, sid)
+}
+
+pub(crate) fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> {
+    match message_type(msg)? {
+        MessageType::A14 => Ok(query(msg, PID_4).ok_or(anyhow!("empty visit number in PID.4"))?),
+        _ => Ok(query(msg, PV1_19_1).ok_or(anyhow!("empty visit number in PV1.19"))?),
+    }
 }
 
 #[cfg(test)]

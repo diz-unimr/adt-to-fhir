@@ -1,7 +1,8 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::mapper::{
-    EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, parse_datetime,
+    EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, map_visit_number,
+    parse_datetime, resource_ref, subject_ref,
 };
 use crate::fhir::patient::map_deceased;
 use crate::hl7::parser::{
@@ -11,8 +12,9 @@ use anyhow::anyhow;
 use fhir_model::r4b::codes::ObservationStatus;
 use fhir_model::r4b::resources::{
     BundleEntry, Observation, ObservationBuilder, ObservationEffective, ObservationValue,
+    ResourceType,
 };
-use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity};
+use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity, Reference};
 use hl7_parser::Message;
 use std::sync::LazyLock;
 
@@ -144,7 +146,14 @@ pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
     }
     Ok(result)
 }
-
+fn encounter_reference(msg: &Message, config: &Fhir) -> Result<Reference, MappingError> {
+    let visit_number = map_visit_number(msg)?;
+    resource_ref(
+        &ResourceType::Encounter,
+        visit_number,
+        &config.fall.einrichtungskontakt.system,
+    )
+}
 fn map_vital_status(
     msg: &Message,
     config: &Fhir,
@@ -183,6 +192,8 @@ fn map_vital_status(
                             .coding(IS_ALIVE_CODING.clone())
                             .build()?,
                     ))
+                    .subject(subject_ref(msg, &config.person.system)?)
+                    .encounter(encounter_reference(msg, config)?)
                     .build()?,
             )),
             // current message type should not create a vital status observation
@@ -213,6 +224,7 @@ fn map_body_length(
                 quantity_value,
                 "cm".to_string(),
                 config.observation.profile_height.to_string(),
+                config,
             )?
             .code(
                 CodeableConcept::builder()
@@ -247,6 +259,7 @@ fn map_body_weight(
                 quantity_value,
                 "g".to_string(),
                 config.observation.profile_weight.to_string(),
+                config,
             )?
             .code(
                 CodeableConcept::builder()
@@ -280,6 +293,7 @@ fn map_head_circumference(
                 quantity_value,
                 "cm".to_string(),
                 config.observation.profile_head_circumference.to_string(),
+                config,
             )?
             .body_site(get_cc_with_one_code(
                 SNOMED_BODYSITE_HEAD.to_string(),
@@ -302,6 +316,7 @@ fn get_birth_obs_builder(
     quantity_value: f64,
     unit: String,
     profile: String,
+    config: &Fhir,
 ) -> Result<ObservationBuilder, MappingError> {
     Ok(get_basic_observation_builder(msg)?
         .meta(Meta::builder().profile(vec![Some(profile)]).build()?)
@@ -316,7 +331,9 @@ fn get_birth_obs_builder(
                 .system(UCUM_SYSTEM.to_string())
                 .code(unit)
                 .build()?,
-        )))
+        ))
+        .subject(subject_ref(msg, &config.person.system)?)
+        .encounter(encounter_reference(msg, config)?))
 }
 
 #[cfg(test)]
@@ -351,6 +368,10 @@ mod tests {
                     Some(r) => {
                         // validate observation
                         let obs: Observation = r.clone().try_into().unwrap();
+
+                        assert!(obs.subject.is_some());
+                        assert!(obs.encounter.is_some());
+
                         let obs_code_value = obs
                             .code
                             .coding
@@ -366,7 +387,7 @@ mod tests {
                             LOINC_BODY_WEIGHT => {
                                 assert!(
                                     used_codes.insert(obs_code_value.to_string()),
-                                    "each observation code may be created only once! code {} has been created already.",obs_code_value
+                                    "each observation code may be created only once! code {} has been created already.", obs_code_value
                                 );
 
                                 if let ObservationValue::Quantity(q) = obs.value.clone().unwrap()
@@ -379,7 +400,7 @@ mod tests {
                             LOINC_HEAD_CIRCUMFERENCE => {
                                 assert!(
                                     used_codes.insert(obs_code_value.to_string()),
-                                    "each observation code may be created only once! code {} has been created already.",obs_code_value
+                                    "each observation code may be created only once! code {} has been created already.", obs_code_value
                                 );
                                 if let ObservationValue::Quantity(q) = obs.value.clone().unwrap()
                                     && let Some(value) = q.value
@@ -391,7 +412,7 @@ mod tests {
                             LOINC_BODY_HEIGHT => {
                                 assert!(
                                     used_codes.insert(obs_code_value.to_string()),
-                                    "each observation code may be created only once! code {} has been created already.",obs_code_value
+                                    "each observation code may be created only once! code {} has been created already.", obs_code_value
                                 );
                                 if let ObservationValue::Quantity(q) = obs.value.clone().unwrap()
                                     && let Some(value) = q.value
@@ -400,15 +421,15 @@ mod tests {
                                     assert_expected_code(obs_code_value, value, &expected);
                                 }
                             }
-                            LOINC_PATIENT_DISPOSITION=>{
+                            LOINC_PATIENT_DISPOSITION => {
                                 assert!(
                                     used_codes.insert(obs_code_value.to_string()),
-                                    "each observation code may be created only once! code {} has been created already.",obs_code_value
+                                    "each observation code may be created only once! code {} has been created already.", obs_code_value
                                 );
                                 if let ObservationValue::CodeableConcept(q) = obs.value.clone().unwrap()
                                     && let Some(value) = q.coding.first().unwrap().clone()
                                 {
-                                    assert_eq!(value.code.as_ref().unwrap().to_string(),"L".to_string())
+                                    assert_eq!(value.code.as_ref().unwrap().to_string(), "L".to_string())
                                 }
                             }
                             _ => panic!("unexpected observation code {}", obs_code_value),
