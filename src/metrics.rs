@@ -20,7 +20,7 @@ pub(crate) fn process_count() -> &'static Counter<u64> {
 pub(crate) fn process_latency() -> &'static Histogram<u64> {
     PROCESS_LATENCY.get_or_init(|| {
         global::meter("processor")
-            .u64_histogram("process_duration_nanos_bucket")
+            .u64_histogram("process_duration_nanos")
             .with_description("The time to fully process a record")
             // Setting boundaries is optional. By default, the boundaries are set to
             // [0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 250.0, 500.0, 750.0, 1000.0, 2500.0, 5000.0, 7500.0, 10000.0]
@@ -87,7 +87,7 @@ mod tests {
 
                 // latency histogram exists
                 collector
-                    .expect_histogram("process_duration_nanos_bucket")
+                    .expect_histogram("process_duration_nanos")
                     .with_sum_eq(400)
                     .assert_exists();
 
