@@ -115,7 +115,7 @@ pub(crate) fn map_ward_location(
         .meta(get_meta()?)
         .physical_type(get_cc_with_one_code(
             "wa".to_string(),
-            config.location.system_ward.to_string(),
+            LOCATION_TYPE_SYSTEM.to_string(),
         )?)
         .identifier(vec![Some(build_usual_identifier(
             vec![department],
