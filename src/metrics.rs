@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 
 static PROCESS_COUNTER: OnceLock<Counter<u64>> = OnceLock::new();
 static PROCESS_LATENCY: OnceLock<Histogram<u64>> = OnceLock::new();
+static ERRORS: OnceLock<Counter<u64>> = OnceLock::new();
 
 pub(crate) fn process_count() -> &'static Counter<u64> {
     PROCESS_COUNTER.get_or_init(|| {
@@ -26,6 +27,15 @@ pub(crate) fn process_latency() -> &'static Histogram<u64> {
             // [0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 250.0, 500.0, 750.0, 1000.0, 2500.0, 5000.0, 7500.0, 10000.0]
             //
             // .with_boundaries(vec![...])
+            .build()
+    })
+}
+
+pub(crate) fn errors() -> &'static Counter<u64> {
+    ERRORS.get_or_init(|| {
+        global::meter("processor")
+            .u64_counter("errors_total")
+            .with_description("The total number of errors")
             .build()
     })
 }

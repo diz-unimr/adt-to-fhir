@@ -78,18 +78,3 @@ async fn main() {
         error!("Error shutting down meter provider: {e:?}");
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::path::PathBuf;
-
-    pub(crate) fn read_test_resource(file_name: &str) -> String {
-        let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        file_path.push("resources/test");
-        file_path.push(file_name);
-
-        fs::read_to_string(file_path.display().to_string())
-            .unwrap_or_else(|_| panic!("Test resource not found: {}", file_path.display()))
-    }
-}

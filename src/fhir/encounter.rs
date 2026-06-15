@@ -964,17 +964,17 @@ fn map_diagnose_local_codes(
         }
         _ => {
             if !condition_type_local.is_empty() {
-                return Err(MessageAccessError::UnsupportedContentError(format!(
-                    "Unsupported value at DG1-6.1 '{}'",
-                    condition_type_local
-                ))
+                return Err(MessageAccessError::UnsupportedContentError(
+                    condition_type_local,
+                    "DG1-6.1".to_string(),
+                )
                 .into());
             }
             if condition_type_local.is_empty() {
-                return Err(MessageAccessError::UnsupportedContentError(format!(
-                    "Unsupported empty value at DG1-6.1 '{}'",
-                    condition_type_local
-                ))
+                return Err(MessageAccessError::UnsupportedContentError(
+                    "empty value".to_string(),
+                    "DG1-6.1".to_string(),
+                )
                 .into());
             }
         }
@@ -1207,7 +1207,7 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
         match x {
             Ok(_) => panic!("we have an unsupported condition type - this is not OK!"),
 
-            Err(MappingError::MessageAccessError(UnsupportedContentError(_))) => {
+            Err(MappingError::MessageError(UnsupportedContentError(_, _))) => {
                 println!("got UnsupportedContentError as expected");
             }
             Err(c) => panic!("UnsupportedContentError was expected but found {}", c),

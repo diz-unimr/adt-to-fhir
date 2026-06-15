@@ -2,7 +2,7 @@ use crate::ClientConfig;
 use crate::config::{Kafka, Ssl};
 use crate::error::{MappingError, ProcessingError};
 use crate::fhir::mapper::FhirMapper;
-use crate::metrics::{process_count, process_latency};
+use crate::metrics::{errors, process_count, process_latency};
 use futures::TryStreamExt;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -258,6 +258,8 @@ impl Processor {
                         _ => {
                             consumer.store_offset_from_message(&m)?;
                             process_count().add(1, &[KeyValue::new("status", "error")]);
+                            errors().add(1, &[KeyValue::new("type", e.name().to_string())]);
+
                             Ok(())
                         }
                     };
@@ -391,8 +393,7 @@ mod tests {
     use crate::fhir::mapper::FhirMapper;
     use crate::fhir::resources::ResourceMap;
     use crate::processor::{Context, Processor, deserialize_message};
-    use crate::test_utils::tests::get_dummy_resources;
-    use crate::tests::read_test_resource;
+    use crate::test_utils::tests::{get_dummy_resources, read_test_resource};
     use fhir_model::r4b::resources::{Bundle, ResourceType};
     use rdkafka::ClientConfig;
     use rdkafka::consumer::{Consumer, StreamConsumer};
