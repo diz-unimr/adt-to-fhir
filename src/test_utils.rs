@@ -128,7 +128,7 @@ pub(crate) mod tests {
         meta.profile.iter().flatten().any(|m| m == profile)
     }
 
-    pub fn read_test_resource(file_name: &str) -> String {
+    pub(crate) fn read_test_resource(file_name: &str) -> String {
         let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         file_path.push("resources/test");
         file_path.push(file_name);

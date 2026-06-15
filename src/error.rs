@@ -15,7 +15,7 @@ pub(crate) enum ProcessingError {
 #[derive(Debug, Error)]
 pub(crate) enum MappingError {
     #[error(transparent)]
-    MessageAccessError(#[from] MessageAccessError),
+    MessageError(#[from] MessageAccessError),
     #[error(transparent)]
     BuilderError(#[from] BuilderError),
     #[error(transparent)]
@@ -23,9 +23,22 @@ pub(crate) enum MappingError {
     #[error("failed to lookup resource {resource} with value {value}")]
     MissingResourceError { resource: String, value: String },
     #[error(transparent)]
-    ParseError(#[from] hl7_parser::parser::ParseError),
+    Hl7ParseError(#[from] hl7_parser::parser::ParseError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl MappingError {
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            MappingError::MessageError(_) => "MessageError",
+            MappingError::BuilderError(_) => "BuilderError",
+            MappingError::FormattingError(_) => "FormattingError",
+            MappingError::MissingResourceError { .. } => "MissingResourceError",
+            MappingError::Hl7ParseError(_) => "Hl7ParseError",
+            MappingError::Other(_) => "Other",
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -54,8 +67,8 @@ pub(crate) enum MessageAccessError {
     MissingMessageSegment(String),
     #[error(transparent)]
     MessageTypeError(#[from] MessageTypeError),
-    #[error("Message content at {0} is unsupported")]
-    UnsupportedContentError(String),
+    #[error("Message content '{0}' at {1} is unsupported")]
+    UnsupportedContentError(String, String),
     #[error(transparent)]
     ParseError(#[from] hl7_parser::parser::ParseError),
     #[error(transparent)]

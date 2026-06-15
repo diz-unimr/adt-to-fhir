@@ -197,7 +197,10 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         .value(
             query(msg, "PID.2")
                 .map(String::from)
-                .ok_or(MappingError::Other(anyhow!("empty pid value PID.2")))?,
+                .ok_or(MappingError::Other(
+                    // .ok_or(MappingError::MessageError(UnsupportedContentError(
+                    anyhow!("empty pid"),
+                ))?,
         )
         .r#type(get_cc_with_one_code(
             "MR".to_string(),
