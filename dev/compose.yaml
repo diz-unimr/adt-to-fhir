@@ -72,4 +72,3 @@ services:
     volumes:
       - ./adt-to-fhir-dashboard.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/adt-to-fhir-dashboard.json:ro
       - ./dashboards-provisioning.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
-
