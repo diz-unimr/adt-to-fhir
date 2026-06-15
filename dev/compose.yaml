@@ -48,7 +48,13 @@ services:
 
   hl7-data-loader:
     image: edenhill/kcat:1.7.1
-    command: "-b kafka:19092 -K: -t adt-hl7 -P -l -D# /data/adt-data.hl7"
+    entrypoint: "/bin/sh -c"
+    command: >
+      "while true; do
+        kcat -b kafka:19092 -K: -t adt-hl7 -P -l -D# /data/adt-data.hl7
+        sleep 10;
+      done"
+    #command: "-b kafka:19092 -K: -t adt-hl7 -P -l -D# /data/adt-data.hl7"
     volumes:
       - ./adt-example.hl7:/data/adt-data.hl7:ro
     depends_on:
@@ -57,7 +63,13 @@ services:
 
   otel-lgtm:
     image: grafana/otel-lgtm
+    environment:
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /otel-lgtm/grafana/conf/provisioning/dashboards/custom/adt-to-fhir-dashboard.json
     ports:
       - "4317:4317" # otel-collector
       - "3000:3000" # grafana
       - "9090:9090" # prometheus
+    volumes:
+      - ./adt-to-fhir-dashboard.json:/otel-lgtm/grafana/conf/provisioning/dashboards/custom/adt-to-fhir-dashboard.json:ro
+      - ./dashboards-provisioning.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro
+

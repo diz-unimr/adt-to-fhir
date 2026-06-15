@@ -190,7 +190,7 @@ impl Processor {
                         };
 
                         info!("Restarting consumer for topic {id} in 10 seconds...");
-                        if self.should_continue(Duration::from_secs(10)).await {
+                        if self.is_cancelled(Duration::from_secs(10)).await {
                             // The token was cancelled
                             info!("Consumer[{id}] for topic {topic} was stopped by cancellation");
                             break;
@@ -288,12 +288,12 @@ impl Processor {
         Ok(())
     }
 
-    async fn should_continue(&self, wait: Duration) -> bool {
+    async fn is_cancelled(&self, timeout: Duration) -> bool {
         select! {
             _ =  self.ctx.cancel.cancelled() => {
                 true
             }
-            _ = tokio::time::sleep(wait) => {
+            _ = tokio::time::sleep(timeout) => {
                 false
             }
         }
