@@ -2,7 +2,7 @@ use opentelemetry::global;
 use opentelemetry::metrics::{Counter, Histogram};
 use opentelemetry_otlp::{MetricExporter, WithExportConfig};
 use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use std::sync::OnceLock;
 
 static PROCESS_COUNTER: OnceLock<Counter<u64>> = OnceLock::new();
@@ -34,7 +34,6 @@ pub(crate) fn init_meter_provider(endpoint: &str) -> anyhow::Result<SdkMeterProv
     let exporter = MetricExporter::builder()
         .with_tonic()
         .with_endpoint(endpoint)
-        .with_temporality(Temporality::default())
         .build()?;
 
     let provider = SdkMeterProvider::builder()
