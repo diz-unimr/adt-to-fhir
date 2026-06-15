@@ -233,7 +233,9 @@
           "multiLane": false
         },
         "legend": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
@@ -416,7 +418,9 @@
         "orientation": "auto",
         "percentChangeColorMode": "standard",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -464,7 +468,7 @@
     ]
   },
   "timezone": "browser",
-  "title": "adt-to-fhir2",
+  "title": "adt-to-fhir",
   "version": 5,
   "uid": "g66jw5",
   "id": 3881996385968128
