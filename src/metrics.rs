@@ -56,7 +56,8 @@ pub(crate) fn init_meter_provider(endpoint: &str) -> anyhow::Result<SdkMeterProv
 
 #[cfg(test)]
 mod tests {
-    use crate::metrics::{init_meter_provider, process_count, process_latency};
+    use crate::error::MappingError;
+    use crate::metrics::{errors, init_meter_provider, process_count, process_latency};
     use mock_collector::{MockServer, Protocol};
     use opentelemetry::KeyValue;
 
@@ -80,6 +81,20 @@ mod tests {
         // process latency
         process_latency().record(400, &[]);
 
+        // error metric
+        errors().add(
+            1,
+            &[KeyValue::new(
+                "type",
+                MappingError::MissingResourceError {
+                    resource: "bla".into(),
+                    value: "blubb".into(),
+                }
+                .name()
+                .to_string(),
+            )],
+        );
+
         provider.shutdown().unwrap();
 
         println!("Metrics sent successfully!\n");
@@ -87,11 +102,12 @@ mod tests {
 
         server
             .with_collector(|collector| {
-                // counter metric exists
+                // processed records metric exists
                 collector
                     .expect_metric_with_name("records_processed_total")
                     .with_resource_attributes([("service.name", "adt-to-fhir")])
                     .with_attribute("status", "ok")
+                    .with_value_eq(1)
                     .assert_exists();
 
                 // latency histogram exists
@@ -100,7 +116,14 @@ mod tests {
                     .with_sum_eq(400)
                     .assert_exists();
 
-                assert_eq!(collector.metric_count(), 2);
+                // errors counter exists
+                collector
+                    .expect_metric_with_name("errors_total")
+                    .with_attribute("type", "MissingResourceError")
+                    .with_value_eq(1)
+                    .assert_exists();
+
+                assert_eq!(collector.metric_count(), 3);
             })
             .await;
 
