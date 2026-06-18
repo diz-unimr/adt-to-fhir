@@ -1,0 +1,42 @@
+{
+  "ANA": {
+    "display": "Anaesthesie u. Intensivtherapie",
+    "isIcu": true,
+    "validPeriod": [
+      {
+        "validFrom": "1984-02-01"
+      }
+    ]
+  },
+  "ANA2": {
+    "display": "Anaesthesie",
+    "isIcu": true,
+    "validPeriod": [
+      {
+        "validFrom": "1984-02-01",
+        "validTo": "1984-02-01"
+      }
+    ]
+  },
+  "POLST12": {
+    "display": "Pol 12",
+    "isIcu": false,
+    "validPeriod": [
+      {
+        "validFrom": "1984-02-01"
+      }
+    ]
+  },
+  "POLST22": {
+    "display": "Pol 22",
+    "validPeriod": [
+      {
+        "validFrom": "2000-02-02"
+      },
+      {
+        "validFrom": "1984-02-02",
+        "validTo": "1990-02-01"
+      }
+    ]
+  }
+}
