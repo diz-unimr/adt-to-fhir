@@ -1,0 +1,16 @@
+services:
+
+  adt-to-fhir:
+    image: ${ADT_TO_FHIR_IMAGE:-ghcr.io/diz-unimr/adt-to-fhir}:${ADT_TO_FHIR_TAG:-latest}
+    container_name: adt-to-fhir
+    restart: unless-stopped
+    environment:
+      RUST_BACKTRACE: 0
+
+    volumes:
+      # app.yaml zum Überschreiben der Default-Konfiguration (optional, siehe README)
+      # - ./app.yaml:/app/app.yaml:ro
+      # TLS-Zertifikate für Kafka, falls security_protocol != plaintext
+      # - ./cert:/app/cert:ro
+      - ./InfoStation.json:/app/resources/mapping/InfoStation.json:ro
+      - ./InfoByAbteilungskuerzel.json:/app/resources/mapping/InfoByAbteilungskuerzel.json:ro
