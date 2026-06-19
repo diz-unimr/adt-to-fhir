@@ -466,6 +466,13 @@ fn fab_ref(fab: &str, config: &Fhir) -> Result<Reference, MappingError> {
 }
 
 fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
+    if let Some(bed_status) = query(msg, PV1_2)
+        && bed_status.eq("O")
+    {
+        // ambulatory has no admission reason or discharge status
+        return Ok(None);
+    }
+
     let discharge = map_entlassgrund(msg)?;
 
     let hospitalization = EncounterHospitalization::builder()
@@ -1651,5 +1658,16 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         });
 
         //                    .eq("http://fhir.de/ValueSet/Diagnosesubtyp")
+    }
+    #[test]
+    fn test_map_encounter_class() {
+        let hl7 = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
+EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
+PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
+PV1|1|V|^^^KJM^KLINIKUM^|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||1000|9||||202511022120|202511022120||||||A
+PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000||||||||||N||I||||||||||||Y"#;
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).unwrap();
+        let res = map_encounter_class(&msg).unwrap();
+        assert_eq!(res.code.as_ref().unwrap(), "AMB");
     }
 }
