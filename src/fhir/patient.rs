@@ -63,7 +63,6 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
                 &patch,
             )?])
         }
-        // todo error?
         MessageType::A11
         // patient stays unchanged
         | MessageType::A12
@@ -72,7 +71,10 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         // therefore we can safely skip this on.
         | MessageType::A13
         | MessageType::A14
-        | MessageType::A27 => {
+        | MessageType::A21
+        | MessageType::A22
+        | MessageType::A27
+        | MessageType::A28 => {
             // ignore
 
             // A11 & A27 should not create any patient resource
