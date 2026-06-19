@@ -65,6 +65,8 @@ pub(crate) enum ParsingError {
 pub(crate) enum MessageAccessError {
     #[error("Missing message segment {0}")]
     MissingMessageSegment(String),
+    #[error("Missing message field value at {0}")]
+    MissingMessageValue(String),
     #[error(transparent)]
     MessageTypeError(#[from] MessageTypeError),
     #[error("Message content '{0}' at {1} is unsupported")]
