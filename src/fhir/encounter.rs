@@ -466,6 +466,13 @@ fn fab_ref(fab: &str, config: &Fhir) -> Result<Reference, MappingError> {
 }
 
 fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>, MappingError> {
+    if let Some(bed_status) = query(msg, PV1_2)
+        && bed_status.eq("O")
+    {
+        // ambulatory has no admission reason or discharge status
+        return Ok(None);
+    }
+
     let discharge = map_entlassgrund(msg)?;
 
     let hospitalization = EncounterHospitalization::builder()
