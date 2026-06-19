@@ -1,4 +1,5 @@
 use crate::config::Fhir;
+use crate::error::MessageAccessError::MissingMessageValue;
 use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::encounter::EncounterType::{Fachabteilungskontakt, Versorgungsstellenkontakt};
 use crate::fhir::location::{
@@ -73,7 +74,8 @@ pub(super) fn map(
     resources: &ResourceMap,
 ) -> Result<Vec<BundleEntry>, MappingError> {
     let mut result: Vec<BundleEntry> = vec![];
-    if is_begleitperson(msg).is_ok_and(|v| v) {
+
+    if should_msg_be_skipped(msg)? {
         return Ok(result);
     }
 
@@ -142,6 +144,26 @@ pub(super) fn map(
 
         _ => Ok(result),
     }
+}
+
+fn should_msg_be_skipped(msg: &Message) -> Result<bool, ParsingError> {
+    if is_begleitperson(msg).is_ok_and(|v| v) {
+        log!(
+            Level::Debug,
+            "skipping message with id {}, since it is for companion person",
+            get_message_key(msg)?
+        );
+        return Ok(true);
+    }
+    if query(msg, PV1_44).is_none() {
+        log!(
+            Level::Debug,
+            "skipping message with id {}, since encounter has no stat date ",
+            get_message_key(msg)?
+        );
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
@@ -529,7 +551,9 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     let end: Option<DateTime>;
     match lvl {
         EncounterType::Einrichtungskontakt => {
-            start = parse_datetime(query(msg, PV1_44).ok_or(anyhow!("empty datetime in PV1.44"))?)?;
+            start = parse_datetime(
+                query(msg, PV1_44).ok_or(MissingMessageValue("PV1.44".to_string()))?,
+            )?;
 
             end = match query(msg, PV1_45) {
                 Some(end) => Some(parse_datetime(end)?),
@@ -537,7 +561,8 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
             };
         }
         EncounterType::Fachabteilungskontakt | EncounterType::Versorgungsstellenkontakt => {
-            start = parse_datetime(query(msg, ZBE_2).ok_or(anyhow!("empty datetime in ZBE-2"))?)?;
+            start =
+                parse_datetime(query(msg, ZBE_2).ok_or(MissingMessageValue("ZBE-2".to_string()))?)?;
             end = match query(msg, ZBE_3) {
                 Some(end) => Some(parse_datetime(end)?),
                 None => {
@@ -582,7 +607,7 @@ fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
 }
 
 fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
-    let code = query(msg, PV1_2).ok_or(anyhow!("empty encounter_class value in PV1.2"))?;
+    let code = query(msg, PV1_2).ok_or(MissingMessageValue("PV1.2".to_string()))?;
     match code {
         "I" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())

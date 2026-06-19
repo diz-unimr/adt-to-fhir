@@ -1,6 +1,7 @@
 use crate::config::Fhir;
 use crate::error::MappingError;
 use crate::error::MessageAccessError;
+use crate::error::MessageAccessError::MissingMessageValue;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{
     bundle_entry, conditional_reference, get_cc_with_one_code, parse_date, parse_datetime,
@@ -202,10 +203,7 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         .value(
             query(msg, PID_2)
                 .map(String::from)
-                .ok_or(MappingError::Other(
-                    // .ok_or(MappingError::MessageError(UnsupportedContentError(
-                    anyhow!("empty pid"),
-                ))?,
+                .ok_or(MissingMessageValue("PID.2".to_string()))?,
         )
         .r#type(get_cc_with_one_code(
             "MR".to_string(),
