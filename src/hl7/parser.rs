@@ -155,6 +155,10 @@ pub enum MessageType {
     A13,
     /// PendingAdmit
     A14,
+    /// Beginn patient on leave
+    A21,
+    /// End patient on leave
+    A22,
     /// CancelPendingAdmit
     A27,
     /// AddPersonInformation
@@ -198,6 +202,8 @@ impl FromStr for MessageType {
             "A12" => Ok(A12),
             "A13" => Ok(A13),
             "A14" => Ok(A14),
+            "A21" => Ok(A21),
+            "A22" => Ok(A22),
             "A27" => Ok(A27),
             "A28" => Ok(A28),
             "A29" => Ok(A29),
