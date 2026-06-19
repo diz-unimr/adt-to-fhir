@@ -582,7 +582,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
             .code("IMP".to_string())
             .display("inpatient encounter".to_string())
             .build()?),
-        "O" | "NS" | "VS" => Ok(Coding::builder()
+        "O" | "NS" | "VS" | "V" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
             .code("AMB".to_string())
             .display("ambulatory".to_string())
@@ -662,7 +662,7 @@ fn map_kontaktart(
                     .display("Untersuchung und Behandlung".to_string())
                     .build()?,
             )),
-            "VS" => Ok(Some(
+            "V" | "VS" => Ok(Some(
                 Coding::builder()
                     .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
                     .code("vorstationaer".to_string())
