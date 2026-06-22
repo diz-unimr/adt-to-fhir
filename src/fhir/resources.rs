@@ -1,7 +1,9 @@
+use crate::config::{CheckMode, Fhir};
 use crate::error::MappingError;
 use crate::error::MappingError::MissingResourceError;
 use chrono::NaiveDate;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
+use log::{Level, log};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -83,18 +85,26 @@ impl ResourceMap {
     pub(crate) fn map_fab_schluessel(
         &self,
         code: &str,
+        msg_id: &str,
+        config: &Fhir,
     ) -> Result<Option<CodeableConcept>, MappingError> {
         let key = self.find_key(code);
 
         if let Some(code) = key {
-            let dep = self
-                .department_map
-                .get(code.as_str())
-                .ok_or(MissingResourceError {
-                    resource: "Fachabteilungsschlüssel".into(),
-                    value: code,
-                })?;
+            let dep = match self.department_map.get(code.as_str()) {
+                Some(dep) => dep,
+                None => {
+                    error_if_strict(config, &code, msg_id)?; // gibt Err zurück (Strict) oder Ok(()) nach Logging (Lenient)
+                    return Ok(None);
+                }
+            };
+
             if dep.fachabteilungs_schluessel.is_empty() {
+                log!(
+                    Level::Error,
+                    "Fachabteilungsschlüssel für '{}' ist leer in Mapping Datei bitte nachtragen",
+                    code
+                );
                 return Ok(None);
             }
 
@@ -113,10 +123,10 @@ impl ResourceMap {
                     .build()?,
             ))
         } else {
-            Err(MissingResourceError {
-                resource: "InfoByAbteilungskuerzel".into(),
-                value: code.into(),
-            })
+            match error_if_strict(config, code, msg_id) {
+                Ok(c) => Ok(c),
+                Err(e) => Err(e),
+            }
         }
     }
 
@@ -147,6 +157,42 @@ impl ResourceMap {
         search_code
     }
 }
+
+fn error_if_strict(
+    config: &Fhir,
+    code: &str,
+    msg_id: &str,
+) -> Result<Option<CodeableConcept>, MappingError> {
+    match config.check_mode {
+        CheckMode::Strict => Err(MissingResourceError {
+            resource: "Fachabteilungsschlüssel".into(),
+            value: code.to_string(),
+        }),
+        CheckMode::Lenient => {
+            log!(
+                Level::Error,
+                "Fachabteilungsschlüssel der Nachricht {} fehlt für Code '{}' setze '3700 Sonstige Fachabteilung 3700'",
+                msg_id,
+                code
+            );
+            Ok(Some(
+                CodeableConcept::builder()
+                    .coding(vec![Some(
+                        Coding::builder()
+                            .system(
+                                "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
+                                    .to_string(),
+                            )
+                            .code("3700".to_string())
+                            .display("Sonstige Fachabteilung".to_string())
+                            .build()?,
+                    )])
+                    .build()?,
+            ))
+        }
+    }
+}
+
 pub(crate) fn is_valid_date(period: &ValidPeriod, date: &NaiveDate) -> bool {
     date.ge(&period.valid_from)
         && (period.valid_to.is_none() || date.le(&period.valid_to.unwrap_or(NaiveDate::MAX)))
@@ -176,10 +222,12 @@ fn read_mapping_resource(file_name: &str) -> Result<String, anyhow::Error> {
 mod tests {
     use super::*;
     use crate::fhir::resources::{Department, ResourceMap};
+    use crate::test_utils::tests::get_test_config;
     use std::collections::HashMap;
 
     #[test]
     fn test_map_fab_schluessel() {
+        let mut config = get_test_config();
         let resources = ResourceMap {
             department_map: HashMap::from([
                 (
@@ -208,7 +256,7 @@ mod tests {
             .unwrap();
 
         let actual = resources
-            .map_fab_schluessel("POL")
+            .map_fab_schluessel("POL", "1234", &config)
             .unwrap()
             .unwrap()
             .coding
@@ -220,7 +268,7 @@ mod tests {
         assert_eq!(actual, expected);
 
         let actual = resources
-            .map_fab_schluessel("POLAMB")
+            .map_fab_schluessel("POLAMB", "1234", &config)
             .unwrap()
             .unwrap()
             .coding
@@ -238,7 +286,7 @@ mod tests {
             .build()
             .unwrap();
         let actual = resources
-            .map_fab_schluessel("MICROYXZ")
+            .map_fab_schluessel("MICROYXZ", "1234", &config)
             .unwrap()
             .unwrap()
             .coding
@@ -248,6 +296,42 @@ mod tests {
             .unwrap();
 
         assert_eq!(actual, expected);
+
+        match resources.map_fab_schluessel("does not exist", "1234", &config) {
+            Ok(result) => panic!(
+                "check mode strict should produce an error! but got: {:?}",
+                result
+            ),
+            Err(MappingError::MissingResourceError {
+                resource: _,
+                value: v,
+            }) => {
+                assert_eq!(v, "does not exist", "Unexpected value");
+            }
+
+            Err(error) => panic!("did not expect this error {:?}", error),
+        }
+
+        config.check_mode = CheckMode::Lenient;
+        match resources.map_fab_schluessel("does not exist", "1234", &config) {
+            Ok(result) => {
+                let actual = result.unwrap().coding.first().unwrap().clone().unwrap();
+                let expected = Coding::builder()
+                    .system(
+                        "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert".into(),
+                    )
+                    .code("3700".into())
+                    .display("Sonstige Fachabteilung".into())
+                    .build()
+                    .unwrap();
+                assert_eq!(actual, expected);
+            }
+
+            Err(error) => panic!(
+                "CheckMode lenient should not produce an error but got: {:?}",
+                error
+            ),
+        }
     }
     #[test]
     fn test_init_ward_map() {
