@@ -669,6 +669,7 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
             "a07_nachstationaer_test.hl7",
             "a11_test.hl7",
             "a34_test.hl7",
+            "a38_test.hl7",
         ];
         for test_file in test_files {
             let binding = read_test_resource(test_file);

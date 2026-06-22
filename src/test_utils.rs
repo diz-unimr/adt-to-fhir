@@ -1,8 +1,8 @@
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::config::{
-        FallConfig, Fhir, LocationConfig, ObservationConfig, OrganizationConfig, PatientConfig,
-        SystemConfig,
+        CheckMode, FallConfig, Fhir, LocationConfig, ObservationConfig, OrganizationConfig,
+        PatientConfig, SystemConfig,
     };
     use crate::fhir::resources::{Department, ResourceMap, ValidPeriod, Ward};
     use chrono::NaiveDate;
@@ -15,6 +15,7 @@ pub(crate) mod tests {
 
     pub fn get_test_config() -> Fhir {
         Fhir {
+            check_mode: CheckMode::Strict,
             facility_id: "260620431".to_string(),
             meta_source: "test".to_string(),
             person: PatientConfig {

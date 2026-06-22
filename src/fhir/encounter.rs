@@ -108,9 +108,12 @@ pub(super) fn map(
             Ok(result)
         }
         // create only basic encounter data for delete
-        MessageType::A11 | MessageType::A27 | MessageType::A12 => {
+        MessageType::A11 | MessageType::A27 | MessageType::A12 | MessageType::A38 => {
             // A12 deletes only  Fachabteilungskontakt & Versorgungsstellenkontakt
-            if message_type == MessageType::A11 || message_type == MessageType::A27 {
+            if message_type == MessageType::A11
+                || message_type == MessageType::A27
+                || message_type == MessageType::A38
+            {
                 let enc_admit =
                     base_encounter(msg, &config, resources, &EncounterType::Einrichtungskontakt)?
                         .build()?;
@@ -335,7 +338,7 @@ fn map_abteilungskontakt(
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Option<Encounter>, MappingError> {
-    if let Some(service_type) = get_service_type(msg, resources)? {
+    if let Some(service_type) = get_service_type(msg, resources, config)? {
         // base encounter
         let mut enc = base_encounter(
             msg,
@@ -364,12 +367,13 @@ fn map_abteilungskontakt(
 fn get_service_type(
     msg: &Message,
     resources: &ResourceMap,
+    config: &Fhir,
 ) -> Result<Option<CodeableConcept>, MappingError> {
     let system_fachabteilungs_schluessel: &str =
         "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
 
     if let Some(fab) = parse_fab(msg) {
-        match resources.map_fab_schluessel(fab) {
+        match resources.map_fab_schluessel(fab, get_message_key(msg)?, config) {
             Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
             Err(e) => return Err(e),
             Ok(None) => {}
@@ -1018,7 +1022,7 @@ fn map_diagnose_local_codes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FallConfig, LocationConfig, PatientConfig, SystemConfig};
+    use crate::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use hl7_parser::Message;
@@ -1038,6 +1042,7 @@ ZBE|zbe_id^SAP-ISH~615^MEDOS|20030901163000||UPDATE"#;
         let msg = Message::parse_with_lenient_newlines(msg, true).unwrap();
 
         let config = Fhir {
+            check_mode: Default::default(),
             fall: FallConfig {
                 einrichtungskontakt: SystemConfig {
                     system: "einrichtungskontakt".into(),
@@ -1303,7 +1308,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let actual = get_service_type(&msg, &get_dummy_resources())
+        let actual = get_service_type(&msg, &get_dummy_resources(), &get_test_config())
             .unwrap()
             .and_then(|c| {
                 c.coding
@@ -1325,7 +1330,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let actual = get_service_type(&msg, &get_dummy_resources())
+        let actual = get_service_type(&msg, &get_dummy_resources(), &get_test_config())
             .unwrap()
             .and_then(|c| {
                 c.coding
@@ -1342,12 +1347,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         let input = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
 PID|1|9999999|9999999|88888888|Nachname^Vorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
-PV1|1|I|POL1234^BSP-2-2^2^XXX^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01||||9||||202511022120|202511022120||||||A
+PV1|1|I|XXX1234^BSP-2-2^2^XXX^KLINIKUM^961640|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01||||9||||202511022120|202511022120||||||A
 ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let actual = get_service_type(&msg, &get_dummy_resources());
+        let mut config = get_test_config();
+        let actual = get_service_type(&msg, &get_dummy_resources(), &config);
 
         assert!(matches!(
             actual,
@@ -1356,6 +1362,29 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
                 value: _
             })
         ));
+
+        config.check_mode = CheckMode::Lenient;
+
+        let expected = CodeableConcept::builder()
+            .coding(vec![Some(
+                Coding::builder()
+                    .system(
+                        "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert".into(),
+                    )
+                    .code("3700".into())
+                    .display("Sonstige Fachabteilung".into())
+                    .build()
+                    .unwrap(),
+            )])
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            expected,
+            get_service_type(&msg, &get_dummy_resources(), &config)
+                .unwrap()
+                .unwrap()
+        );
     }
 
     #[test]

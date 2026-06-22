@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use config::{Config, Environment, File};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 #[derive(Default, Debug, Deserialize, Clone)]
@@ -24,6 +24,8 @@ pub(crate) struct Kafka {
 
 #[derive(Default, Deserialize, Clone)]
 pub(crate) struct Fhir {
+    #[serde(default)]
+    pub(crate) check_mode: CheckMode,
     pub(crate) facility_id: String,
     pub(crate) person: PatientConfig,
     pub(crate) fall: FallConfig,
@@ -90,6 +92,13 @@ pub(crate) struct AppConfig {
     pub(crate) kafka: Kafka,
     pub(crate) fhir: Fhir,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckMode {
+    #[default]
+    Strict,
+    Lenient,
+}
 
 impl AppConfig {
     pub(crate) fn new() -> anyhow::Result<Self> {
@@ -120,7 +129,12 @@ mod tests {
 
     #[test]
     fn default_config_validates() {
-        assert!(AppConfig::new().is_ok());
+        match AppConfig::new() {
+            Ok(_) => {}
+            Err(e) => {
+                panic!("{}", e)
+            }
+        }
     }
 
     #[test]

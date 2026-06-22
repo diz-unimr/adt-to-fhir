@@ -74,7 +74,8 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         | MessageType::A21
         | MessageType::A22
         | MessageType::A27
-        | MessageType::A28 => {
+        | MessageType::A28
+        | MessageType::A38 => {
             // ignore
 
             // A11 & A27 should not create any patient resource
@@ -355,10 +356,9 @@ fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, Map
 
         (multi_birth_flag, Some(multi_birth_number)) => {
             match multi_birth_flag {
-                MultiBirthFlags::No => warn!(
-                    "MSH-ID {:?}: Multi-birth flag is 'N' but birth number is present!",
-                    msg_id
-                ),
+                MultiBirthFlags::No => {
+                    // most birth data have flag No and birth number 1
+                }
                 MultiBirthFlags::Yes => (),
                 MultiBirthFlags::Unsupported(some_value) => {
                     warn!(
