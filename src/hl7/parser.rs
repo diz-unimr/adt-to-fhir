@@ -147,7 +147,7 @@ pub enum MessageType {
     A07,
     /// PatientUpdate
     A08,
-    /// CancelAdmitVisit
+    /// CancelAdmitOrVisit
     A11,
     /// CancelTransfer
     A12,
@@ -169,6 +169,8 @@ pub enum MessageType {
     A31,
     /// PatientMerge
     A34,
+    /// DeletePreAdmit
+    A38,
     /// MergePatientRecords
     A40,
     /// PatientReassignmentToSingleCase
@@ -209,6 +211,7 @@ impl FromStr for MessageType {
             "A29" => Ok(A29),
             "A31" => Ok(A31),
             "A34" => Ok(A34),
+            "A38" => Ok(A38),
             "A40" => Ok(A40),
             "A45" => Ok(A45),
             "A47" => Ok(A47),
