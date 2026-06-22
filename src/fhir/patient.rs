@@ -355,10 +355,9 @@ fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, Map
 
         (multi_birth_flag, Some(multi_birth_number)) => {
             match multi_birth_flag {
-                MultiBirthFlags::No => warn!(
-                    "MSH-ID {:?}: Multi-birth flag is 'N' but birth number is present!",
-                    msg_id
-                ),
+                MultiBirthFlags::No => {
+                    // most birth data have flag No and birth number 1
+                }
                 MultiBirthFlags::Yes => (),
                 MultiBirthFlags::Unsupported(some_value) => {
                     warn!(
