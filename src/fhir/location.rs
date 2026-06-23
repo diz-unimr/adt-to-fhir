@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::error::MappingError;
+use crate::error::{MappingError, MessageAccessError};
 use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, get_meta,
     is_inpatient_location, parse_fab, resource_ref,
@@ -33,12 +33,10 @@ pub(super) fn map(
 
             // department stays the same - we have only a short contact at another location
             MessageType::A04 => {
-                if let Some(department) = parse_fab(msg) {
-                    r.push(bundle_entry(
-                        map_ward_location(msg, department, &config, resources)?,
-                        EntryRequestType::UpdateAsCreate,
-                    )?);
-                }
+                r.push(bundle_entry(
+                    map_ward_location(msg, &config, resources)?,
+                    EntryRequestType::UpdateAsCreate,
+                )?);
             }
             _ => {
 
@@ -66,15 +64,13 @@ pub(crate) fn create_locations(
 
         if let Some(department) = parse_fab(msg) {
             match (pv1_3_1, pv1_3_2, pv1_3_3) {
-                (Some(_), None, None) => {
-                    result.push(map_ward_location(msg, department, config, resources)?)
-                }
+                (Some(_), None, None) => result.push(map_ward_location(msg, config, resources)?),
                 (Some(pv1_3_1), Some(pv1_3_2), None) => {
-                    result.push(map_ward_location(msg, department, config, resources)?);
+                    result.push(map_ward_location(msg, config, resources)?);
                     result.push(map_room_location(config, pv1_3_1, pv1_3_2)?)
                 }
                 (Some(pv1_3_1), Some(pv1_3_2), Some(pv1_3_3)) => {
-                    result.push(map_ward_location(msg, department, config, resources)?);
+                    result.push(map_ward_location(msg, config, resources)?);
                     result.push(map_room_location(config, pv1_3_1, pv1_3_2)?);
                     result.push(map_bed_location(config, pv1_3_1, pv1_3_2, pv1_3_3)?);
                 }
@@ -107,35 +103,36 @@ fn map_location_type_icu(
 
 pub(crate) fn map_ward_location(
     msg: &Message,
-    department: &str,
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Location, MappingError> {
-    let mut location = Location::builder()
-        .meta(get_meta()?)
-        .physical_type(get_cc_with_one_code(
-            "wa".to_string(),
-            LOCATION_TYPE_SYSTEM.to_string(),
-        )?)
-        .identifier(vec![Some(build_usual_identifier(
-            vec![department],
-            config.location.system_ward.to_string(),
-        )?)])
-        .build()
-        .map_err(MappingError::BuilderError)?;
-    if let Some(icu_coding) = query(msg, PV1_3_1)
-        .and_then(|field_value| map_location_type_icu(field_value, resources).transpose())
-    {
-        location.r#type = icu_coding?;
+    if let (department, Some(ward_id)) = (parse_fab(msg), query(msg, PV1_3_1)) {
+        let mut location = Location::builder()
+            .meta(get_meta()?)
+            .physical_type(get_cc_with_one_code(
+                "wa".to_string(),
+                LOCATION_TYPE_SYSTEM.to_string(),
+            )?)
+            .identifier(vec![Some(build_usual_identifier(
+                vec![ward_id],
+                config.location.system_ward.to_string(),
+            )?)])
+            .build()
+            .map_err(MappingError::BuilderError)?;
+        if let Some(icu_coding) = map_location_type_icu(ward_id, resources).transpose() {
+            location.r#type = icu_coding?;
+        }
+        if let Some(dep_id) = department {
+            location.managing_organization = Some(resource_ref(
+                &ResourceType::Organization,
+                dep_id,
+                config.organization.ward.system.as_str(),
+            )?)
+        }
+        Ok(location)
+    } else {
+        Err(MessageAccessError::MissingMessageValue("PV1_3_1".to_string()).into())
     }
-    if let Some(war_id) = query(msg, PV1_3_1) {
-        location.managing_organization = Some(resource_ref(
-            &ResourceType::Organization,
-            war_id,
-            config.organization.ward.system.as_str(),
-        )?)
-    }
-    Ok(location)
 }
 
 pub(crate) fn map_room_location(
@@ -202,6 +199,7 @@ pub fn to_encounter_location(location: Location) -> Result<EncounterLocation, Ma
 #[cfg(test)]
 mod tests {
     use crate::fhir::location::map;
+    use crate::hl7::parser::{PV1_3_1, query};
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, resource_from};
     use fhir_model::r4b::resources::Location;
     use hl7_parser::Message;
@@ -334,5 +332,19 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
         } else {
             assert!(loca.r#type.is_empty())
         }
+        let x = loca
+            .identifier
+            .clone()
+            .first()
+            .unwrap()
+            .clone()
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap()
+            .clone();
+
+        // check if identifier value is correct
+        assert_eq!(x, query(&msg, PV1_3_1).unwrap());
     }
 }

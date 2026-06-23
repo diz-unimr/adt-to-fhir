@@ -779,7 +779,7 @@ fn map_lvl_3_locations(
     if let Some(department) = parse_fab(msg) {
         // department location should be always available
         locations.push(Some(to_encounter_location(map_ward_location(
-            msg, department, config, resources,
+            msg, config, resources,
         )?)?));
 
         if is_inpatient_location(msg)? {
