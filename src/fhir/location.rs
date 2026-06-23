@@ -62,7 +62,7 @@ pub(crate) fn create_locations(
         let pv1_3_2 = query(msg, PV1_3_2);
         let pv1_3_3 = query(msg, PV1_3_3);
 
-        if let Some(department) = parse_fab(msg) {
+        if let Some(_department) = parse_fab(msg) {
             match (pv1_3_1, pv1_3_2, pv1_3_3) {
                 (Some(_), None, None) => result.push(map_ward_location(msg, config, resources)?),
                 (Some(pv1_3_1), Some(pv1_3_2), None) => {
