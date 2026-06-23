@@ -776,20 +776,20 @@ fn map_lvl_3_locations(
 ) -> Result<Vec<Option<EncounterLocation>>, MappingError> {
     let mut locations: Vec<Option<EncounterLocation>> = vec![];
 
-    if let Some(_department) = parse_fab(msg) {
+    if let (Some(_department), Some(loc)) =
+        (parse_fab(msg), map_ward_location(msg, config, resources)?)
+    {
         // department location should be always available
-        locations.push(Some(to_encounter_location(map_ward_location(
-            msg, config, resources,
-        )?)?));
+        locations.push(Some(to_encounter_location(loc)?));
 
         if is_inpatient_location(msg)? {
             let ward = query(msg, PV1_3_1);
             let room = query(msg, PV1_3_2);
             let bed = query(msg, PV1_3_3);
-            if let (Some(ward), Some(room)) = (ward, room) {
-                locations.push(Some(to_encounter_location(map_room_location(
-                    config, ward, room,
-                )?)?));
+            if let (Some(ward), Some(room)) = (ward, room)
+                && let Some(l) = map_room_location(config, ward, room)?
+            {
+                locations.push(Some(to_encounter_location(l)?));
             }
 
             if let (Some(ward), Some(room), Some(bed)) = (ward, room, bed) {

@@ -10,6 +10,7 @@ use anyhow::anyhow;
 use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
 use fhir_model::r4b::types::{CodeableConcept, Reference};
 use hl7_parser::Message;
+use log::{Level, log};
 
 pub(super) fn map(
     msg: &Message,
@@ -33,10 +34,9 @@ pub(super) fn map(
 
             // department stays the same - we have only a short contact at another location
             MessageType::A04 => {
-                r.push(bundle_entry(
-                    map_ward_location(msg, &config, resources)?,
-                    EntryRequestType::UpdateAsCreate,
-                )?);
+                if let Some(loc) = map_ward_location(msg, &config, resources)? {
+                    r.push(bundle_entry(loc, EntryRequestType::UpdateAsCreate)?);
+                }
             }
             _ => {
 
@@ -62,16 +62,31 @@ pub(crate) fn create_locations(
         let pv1_3_2 = query(msg, PV1_3_2);
         let pv1_3_3 = query(msg, PV1_3_3);
 
-        if let Some(_department) = parse_fab(msg) {
+        if parse_fab(msg).is_some() {
             match (pv1_3_1, pv1_3_2, pv1_3_3) {
-                (Some(_), None, None) => result.push(map_ward_location(msg, config, resources)?),
-                (Some(pv1_3_1), Some(pv1_3_2), None) => {
-                    result.push(map_ward_location(msg, config, resources)?);
-                    result.push(map_room_location(config, pv1_3_1, pv1_3_2)?)
+                (Some(_), None, None) => {
+                    if let Some(loc) = map_ward_location(msg, config, resources)? {
+                        result.push(loc);
+                    }
                 }
+
+                (Some(pv1_3_1), Some(pv1_3_2), None) => {
+                    if let Some(loc) = map_ward_location(msg, config, resources)? {
+                        result.push(loc);
+                    }
+                    if let Some(loc) = map_room_location(config, pv1_3_1, pv1_3_2)? {
+                        result.push(loc);
+                    }
+                }
+
                 (Some(pv1_3_1), Some(pv1_3_2), Some(pv1_3_3)) => {
-                    result.push(map_ward_location(msg, config, resources)?);
-                    result.push(map_room_location(config, pv1_3_1, pv1_3_2)?);
+                    if let Some(loc) = map_ward_location(msg, config, resources)? {
+                        result.push(loc);
+                    }
+                    if let Some(loc) = map_room_location(config, pv1_3_1, pv1_3_2)? {
+                        result.push(loc);
+                    }
+
                     result.push(map_bed_location(config, pv1_3_1, pv1_3_2, pv1_3_3)?);
                 }
                 (_, _, _) => {}
@@ -105,7 +120,7 @@ pub(crate) fn map_ward_location(
     msg: &Message,
     config: &Fhir,
     resources: &ResourceMap,
-) -> Result<Location, MappingError> {
+) -> Result<Option<Location>, MappingError> {
     if let (department, Some(ward_id)) = (parse_fab(msg), query(msg, PV1_3_1)) {
         let mut location = Location::builder()
             .meta(get_meta()?)
@@ -129,9 +144,9 @@ pub(crate) fn map_ward_location(
                 config.organization.ward.system.as_str(),
             )?)
         }
-        Ok(location)
+        Ok(Some(location))
     } else {
-        Err(MessageAccessError::MissingMessageValue("PV1_3_1".to_string()).into())
+        Ok(None)
     }
 }
 
@@ -139,8 +154,8 @@ pub(crate) fn map_room_location(
     config: &Fhir,
     pv1_3_1: &str,
     pv1_3_2: &str,
-) -> Result<Location, MappingError> {
-    Location::builder()
+) -> Result<Option<Location>, MappingError> {
+    match Location::builder()
         .meta(get_meta()?)
         .physical_type(get_cc_with_one_code(
             "ro".to_string(),
@@ -152,6 +167,17 @@ pub(crate) fn map_room_location(
         )?)])
         .build()
         .map_err(MappingError::BuilderError)
+    {
+        Ok(location) => Ok(Some(location)),
+        Err(e) => {
+            log!(
+                Level::Warn,
+                "Mapping of 'location room' failed with: {:?}",
+                e
+            );
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) fn map_bed_location(
