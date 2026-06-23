@@ -776,7 +776,7 @@ fn map_lvl_3_locations(
 ) -> Result<Vec<Option<EncounterLocation>>, MappingError> {
     let mut locations: Vec<Option<EncounterLocation>> = vec![];
 
-    if let Some(department) = parse_fab(msg) {
+    if let Some(_department) = parse_fab(msg) {
         // department location should be always available
         locations.push(Some(to_encounter_location(map_ward_location(
             msg, config, resources,
