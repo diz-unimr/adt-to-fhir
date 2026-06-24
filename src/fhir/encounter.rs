@@ -1061,7 +1061,7 @@ ZBE|zbe_id^SAP-ISH~615^MEDOS|20030901163000||UPDATE"#;
         let msg = Message::parse_with_lenient_newlines(msg, true).unwrap();
 
         let config = Fhir {
-            check_mode: Default::default(),
+            check_mode: CheckMode::Strict,
             fall: FallConfig {
                 einrichtungskontakt: SystemConfig {
                     system: "einrichtungskontakt".into(),

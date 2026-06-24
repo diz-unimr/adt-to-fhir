@@ -22,9 +22,8 @@ pub(crate) struct Kafka {
     pub(crate) num_partitions: i32,
 }
 
-#[derive(Default, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub(crate) struct Fhir {
-    #[serde(default)]
     pub(crate) check_mode: CheckMode,
     pub(crate) facility_id: String,
     pub(crate) person: PatientConfig,
@@ -86,16 +85,15 @@ pub(crate) struct Ssl {
     pub(crate) key_password: Option<String>,
 }
 
-#[derive(Default, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub(crate) struct AppConfig {
     pub(crate) app: App,
     pub(crate) kafka: Kafka,
     pub(crate) fhir: Fhir,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CheckMode {
-    #[default]
     Strict,
     Lenient,
 }
