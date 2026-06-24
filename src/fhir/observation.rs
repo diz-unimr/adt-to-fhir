@@ -12,7 +12,7 @@ use anyhow::anyhow;
 use fhir_model::r4b::codes::ObservationStatus;
 use fhir_model::r4b::resources::{
     BundleEntry, Observation, ObservationBuilder, ObservationEffective, ObservationValue,
-    ResourceType,
+    PatientDeceased, ResourceType,
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity, Reference};
 use hl7_parser::Message;
@@ -160,7 +160,7 @@ fn map_vital_status(
     pid: &str,
     visit: &str,
 ) -> Result<Option<Observation>, MappingError> {
-    if map_deceased(msg)?.is_none() {
+    if map_deceased(msg)?.is_none() || map_deceased(msg)? == Some(PatientDeceased::Boolean(false)) {
         return match message_type(msg).ok() {
             // is alive observation will be created at patient admission,
             // discharge, movement, registration
