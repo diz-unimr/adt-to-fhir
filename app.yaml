@@ -1,7 +1,6 @@
 app:
   log_level: info
   telemetry_endpoint: http://localhost:4317
-  check_mode: lenient
 
 kafka:
   brokers: localhost:9092
@@ -18,6 +17,7 @@ kafka:
   num_partitions: 1
 
 fhir:
+  check_mode: lenient
   meta_source: "#orbis_adt"
   facility_id: "12345678"
   person:

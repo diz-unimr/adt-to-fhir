@@ -8,8 +8,6 @@ services:
       RUST_BACKTRACE: 0
 
     volumes:
-      # app.yaml zum Überschreiben der Default-Konfiguration (optional, siehe README)
-      # - ./app.yaml:/app/app.yaml:ro
       # TLS-Zertifikate für Kafka, falls security_protocol != plaintext
       # - ./cert:/app/cert:ro
       - ./InfoStation.json:/app/resources/mapping/InfoStation.json:ro
