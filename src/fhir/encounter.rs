@@ -21,7 +21,7 @@ use crate::hl7::parser::{
 use anyhow::anyhow;
 use chrono::NaiveDate;
 use fhir_model::DateTime;
-use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
+use fhir_model::r4b::codes::{EncounterLocationStatus, EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterBuilder, EncounterDiagnosis, EncounterHospitalization,
     EncounterLocation, ResourceType,
@@ -452,10 +452,8 @@ fn map_level_identifier(
         EncounterType::Einrichtungskontakt => {
             (&config.fall.einrichtungskontakt.system, visit_number)
         }
-        EncounterType::Fachabteilungskontakt => (&config.fall.abteilungskontakt.system, zbe_id?),
-        EncounterType::Versorgungsstellenkontakt => {
-            (&config.fall.versorgungsstellenkontakt.system, zbe_id?)
-        }
+        Fachabteilungskontakt => (&config.fall.abteilungskontakt.system, zbe_id?),
+        Versorgungsstellenkontakt => (&config.fall.versorgungsstellenkontakt.system, zbe_id?),
     };
 
     Ok(Identifier::builder()
@@ -780,7 +778,10 @@ fn map_lvl_3_locations(
         (parse_fab(msg), map_ward_location(msg, config, resources)?)
     {
         // department location should be always available
-        locations.push(Some(to_encounter_location(loc)?));
+        let mut department_location = to_encounter_location(loc)?;
+        department_location.status = Some(get_location_status(msg)?);
+
+        locations.push(Some(department_location));
 
         if is_inpatient_location(msg)? {
             let ward = query(msg, PV1_3_1);
@@ -789,13 +790,16 @@ fn map_lvl_3_locations(
             if let (Some(ward), Some(room)) = (ward, room)
                 && let Some(l) = map_room_location(config, ward, room)?
             {
-                locations.push(Some(to_encounter_location(l)?));
+                let mut room_location = to_encounter_location(l)?;
+                room_location.status = Some(get_location_status(msg)?);
+                locations.push(Some(room_location));
             }
 
             if let (Some(ward), Some(room), Some(bed)) = (ward, room, bed) {
-                locations.push(Some(to_encounter_location(map_bed_location(
-                    config, ward, room, bed,
-                )?)?));
+                let mut bed_location =
+                    to_encounter_location(map_bed_location(config, ward, room, bed)?)?;
+                bed_location.status = Some(get_location_status(msg)?);
+                locations.push(Some(bed_location));
             }
         }
         Ok(locations)
@@ -806,6 +810,21 @@ fn map_lvl_3_locations(
             get_message_key(msg)?
         );
         Ok(locations)
+    }
+}
+
+fn get_location_status(msg: &Message) -> Result<EncounterLocationStatus, MessageAccessError> {
+    match message_type(msg) {
+        Ok(MessageType::A04) | Ok(MessageType::A03) => Ok(EncounterLocationStatus::Completed),
+        Ok(_) => {
+            let movement_end = query(msg, ZBE_3);
+            if movement_end.is_some() {
+                Ok(EncounterLocationStatus::Completed)
+            } else {
+                Ok(EncounterLocationStatus::Active)
+            }
+        }
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -1723,5 +1742,47 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
         let msg = Message::parse_with_lenient_newlines(&hl7, true).unwrap();
         let res = map_encounter_class(&msg).unwrap();
         assert_eq!(res.code.as_ref().unwrap(), "AMB");
+    }
+    #[test]
+    fn test_location_status() {
+        let raw_msg = read_test_resource("a03_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&raw_msg, true).unwrap();
+
+        assert_eq!(
+            get_location_status(&msg).unwrap(),
+            EncounterLocationStatus::Completed
+        );
+
+        let raw_msg = read_test_resource("a04_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&raw_msg, true).unwrap();
+
+        assert_eq!(
+            get_location_status(&msg).unwrap(),
+            EncounterLocationStatus::Completed
+        );
+
+        let raw_msg = read_test_resource("a01_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&raw_msg, true).unwrap();
+
+        assert_eq!(
+            get_location_status(&msg).unwrap(),
+            EncounterLocationStatus::Active
+        );
+
+        let raw_msg = read_test_resource("a08_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&raw_msg, true).unwrap();
+
+        assert_eq!(
+            get_location_status(&msg).unwrap(),
+            EncounterLocationStatus::Completed
+        );
+
+        let raw_msg = read_test_resource("a02_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&raw_msg, true).unwrap();
+
+        assert_eq!(
+            get_location_status(&msg).unwrap(),
+            EncounterLocationStatus::Active
+        );
     }
 }

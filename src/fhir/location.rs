@@ -1,5 +1,5 @@
 use crate::config::Fhir;
-use crate::error::{MappingError, MessageAccessError};
+use crate::error::MappingError;
 use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, get_meta,
     is_inpatient_location, parse_fab, resource_ref,
