@@ -272,8 +272,10 @@ pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
     }
 }
 
-pub(crate) fn get_meta() -> Result<Meta, MappingError> {
-    Ok(Meta::builder().source("#orbis".to_string()).build()?)
+pub(crate) fn get_meta(config: &Fhir) -> Result<Meta, MappingError> {
+    Ok(Meta::builder()
+        .source(config.meta_source.to_string())
+        .build()?)
 }
 pub(crate) fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
     let pid = query(msg, PID_2).ok_or(anyhow!("missing pid value in PID.2"))?;

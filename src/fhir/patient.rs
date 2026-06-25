@@ -280,6 +280,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
         .meta(
             Meta::builder()
                 .profile(vec![Some(config.person.profile.to_owned())])
+                .source(config.meta_source.to_string())
                 .build()?,
         )
         .identifier(create_patient_identifiers(msg, config)?)

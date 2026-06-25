@@ -179,6 +179,7 @@ fn map_vital_status(
                     )?)])
                     .meta(
                         Meta::builder()
+                            .source(config.meta_source.to_string())
                             .profile(vec![Some(config.observation.profile_vital_status.clone())])
                             .build()?,
                     )
@@ -319,7 +320,12 @@ fn get_birth_obs_builder(
     config: &Fhir,
 ) -> Result<ObservationBuilder, MappingError> {
     Ok(get_basic_observation_builder(msg)?
-        .meta(Meta::builder().profile(vec![Some(profile)]).build()?)
+        .meta(
+            Meta::builder()
+                .profile(vec![Some(profile)])
+                .source(config.meta_source.to_string())
+                .build()?,
+        )
         .identifier(vec![Some(identifier)])
         .category(vec![Some(get_cc_with_one_code(
             VITAL_SIGNS_CATEGORY_CODE.to_string(),
