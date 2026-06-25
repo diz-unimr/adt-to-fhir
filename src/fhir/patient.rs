@@ -550,6 +550,7 @@ fn map_versicherungsdaten(
                     Identifier::builder()
                         .system("http://fhir.de/sid/arge-ik/iknr".to_string())
                         .value(id.to_string())
+                        .r#use(IdentifierUse::Official)
                         .r#type(
                             CodeableConcept::builder()
                                 .coding(vec![
