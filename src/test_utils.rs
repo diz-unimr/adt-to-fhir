@@ -74,6 +74,13 @@ pub(crate) mod tests {
                     },
                 ),
                 (
+                    "HNO".to_string(),
+                    Department {
+                        abteilungs_bezeichnung: "Hals-, Nasen-, Ohrenheilkunde".to_string(),
+                        fachabteilungs_schluessel: "2600".to_string(),
+                    },
+                ),
+                (
                     "KLINIKUM".to_string(),
                     Department {
                         abteilungs_bezeichnung: "".to_string(),

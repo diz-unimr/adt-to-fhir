@@ -123,7 +123,7 @@ pub(crate) fn map_ward_location(
 ) -> Result<Option<Location>, MappingError> {
     if let (department, Some(ward_id)) = (parse_fab(msg), query(msg, PV1_3_1)) {
         let mut location = Location::builder()
-            .meta(get_meta()?)
+            .meta(get_meta(config)?)
             .physical_type(get_cc_with_one_code(
                 "wa".to_string(),
                 LOCATION_TYPE_SYSTEM.to_string(),
@@ -156,7 +156,7 @@ pub(crate) fn map_room_location(
     pv1_3_2: &str,
 ) -> Result<Option<Location>, MappingError> {
     match Location::builder()
-        .meta(get_meta()?)
+        .meta(get_meta(config)?)
         .physical_type(get_cc_with_one_code(
             "ro".to_string(),
             LOCATION_TYPE_SYSTEM.to_string(),
@@ -187,7 +187,7 @@ pub(crate) fn map_bed_location(
     pv1_3_3: &str,
 ) -> Result<Location, MappingError> {
     Location::builder()
-        .meta(get_meta()?)
+        .meta(get_meta(config)?)
         .physical_type(get_cc_with_one_code(
             "bd".to_string(),
             LOCATION_TYPE_SYSTEM.to_string(),

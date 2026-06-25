@@ -15,8 +15,8 @@ use crate::fhir::terminology::{
 };
 use crate::hl7::parser::{
     MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1, PV1_36_1,
-    PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key,
-    message_type, query,
+    PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
+    get_message_key, message_type, query,
 };
 use anyhow::anyhow;
 use chrono::NaiveDate;
@@ -195,12 +195,14 @@ fn map_einrichtungskontakt(
     enc.hospitalization = map_hospitalization(msg)?;
 
     // Aufnahmegrund
-    enc.extension = vec![
-        Extension::builder()
-            .url("http://fhir.de/StructureDefinition/Aufnahmegrund".to_string())
-            .extension(map_aufnahmegrund(msg).unwrap_or_default())
-            .build()?,
-    ];
+    if let Some(aufnahmegrund) = map_aufnahmegrund(msg)? {
+        enc.extension = vec![
+            Extension::builder()
+                .url("http://fhir.de/StructureDefinition/Aufnahmegrund".to_string())
+                .extension(aufnahmegrund)
+                .build()?,
+        ];
+    }
 
     if let Ok(diagnosis) = map_conditions(msg, config) {
         enc.diagnosis = diagnosis;
@@ -233,23 +235,25 @@ fn map_mothers_encounter(msg: &Message, config: &Fhir) -> Result<Option<Referenc
         None => Ok(None),
     }
 }
-
-fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
+fn map_aufnahmegrund(msg: &Message) -> Result<Option<Vec<Extension>>, MappingError> {
     let mut result = vec![];
 
     // Aufnahmegrund
     // 1. und 2. Stelle
-    if let Some(erste_und_zweite) = query(msg, PV2_3_1)
-        .map(AufnahmeGrundStelle::ErsteUndZweite)
-        .and_then(Option::<Coding>::from)
-        .map(|c| {
+    if let Some(pv2_3_1) = query(msg, PV2_3_1)
+        && check_is_numeric_ascii(pv2_3_1, PV2_3_1)?
+        && let Some(coding) = Option::<Coding>::from(AufnahmeGrundStelle::ErsteUndZweite(pv2_3_1))
+    {
+        result.push(
             Extension::builder()
                 .url("ErsteUndZweiteStelle".to_string())
-                .value(ExtensionValue::Coding(c))
-                .build()
-        })
-    {
-        result.push(erste_und_zweite?);
+                .value(ExtensionValue::Coding(coding))
+                .build()?,
+        );
+    }
+
+    if let Some(r) = query(msg, PV1_4__2_1) {
+        check_is_numeric_ascii(r, PV1_4__2_1)?;
     }
 
     // 3. und 4. Stelle
@@ -289,7 +293,11 @@ fn map_aufnahmegrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
         );
     }
 
-    Ok(result)
+    if result.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(result))
+    }
 }
 
 fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
@@ -1784,5 +1792,63 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             get_location_status(&msg).unwrap(),
             EncounterLocationStatus::Active
         );
+    }
+    #[test]
+    fn a04_period_at_lvl2_lvl3_is_closed() {
+        let raw_msg = read_test_resource("a04_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&raw_msg, true).unwrap();
+        let abteilung = map_abteilungskontakt(&msg, &get_test_config(), &get_dummy_resources())
+            .unwrap()
+            .unwrap();
+
+        assert!(abteilung.period.as_ref().is_some_and(|s| s.start.is_some()));
+        assert!(abteilung.period.as_ref().is_some_and(|s| s.end.is_some()));
+        assert_eq!(abteilung.status, EncounterStatus::Finished);
+
+        let versorgungsstelle =
+            map_versorgungsstellenkontakt(&msg, &get_test_config(), &get_dummy_resources())
+                .unwrap()
+                .unwrap();
+
+        assert!(
+            versorgungsstelle
+                .period
+                .as_ref()
+                .is_some_and(|s| s.start.is_some())
+        );
+        assert_eq!(versorgungsstelle.status, EncounterStatus::Finished);
+        assert!(
+            versorgungsstelle
+                .period
+                .as_ref()
+                .is_some_and(|s| s.end.is_some())
+        );
+
+        let einrichtungskontakt =
+            map_einrichtungskontakt(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
+
+        assert!(
+            einrichtungskontakt
+                .period
+                .as_ref()
+                .is_some_and(|s| s.start.is_some())
+        );
+        assert!(
+            einrichtungskontakt
+                .period
+                .as_ref()
+                .is_some_and(|s| s.end.is_none())
+        );
+        assert_eq!(einrichtungskontakt.status, EncounterStatus::InProgress);
+    }
+    #[test]
+    fn test_admit_extension_empty_ambulatory() {
+        let raw_msg = read_test_resource("a04_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&raw_msg, true).unwrap();
+
+        let einrichtungskontakt =
+            map_einrichtungskontakt(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
+
+        assert!(einrichtungskontakt.extension.is_empty());
     }
 }

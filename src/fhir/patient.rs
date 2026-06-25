@@ -280,6 +280,7 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
         .meta(
             Meta::builder()
                 .profile(vec![Some(config.person.profile.to_owned())])
+                .source(config.meta_source.to_string())
                 .build()?,
         )
         .identifier(create_patient_identifiers(msg, config)?)
@@ -549,6 +550,7 @@ fn map_versicherungsdaten(
                     Identifier::builder()
                         .system("http://fhir.de/sid/arge-ik/iknr".to_string())
                         .value(id.to_string())
+                        .r#use(IdentifierUse::Official)
                         .r#type(
                             CodeableConcept::builder()
                                 .coding(vec![
@@ -858,6 +860,7 @@ IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|
                         Identifier::builder()
                             .system("http://fhir.de/sid/arge-ik/iknr".into())
                             .value("555555555".into())
+                            .r#use(IdentifierUse::Official)
                             .r#type(
                                 CodeableConcept::builder()
                                     .coding(vec![Some(

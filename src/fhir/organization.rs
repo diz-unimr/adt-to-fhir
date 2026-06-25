@@ -3,7 +3,7 @@ use crate::error::MappingError;
 use fhir_model::r4b::codes::IdentifierUse;
 
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, get_cc_with_one_code, parse_fab, resource_ref,
+    EntryRequestType, bundle_entry, get_cc_with_one_code, get_meta, parse_fab, resource_ref,
 };
 use crate::hl7::parser::{PV1_3_1, query};
 use fhir_model::r4b::resources::{BundleEntry, Organization, ResourceType};
@@ -28,6 +28,7 @@ fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organizatio
     if let Some(fab_ref) = parse_fab(msg) {
         Ok(Some(
             Organization::builder()
+                .meta(get_meta(config)?)
                 .identifier(vec![Some(
                     Identifier::builder()
                         .value(fab_ref.to_string())
@@ -52,6 +53,7 @@ fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, Ma
         if let Some(fab_ref) = parse_fab(msg) {
             Ok(Some(
                 Organization::builder()
+                    .meta(get_meta(config)?)
                     .part_of(resource_ref(
                         &ResourceType::Organization,
                         fab_ref,
