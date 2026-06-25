@@ -1785,4 +1785,52 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             EncounterLocationStatus::Active
         );
     }
+    #[test]
+    fn a04_period_at_lvl2_lvl3_is_closed() {
+        let raw_msg = read_test_resource("a04_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&raw_msg, true).unwrap();
+        let abteilung = map_abteilungskontakt(&msg, &get_test_config(), &get_dummy_resources())
+            .unwrap()
+            .unwrap();
+
+        assert!(abteilung.period.as_ref().is_some_and(|s| s.start.is_some()));
+        assert!(abteilung.period.as_ref().is_some_and(|s| s.end.is_some()));
+        assert_eq!(abteilung.status, EncounterStatus::Finished);
+
+        let versorgungsstelle =
+            map_versorgungsstellenkontakt(&msg, &get_test_config(), &get_dummy_resources())
+                .unwrap()
+                .unwrap();
+
+        assert!(
+            versorgungsstelle
+                .period
+                .as_ref()
+                .is_some_and(|s| s.start.is_some())
+        );
+        assert_eq!(versorgungsstelle.status, EncounterStatus::Finished);
+        assert!(
+            versorgungsstelle
+                .period
+                .as_ref()
+                .is_some_and(|s| s.end.is_some())
+        );
+
+        let einrichtungskontakt =
+            map_einrichtungskontakt(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
+
+        assert!(
+            einrichtungskontakt
+                .period
+                .as_ref()
+                .is_some_and(|s| s.start.is_some())
+        );
+        assert!(
+            einrichtungskontakt
+                .period
+                .as_ref()
+                .is_some_and(|s| s.end.is_none())
+        );
+        assert_eq!(einrichtungskontakt.status, EncounterStatus::InProgress);
+    }
 }
