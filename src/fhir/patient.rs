@@ -860,6 +860,7 @@ IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|
                         Identifier::builder()
                             .system("http://fhir.de/sid/arge-ik/iknr".into())
                             .value("555555555".into())
+                            .r#use(IdentifierUse::Official)
                             .r#type(
                                 CodeableConcept::builder()
                                     .coding(vec![Some(

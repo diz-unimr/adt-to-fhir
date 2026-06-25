@@ -314,6 +314,18 @@ pub(crate) fn get_message_key<'a>(msg: &'a Message<'_>) -> Result<&'a str, Parsi
     query(msg, MSH_10).ok_or(ParsingError::Other(anyhow!("failed to parse message key")))
 }
 
+pub(crate) fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, ParsingError> {
+    if !input.is_empty() && input.chars().all(|c| c.is_ascii_digit()) {
+        Ok(true)
+    } else {
+        Err(ParsingError::Other(anyhow!(
+            "input '{}' should be numeric but got '{}'",
+            source,
+            input
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,5 +433,19 @@ EVN|A01|202111221030|202111221029||
         let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
 
         assert!(matches!(get_message_key(&msg), Err(ParsingError::Other(_))));
+    }
+    #[test]
+    fn check_is_numeric_ascii_test() {
+        assert!(check_is_numeric_ascii("01", "test").unwrap());
+
+        if let Err(ParsingError::Other(_)) = check_is_numeric_ascii("", "test-empty") {
+        } else {
+            panic!("check_is_numeric_ascii failed for empty input");
+        }
+
+        if let Err(ParsingError::Other(_)) = check_is_numeric_ascii("a", "test-empty") {
+        } else {
+            panic!("check_is_numeric_ascii failed for alphanumeric input");
+        }
     }
 }
