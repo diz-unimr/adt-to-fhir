@@ -307,6 +307,7 @@ mod tests {
     use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use rstest::rstest;
+    use serde_json::Value;
 
     #[test]
     fn test_parse_datetime() {
@@ -642,6 +643,37 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
             match mapper.map(binding.as_str()) {
                 Ok(Some(bundle)) => {
                     println!("file {} => {:?}", test_file, bundle);
+
+                    let raw: Value = serde_json::from_str(&bundle).unwrap();
+                    let b: Bundle = serde_json::from_value(raw).unwrap();
+                    b.entry.iter().for_each(|entry| {
+                        let resource = entry.clone().unwrap().resource.unwrap();
+
+                        if resource.resource_type() != ResourceType::Parameters {
+                            let base = resource.as_base_resource();
+
+                            let source = base.meta().clone().and_then(|m| m.source.clone());
+
+                            assert_eq!(
+                                source.as_deref(),
+                                Some(get_test_config().meta_source.as_str()),
+                                "meta.source stimmt nicht für Resource '{}' aus Datei '{}'",
+                                resource.resource_type(),
+                                test_file,
+                            );
+
+                            let hasIdentifer = resource.as_identifiable_resource().unwrap();
+                            assert!(
+                                hasIdentifer.identifier().iter().all(|i| i
+                                    .clone()
+                                    .unwrap()
+                                    .value
+                                    .is_some()),
+                                "some identifier for input {} are missing value",
+                                test_file
+                            );
+                        }
+                    });
                 }
                 Ok(None) => panic!("empty bundle at input {}", test_file),
                 Err(err) => {
