@@ -26,6 +26,7 @@ pub(crate) struct Kafka {
 pub(crate) struct Fhir {
     pub(crate) check_mode: CheckMode,
     pub(crate) facility_id: String,
+    pub(crate) bundle_identifier_system: String,
     pub(crate) person: PatientConfig,
     pub(crate) fall: FallConfig,
     pub(crate) location: LocationConfig,

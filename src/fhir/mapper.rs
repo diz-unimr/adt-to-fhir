@@ -1,9 +1,10 @@
 use crate::config::Fhir;
-use crate::error::{MappingError, ParsingError};
+use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::{encounter, location, observation, organization, patient};
 use crate::hl7::parser::{
-    MessageType, PID_2, PID_4, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, PV1_19_1, message_type, query,
+    MessageType, PID_2, PID_4, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, PV1_19_1, get_message_key,
+    message_type, query,
 };
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
@@ -20,6 +21,7 @@ use fhir_model::time::{Month, OffsetDateTime};
 use fhir_model::{BuilderError, Instant};
 use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
+use log::{Level, log};
 
 pub(crate) struct FhirMapper {
     pub(crate) config: Fhir,
@@ -48,6 +50,12 @@ impl FhirMapper {
         let result = Bundle::builder()
             .r#type(BundleType::Transaction)
             .entry(resources)
+            .identifier(
+                Identifier::builder()
+                    .value(get_message_key(&v2_msg)?.to_string())
+                    .system(self.config.bundle_identifier_system.to_string())
+                    .build()?,
+            )
             .build()?;
 
         // serialize
@@ -57,6 +65,16 @@ impl FhirMapper {
     }
 
     fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>, MappingError> {
+        if is_begleitperson(v2_msg)? {
+            log!(
+                Level::Info,
+                "Skipping message id '{}' since it targets patients companion.",
+                get_message_key(v2_msg)?
+            );
+
+            return Ok(vec![]);
+        }
+
         let p = patient::map(v2_msg, self.config.clone())?;
         let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
         let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
@@ -80,7 +98,9 @@ pub(crate) enum EntryRequestType {
     ConditionalCreate,
     Delete,
 }
-
+pub(crate) fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
+    Ok(query(msg, PV1_2).is_some_and(|f| f == "H"))
+}
 pub(crate) fn bundle_entry<T: IdentifiableResource + Clone>(
     resource: T,
     request_type: EntryRequestType,
@@ -119,18 +139,18 @@ fn bundle_entry_request(
     Ok(match request_type {
         EntryRequestType::UpdateAsCreate => BundleEntryRequest::builder()
             .method(HTTPVerb::Put)
-            .url(conditional_reference(&resource_type, identifier)?)
+            .url(upsert_reference(&resource_type, identifier)?)
             .build()?,
 
         EntryRequestType::ConditionalCreate => BundleEntryRequest::builder()
             .method(HTTPVerb::Post)
             .url(resource_type.to_string())
-            .if_none_exist(conditional_reference(&resource_type, identifier)?)
+            .if_none_exist(conditional_reference(identifier)?)
             .build()?,
 
         EntryRequestType::Delete => BundleEntryRequest::builder()
             .method(HTTPVerb::Delete)
-            .url(conditional_reference(&resource_type, identifier)?)
+            .url(upsert_reference(&resource_type, identifier)?)
             .build()?,
     })
 }
@@ -142,7 +162,7 @@ pub(crate) fn patch_bundle_entry(
 ) -> Result<BundleEntry, MappingError> {
     let request = BundleEntryRequest::builder()
         .method(Patch)
-        .url(conditional_reference(resource_type, identifier)?)
+        .url(upsert_reference(resource_type, identifier)?)
         .build()?;
 
     BundleEntry::builder()
@@ -152,7 +172,7 @@ pub(crate) fn patch_bundle_entry(
         .map_err(|e| e.into())
 }
 
-pub(crate) fn conditional_reference(
+pub(crate) fn upsert_reference(
     resource_type: &ResourceType,
     identifier: &Identifier,
 ) -> Result<String, MappingError> {
@@ -168,6 +188,19 @@ pub(crate) fn conditional_reference(
                 .as_deref()
                 .ok_or(anyhow!("identifier.value missing"))?
         )
+    ))
+}
+
+pub(crate) fn conditional_reference(identifier: &Identifier) -> Result<String, MappingError> {
+    Ok(identifier_search(
+        identifier
+            .system
+            .as_deref()
+            .ok_or(anyhow!("identifier.system missing"))?,
+        identifier
+            .value
+            .as_deref()
+            .ok_or(anyhow!("identifier.value missing"))?,
     ))
 }
 
@@ -564,6 +597,16 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
             .unwrap()
             .resource_type()
             .as_str();
+
+        let url_value = entry
+            .as_ref()
+            .unwrap()
+            .request
+            .as_ref()
+            .unwrap()
+            .url
+            .clone();
+
         assert_eq!(
             expected_request_type,
             entry.as_ref().unwrap().request.as_ref().unwrap().method,
@@ -572,19 +615,37 @@ ZBE|30674176^ORBIS|202111230904||DUMMY"#,
             resource_name,
             expected_request_type
         );
+
+        if expected_request_type == HTTPVerb::Put {
+            assert!(url_value.starts_with(resource_name));
+        }
         if expected_request_type == HTTPVerb::Post {
+            let if_not_exists = entry
+                .as_ref()
+                .unwrap()
+                .request
+                .as_ref()
+                .unwrap()
+                .if_none_exist
+                .clone();
             assert!(
-                entry
-                    .as_ref()
-                    .unwrap()
-                    .request
-                    .as_ref()
-                    .unwrap()
-                    .if_none_exist
-                    .is_some(),
+                if_not_exists.is_some(),
                 "on msg type '{}' resource {} must be send with if-none-exists entry!",
                 msg_type,
                 resource_name
+            );
+            assert!(if_not_exists.unwrap().starts_with("identifier="));
+
+            assert_eq!(
+                url_value,
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .resource
+                    .as_ref()
+                    .unwrap()
+                    .resource_type()
+                    .as_str()
             );
         }
     }
@@ -662,9 +723,9 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
                                 test_file,
                             );
 
-                            let hasIdentifer = resource.as_identifiable_resource().unwrap();
+                            let has_identifer = resource.as_identifiable_resource().unwrap();
                             assert!(
-                                hasIdentifer.identifier().iter().all(|i| i
+                                has_identifer.identifier().iter().all(|i| i
                                     .clone()
                                     .unwrap()
                                     .value

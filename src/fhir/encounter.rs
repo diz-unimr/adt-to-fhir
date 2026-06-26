@@ -6,8 +6,8 @@ use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, get_cc_with_one_code, is_inpatient_location, map_visit_number,
-    parse_datetime, parse_fab, resource_ref, subject_ref,
+    EntryRequestType, bundle_entry, get_cc_with_one_code, is_begleitperson, is_inpatient_location,
+    map_visit_number, parse_datetime, parse_fab, resource_ref, subject_ref,
 };
 use crate::fhir::resources::{ResourceMap, is_valid_date};
 use crate::fhir::terminology::{
@@ -167,10 +167,6 @@ fn should_msg_be_skipped(msg: &Message) -> Result<bool, ParsingError> {
         return Ok(true);
     }
     Ok(false)
-}
-
-fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
-    Ok(query(msg, PV1_2).is_some_and(|f| f == "H"))
 }
 
 fn map_einrichtungskontakt(
@@ -1070,6 +1066,7 @@ ZBE|zbe_id^SAP-ISH~615^MEDOS|20030901163000||UPDATE"#;
 
         let config = Fhir {
             check_mode: CheckMode::Strict,
+            bundle_identifier_system: "my-bundle".to_string(),
             fall: FallConfig {
                 einrichtungskontakt: SystemConfig {
                     system: "einrichtungskontakt".into(),

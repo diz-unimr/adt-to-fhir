@@ -4,8 +4,8 @@ use crate::error::MessageAccessError;
 use crate::error::MessageAccessError::MissingMessageValue;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{
-    bundle_entry, conditional_reference, get_cc_with_one_code, parse_date, parse_datetime,
-    patch_bundle_entry,
+    bundle_entry, get_cc_with_one_code, parse_date, parse_datetime, patch_bundle_entry,
+    upsert_reference,
 };
 use crate::hl7::parser::{
     MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29, PID_30,
@@ -163,7 +163,7 @@ fn create_patient_merge(
                                         .name("other".to_string())
                                         .value(ParametersParameterValue::Reference(
                                             Reference::builder()
-                                                .reference(conditional_reference(
+                                                .reference(upsert_reference(
                                                     &ResourceType::Patient,
                                                     &create_patient_identifier(msg, config)?,
                                                 )?)

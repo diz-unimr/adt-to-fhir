@@ -18,6 +18,7 @@ pub(crate) mod tests {
             check_mode: CheckMode::Strict,
             facility_id: "260620431".to_string(),
             meta_source: "test".to_string(),
+            bundle_identifier_system: "https://fhir.diz.uni-marburg.de/sid/bundle-id".to_string(),
             person: PatientConfig {
                 profile: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2026.0.1".to_string(),
                 system: "https://fhir.diz.uni-marburg.de/sid/patient-id".to_string(),
