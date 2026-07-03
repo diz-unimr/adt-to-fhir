@@ -33,7 +33,7 @@ use std::fmt::Debug;
 use std::sync::LazyLock;
 use std::vec;
 
-pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, MappingError> {
+pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, MappingError> {
     let msg_type = message_type(msg);
 
     let message_type_value = msg_type.map_err(MessageAccessError::MessageTypeError)?;
@@ -47,12 +47,12 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         => {
             let patient = map_patient(msg, &config)?;
             // update-as-create
-            Ok(vec![bundle_entry(patient, UpdateAsCreate)?])
+            Ok(vec![bundle_entry(patient, UpdateAsCreate, &config)?])
         }
         MessageType::A02 | MessageType::A03 | MessageType::A31 => {
             let patient = map_patient(msg, &config)?;
             // conditional-create
-            Ok(vec![bundle_entry(patient, ConditionalCreate)?])
+            Ok(vec![bundle_entry(patient, ConditionalCreate, &config)?])
         }
         MessageType::A34 | MessageType::A40 => {
             // create fhir-patch
@@ -60,7 +60,7 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
             Ok(vec![patch_bundle_entry(
                 identifier,
                 &ResourceType::Patient,
-                &patch,
+                &patch, &config
             )?])
         }
         MessageType::A11
@@ -84,7 +84,7 @@ pub(super) fn map(msg: &Message, config: Fhir) -> Result<Vec<BundleEntry>, Mappi
         MessageType::A29 => {
             let patient = map_patient(msg, &config)?;
             // delete
-            Ok(vec![bundle_entry(patient, Delete)?])
+            Ok(vec![bundle_entry(patient, Delete, &config)?])
         }
         other => Err(MappingError::from(anyhow!("Invalid message type: {other}"))),
     }
@@ -780,7 +780,7 @@ EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
 PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#, true)
             .unwrap();
 
-        let entry = map(&msg, config.clone()).unwrap();
+        let entry = map(&msg, config).unwrap();
 
         assert_eq!(
             entry.first().unwrap().request,

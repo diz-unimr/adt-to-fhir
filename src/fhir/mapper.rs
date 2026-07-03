@@ -22,6 +22,8 @@ use fhir_model::{BuilderError, Instant};
 use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 use log::{Level, log};
+use std::slice;
+use uuid::Uuid;
 
 pub(crate) struct FhirMapper {
     pub(crate) config: Fhir,
@@ -75,9 +77,9 @@ impl FhirMapper {
             return Ok(vec![]);
         }
 
-        let p = patient::map(v2_msg, self.config.clone())?;
-        let e = encounter::map(v2_msg, self.config.clone(), &self.resources)?;
-        let l = location::map(v2_msg, self.config.clone(), &self.resources)?;
+        let p = patient::map(v2_msg, &self.config)?;
+        let e = encounter::map(v2_msg, &self.config, &self.resources)?;
+        let l = location::map(v2_msg, &self.config, &self.resources)?;
         let obs = observation::map(v2_msg, &self.config)?;
         let org = organization::map(v2_msg, &self.config)?;
         let res = p
@@ -104,6 +106,7 @@ pub(crate) fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError
 pub(crate) fn bundle_entry<T: IdentifiableResource + Clone>(
     resource: T,
     request_type: EntryRequestType,
+    config: &Fhir,
 ) -> Result<BundleEntry, MappingError>
 where
     Resource: From<T>,
@@ -124,9 +127,14 @@ where
 
     let request = bundle_entry_request(resource_type, identifier, request_type)?;
 
+    let identifiers: Vec<Identifier> = resource.identifier().iter().flatten().cloned().collect();
+
+    let full_url = full_url_from_identifiers(&identifiers, config);
+
     BundleEntry::builder()
         .resource(r)
         .request(request)
+        .full_url(full_url)
         .build()
         .map_err(|e| e.into())
 }
@@ -159,6 +167,7 @@ pub(crate) fn patch_bundle_entry(
     resource: Parameters,
     resource_type: &ResourceType,
     identifier: &Identifier,
+    config: &Fhir,
 ) -> Result<BundleEntry, MappingError> {
     let request = BundleEntryRequest::builder()
         .method(Patch)
@@ -168,6 +177,10 @@ pub(crate) fn patch_bundle_entry(
     BundleEntry::builder()
         .resource(resource.into())
         .request(request)
+        .full_url(full_url_from_identifiers(
+            slice::from_ref(identifier),
+            config,
+        ))
         .build()
         .map_err(|e| e.into())
 }
@@ -323,6 +336,32 @@ pub(crate) fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::
     }
 }
 
+/// Erzeugt eine deterministische fullUrl aus den Identifier-Values einer Ressource.
+/// Mehrere Identifier werden sortiert und konkateniert, damit die Reihenfolge
+/// keinen Einfluss auf das Ergebnis hat.
+pub fn full_url_from_identifiers(identifiers: &[Identifier], config: &Fhir) -> String {
+    let namespace = Uuid::new_v5(&Uuid::NAMESPACE_DNS, config.facility_id.as_ref());
+
+    let mut values: Vec<String> = identifiers
+        .iter()
+        .filter_map(|id| {
+            // system + value kombinieren, damit gleiche value in unterschiedlichen
+            // Systemen nicht kollidieren
+            match (&id.system, &id.value) {
+                (Some(system), Some(value)) => Some(format!("{}|{}", system, value)),
+                (None, Some(value)) => Some(value.clone()),
+                _ => None,
+            }
+        })
+        .collect();
+
+    // Sortieren für Determinismus, unabhängig von der Reihenfolge im Bundle
+    values.sort();
+    let input = values.join(";");
+
+    let uuid = Uuid::new_v5(&namespace, input.as_bytes());
+    format!("urn:uuid:{}", uuid)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,20 +436,26 @@ mod tests {
 
     #[test]
     fn test_patch_bundle_entry() {
+        let identifier = &Identifier::builder()
+            .system("system".to_string())
+            .value("value".to_string())
+            .build()
+            .unwrap();
         let entry = patch_bundle_entry(
             Parameters::builder().build().unwrap(),
             &ResourceType::Patient,
-            &Identifier::builder()
-                .system("system".to_string())
-                .value("value".to_string())
-                .build()
-                .unwrap(),
+            identifier,
+            &get_test_config(),
         )
         .unwrap();
 
         assert_eq!(
             entry,
             BundleEntry::builder()
+                .full_url(full_url_from_identifiers(
+                    slice::from_ref(identifier),
+                    &get_test_config()
+                ))
                 .resource(Resource::from(Parameters::builder().build().unwrap()))
                 .request(
                     BundleEntryRequest::builder()

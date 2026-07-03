@@ -70,7 +70,7 @@ impl From<&EncounterType> for Coding {
 
 pub(super) fn map(
     msg: &Message,
-    config: Fhir,
+    config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Vec<BundleEntry>, MappingError> {
     let mut result: Vec<BundleEntry> = vec![];
@@ -93,16 +93,25 @@ pub(super) fn map(
         | MessageType::A08
         | MessageType::A13 => {
             let enc_admit = map_einrichtungskontakt(msg, &config, resources)?;
-            result.push(bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                enc_admit,
+                EntryRequestType::UpdateAsCreate,
+                &config,
+            )?);
 
             if let Some(enc_dep) = map_abteilungskontakt(msg, &config, resources)? {
-                result.push(bundle_entry(enc_dep, EntryRequestType::UpdateAsCreate)?);
+                result.push(bundle_entry(
+                    enc_dep,
+                    EntryRequestType::UpdateAsCreate,
+                    &config,
+                )?);
             }
 
             if let Some(care_site_enc) = map_versorgungsstellenkontakt(msg, &config, resources)? {
                 result.push(bundle_entry(
                     care_site_enc,
                     EntryRequestType::UpdateAsCreate,
+                    &config,
                 )?);
             }
             Ok(result)
@@ -117,7 +126,7 @@ pub(super) fn map(
                 let enc_admit =
                     base_encounter(msg, &config, resources, &EncounterType::Einrichtungskontakt)?
                         .build()?;
-                result.push(bundle_entry(enc_admit, EntryRequestType::Delete)?)
+                result.push(bundle_entry(enc_admit, EntryRequestType::Delete, &config)?)
             }
 
             result.push(bundle_entry(
@@ -129,6 +138,7 @@ pub(super) fn map(
                 )?
                 .build()?,
                 EntryRequestType::Delete,
+                &config,
             )?);
 
             result.push(bundle_entry(
@@ -140,6 +150,7 @@ pub(super) fn map(
                 )?
                 .build()?,
                 EntryRequestType::Delete,
+                &config,
             )?);
 
             Ok(result)
@@ -1282,7 +1293,7 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
 
         let config = get_test_config();
 
-        let result = map(&msg, config.clone(), &get_dummy_resources());
+        let result = map(&msg, &config, &get_dummy_resources());
 
         assert!(result.is_ok());
 
@@ -1424,7 +1435,7 @@ ZBE|30674176^ORBIS|202208221309||INSERT
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let result = map(&msg, get_test_config(), &get_dummy_resources());
+        let result = map(&msg, &get_test_config(), &get_dummy_resources());
 
         result
             .map_err(|e| panic!("failed with error: {}", e.to_string()))
@@ -1486,7 +1497,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let actual = map(&msg, get_test_config(), &get_dummy_resources()).unwrap();
+        let actual = map(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
 
         assert_eq!(actual.len(), 1);
     }
@@ -1568,7 +1579,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let actual = map(&msg, get_test_config(), &get_dummy_resources());
+        let actual = map(&msg, &get_test_config(), &get_dummy_resources());
         assert!(actual.is_err());
         assert_eq!(
             actual.unwrap_err().to_string(),
@@ -1858,7 +1869,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
         assert!(mapped_conditions.is_ok());
         assert_eq!(mapped_conditions.unwrap().len(), 23);
 
-        let mapped_enc = map(&msg, get_test_config(), &get_dummy_resources());
+        let mapped_enc = map(&msg, &get_test_config(), &get_dummy_resources());
         assert!(mapped_enc.is_ok());
 
         let enc_r = mapped_enc

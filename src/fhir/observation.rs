@@ -129,19 +129,35 @@ pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
 
     if let (Some(pid), Some(visit)) = (pid, visit) {
         if let Some(is_alive) = map_vital_status(msg, config, pid, visit)? {
-            result.push(bundle_entry(is_alive, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                is_alive,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
         }
 
         if let Some(head) = map_head_circumference(msg, config, pid, visit)? {
-            result.push(bundle_entry(head, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                head,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
         }
 
         if let Some(weight) = map_body_weight(msg, config, pid, visit)? {
-            result.push(bundle_entry(weight, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                weight,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
         }
 
         if let Some(length) = map_body_length(msg, config, pid, visit)? {
-            result.push(bundle_entry(length, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                length,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
         }
     }
     Ok(result)

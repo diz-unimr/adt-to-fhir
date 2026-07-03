@@ -16,10 +16,15 @@ pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
         result.push(bundle_entry(
             department_org,
             EntryRequestType::UpdateAsCreate,
+            config,
         )?)
     }
     if let Some(war_org) = map_ward_org(msg, config)? {
-        result.push(bundle_entry(war_org, EntryRequestType::UpdateAsCreate)?)
+        result.push(bundle_entry(
+            war_org,
+            EntryRequestType::UpdateAsCreate,
+            config,
+        )?)
     }
     Ok(result)
 }
