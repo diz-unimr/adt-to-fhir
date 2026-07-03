@@ -1848,4 +1848,30 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
 
         assert!(einrichtungskontakt.extension.is_empty());
     }
+    #[test]
+    fn test_amb_condition() {
+        let hl7 = read_test_resource("a08_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let mapped_conditions = map_conditions(&msg, &get_test_config());
+
+        assert!(mapped_conditions.is_ok());
+        assert_eq!(mapped_conditions.unwrap().len(), 23);
+
+        let mapped_enc = map(&msg, get_test_config(), &get_dummy_resources());
+        assert!(mapped_enc.is_ok());
+
+        let enc_r = mapped_enc
+            .unwrap()
+            .first()
+            .unwrap()
+            .resource
+            .clone()
+            .unwrap();
+        if let Ok(enc) = Encounter::try_from(enc_r) {
+            assert_eq!(enc.diagnosis.len(), 23);
+        } else {
+            panic!("failed parse to encounter")
+        }
+    }
 }
