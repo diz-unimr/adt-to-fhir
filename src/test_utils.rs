@@ -7,8 +7,12 @@ pub(crate) mod tests {
     use crate::fhir::resources::{Department, ResourceMap, ValidPeriod, Ward};
     use chrono::NaiveDate;
     use fhir_model::WrongResourceType;
-    use fhir_model::r4b::resources::{Bundle, BundleEntry, OperationOutcome, Resource};
+    use fhir_model::r4b::codes::IssueSeverity;
+    use fhir_model::r4b::resources::{
+        Bundle, BundleEntry, OperationOutcome, OperationOutcomeIssue, Resource,
+    };
     use fhir_model::r4b::types::Meta;
+    use serde_json::Value;
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
@@ -178,5 +182,45 @@ pub(crate) mod tests {
             .unwrap();
 
         response.json().unwrap()
+    }
+
+    pub(crate) fn validate_with_server(
+        test_file: &str,
+        raw: &Value,
+        show_level: &IssueSeverity,
+    ) -> bool {
+        let outcome = send_to_validate("http://localhost:8080/validateResource", raw.to_string());
+        outcome.issue.iter().all(|i| {
+            if let Some(outcome) = i {
+                match outcome.severity {
+                    IssueSeverity::Error | IssueSeverity::Fatal => {
+                        print_outcome_details(outcome, test_file);
+                        false
+                    }
+                    IssueSeverity::Information => true,
+                    IssueSeverity::Warning => {
+                        if IssueSeverity::Warning.eq(show_level) {
+                            print_outcome_details(outcome, test_file);
+                        }
+                        true
+                    }
+                }
+            } else {
+                false
+            }
+        })
+    }
+
+    fn print_outcome_details(issue: &OperationOutcomeIssue, test_file: &str) {
+        let details = issue.details.as_ref().unwrap();
+
+        println!(
+            "{}: Resource {} is invalid code: '{}' at: '{}",
+            issue.severity,
+            test_file,
+            issue.code,
+            issue.expression.clone().first().unwrap().as_ref().unwrap()
+        );
+        println!("Details: {:#?}", details.text.as_ref().unwrap());
     }
 }
