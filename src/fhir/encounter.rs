@@ -96,22 +96,22 @@ pub(super) fn map(
             result.push(bundle_entry(
                 enc_admit,
                 EntryRequestType::UpdateAsCreate,
-                &config,
+                config,
             )?);
 
-            if let Some(enc_dep) = map_abteilungskontakt(msg, &config, resources)? {
+            if let Some(enc_dep) = map_abteilungskontakt(msg, config, resources)? {
                 result.push(bundle_entry(
                     enc_dep,
                     EntryRequestType::UpdateAsCreate,
-                    &config,
+                    config,
                 )?);
             }
 
-            if let Some(care_site_enc) = map_versorgungsstellenkontakt(msg, &config, resources)? {
+            if let Some(care_site_enc) = map_versorgungsstellenkontakt(msg, config, resources)? {
                 result.push(bundle_entry(
                     care_site_enc,
                     EntryRequestType::UpdateAsCreate,
-                    &config,
+                    config,
                 )?);
             }
             Ok(result)
@@ -124,33 +124,33 @@ pub(super) fn map(
                 || message_type == MessageType::A38
             {
                 let enc_admit =
-                    base_encounter(msg, &config, resources, &EncounterType::Einrichtungskontakt)?
+                    base_encounter(msg, config, resources, &EncounterType::Einrichtungskontakt)?
                         .build()?;
-                result.push(bundle_entry(enc_admit, EntryRequestType::Delete, &config)?)
+                result.push(bundle_entry(enc_admit, EntryRequestType::Delete, config)?)
             }
 
             result.push(bundle_entry(
                 base_encounter(
                     msg,
-                    &config,
+                    config,
                     resources,
                     &EncounterType::Fachabteilungskontakt,
                 )?
                 .build()?,
                 EntryRequestType::Delete,
-                &config,
+                config,
             )?);
 
             result.push(bundle_entry(
                 base_encounter(
                     msg,
-                    &config,
+                    config,
                     resources,
                     &EncounterType::Versorgungsstellenkontakt,
                 )?
                 .build()?,
                 EntryRequestType::Delete,
-                &config,
+                config,
             )?);
 
             Ok(result)
@@ -211,12 +211,9 @@ fn map_einrichtungskontakt(
         ];
     }
 
-    if let Ok(diagnosis) = map_conditions(msg, config) {
-        enc.diagnosis = diagnosis;
-    }
-    if let Ok(mothers_encounter) = map_mothers_encounter(msg, config) {
-        enc.part_of = mothers_encounter
-    }
+    enc.diagnosis = map_conditions(msg, config)?;
+
+    enc.part_of = map_mothers_encounter(msg, config)?;
 
     if let Some(bed_status) = query(msg, PV1_2)
         && bed_status == "NS"
@@ -967,7 +964,7 @@ fn map_diagnose_local_codes(
         }
 
         // Behandlungsdiagnose
-        "BD" => {
+        "BD" | "Beh." => {
             result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
 
             // not supported by 2026 profile
@@ -1272,10 +1269,13 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
         let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
 EVN|A03|202111230904|202111230904||Muster
 PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
+PV1|1|O|NEPPOLAMB^^^NEP^NEP^987600|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
+IN1|1|105313145|AOK HESSEN|AOK Hessen|^^Marburg^^35039^D||||AOK^1^^^1&gesetzlich||||||50001|||||||1|||||||||R|||||454874316|||||||U|
+IN2|1||||||||||||||||||||||||||||^PC^0^K
 DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||20230101131500|do-not-know|||||||||1|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345677|U
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
-        let x = &map_conditions(&msg, &get_test_config());
+        let x = &map(&msg, &get_test_config(), &get_dummy_resources());
         match x {
             Ok(_) => panic!("we have an unsupported condition type - this is not OK!"),
 
