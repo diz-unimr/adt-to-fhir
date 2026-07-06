@@ -351,7 +351,8 @@ fn get_birth_obs_builder(
             Quantity::builder()
                 .value(quantity_value)
                 .system(UCUM_SYSTEM.to_string())
-                .code(unit)
+                .code(unit.clone())
+                .unit(unit)
                 .build()?,
         ))
         .subject(subject_ref(msg, &config.person.system)?)
