@@ -372,21 +372,20 @@ pub fn full_url_from_identifiers(identifiers: &[Identifier], config: &Fhir) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::tests::{
+        filter_resources, get_dummy_resources, get_test_config, has_profile, read_test_resource,
+    };
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{
         Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
         ResourceType,
     };
-    use std::str::FromStr;
-
-    use crate::test_utils::tests::{
-        filter_resources, get_dummy_resources, get_test_config, has_profile, read_test_resource,
-    };
     use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use rstest::rstest;
     use serde_json::Value;
+    use std::str::FromStr;
 
     #[test]
     fn test_parse_datetime() {
@@ -755,9 +754,17 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
             let mapper = FhirMapper::new(get_test_config()).unwrap();
             match mapper.map(binding.as_str()) {
                 Ok(Some(bundle)) => {
-                    println!("file {} => {:?}", test_file, bundle);
+                    println!("file {} ", test_file);
 
                     let raw: Value = serde_json::from_str(&bundle).unwrap();
+
+                    // for local testing uncomment
+                    /*
+                                        assert!(
+                                            validate_with_server(test_file, &raw, &IssueSeverity::Error),
+                                            "FHIR validation failed!"
+                                        );
+                    */
                     let b: Bundle = serde_json::from_value(raw).unwrap();
                     b.entry.iter().for_each(|entry| {
                         let resource = entry.clone().unwrap().resource.unwrap();
@@ -790,7 +797,10 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
                 }
                 Ok(None) => panic!("empty bundle at input {}", test_file),
                 Err(err) => {
-                    panic!("FAILD processing input '{}' with error: {}", test_file, err)
+                    panic!(
+                        "FAILED processing input '{}' with error: {}",
+                        test_file, err
+                    )
                 }
             }
         }

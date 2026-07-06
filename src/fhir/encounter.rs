@@ -505,28 +505,33 @@ fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>
     if let Some(bed_status) = query(msg, PV1_2)
         && bed_status.eq("O")
     {
-        // ambulatory has no admission reason or discharge status
         return Ok(None);
     }
 
     let discharge = map_entlassgrund(msg)?;
+    let admit_source = map_admit_source(msg)?;
 
-    let hospitalization = EncounterHospitalization::builder()
-        .discharge_disposition(CodeableConcept::builder().extension(discharge).build()?);
-
-    if let Some(admit_source) = map_admit_source(msg)? {
-        return Ok(Some(
-            hospitalization
-                .admit_source(
-                    CodeableConcept::builder()
-                        .coding(vec![Some(admit_source)])
-                        .build()?,
-                )
-                .build()?,
-        ));
+    // Wenn beide None sind, gibt es keine Hospitalization
+    if discharge.is_empty() && admit_source.is_none() {
+        return Ok(None);
     }
 
-    Ok(None)
+    let mut builder = EncounterHospitalization::builder();
+
+    if !discharge.is_empty() {
+        builder =
+            builder.discharge_disposition(CodeableConcept::builder().extension(discharge).build()?);
+    }
+
+    if let Some(coding) = admit_source {
+        builder = builder.admit_source(
+            CodeableConcept::builder()
+                .coding(vec![Some(coding)])
+                .build()?,
+        );
+    }
+
+    Ok(Some(builder.build()?))
 }
 
 fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
