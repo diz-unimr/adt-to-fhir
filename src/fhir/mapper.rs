@@ -17,12 +17,14 @@ use fhir_model::r4b::resources::{
     ResourceType,
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
+
 use fhir_model::time::{Month, OffsetDateTime};
 use fhir_model::{BuilderError, Instant};
 use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 use log::{Level, log};
 use std::slice;
+
 use uuid::Uuid;
 
 pub(crate) struct FhirMapper {
@@ -56,6 +58,11 @@ impl FhirMapper {
                 Identifier::builder()
                     .value(get_message_key(&v2_msg)?.to_string())
                     .system(self.config.bundle_identifier_system.to_string())
+                    .build()?,
+            )
+            .meta(
+                Meta::builder()
+                    .last_updated(Instant(OffsetDateTime::now_utc()))
                     .build()?,
             )
             .build()?;
