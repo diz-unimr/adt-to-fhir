@@ -92,7 +92,7 @@ pub(super) fn map(
         | MessageType::A07
         | MessageType::A08
         | MessageType::A13 => {
-            let enc_admit = map_einrichtungskontakt(msg, &config, resources)?;
+            let enc_admit = map_einrichtungskontakt(msg, config, resources)?;
             result.push(bundle_entry(
                 enc_admit,
                 EntryRequestType::UpdateAsCreate,
