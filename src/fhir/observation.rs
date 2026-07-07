@@ -240,6 +240,7 @@ fn map_body_length(
                 )?,
                 quantity_value,
                 "cm".to_string(),
+                "centimeter".to_string(),
                 config.observation.profile_height.to_string(),
                 config,
             )?
@@ -275,6 +276,7 @@ fn map_body_weight(
                 identifier,
                 quantity_value,
                 "g".to_string(),
+                "gramm".to_string(),
                 config.observation.profile_weight.to_string(),
                 config,
             )?
@@ -309,6 +311,7 @@ fn map_head_circumference(
                 identifier,
                 quantity_value,
                 "cm".to_string(),
+                "centimeter".to_string(),
                 config.observation.profile_head_circumference.to_string(),
                 config,
             )?
@@ -331,6 +334,7 @@ fn get_birth_obs_builder(
     msg: &Message,
     identifier: Identifier,
     quantity_value: f64,
+    unit_code: String,
     unit: String,
     profile: String,
     config: &Fhir,
@@ -351,7 +355,7 @@ fn get_birth_obs_builder(
             Quantity::builder()
                 .value(quantity_value)
                 .system(UCUM_SYSTEM.to_string())
-                .code(unit.clone())
+                .code(unit_code.clone())
                 .unit(unit)
                 .build()?,
         ))
