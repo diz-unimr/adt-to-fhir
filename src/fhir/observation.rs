@@ -16,6 +16,7 @@ use fhir_model::r4b::resources::{
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity, Reference};
 use hl7_parser::Message;
+use std::ops::Div;
 use std::sync::LazyLock;
 
 const LOINC_PATIENT_DISPOSITION: &str = "67162-8";
@@ -54,8 +55,9 @@ const CODING_HEAD_CIRCUMFERENCE: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|
         Coding::builder()
             .code("363812007".to_string())
             .system(SNOMED_SYSTEM.to_string())
-            .display("Head circumference measure (observable entity)".to_string())
-            .version(SNOMED_VERSION.to_string())
+            // profile currently does not allow display and version
+            //.display("Head circumference measure (observable entity)".to_string())
+            //.version(SNOMED_VERSION.to_string())
             .build()
             .ok(),
     ]
@@ -69,17 +71,19 @@ const CODING_BODY_WEIGHT: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
             .display("Body weight".to_string())
             .build()
             .ok(),
+        /* currently only two ntries allowed
         Coding::builder()
-            .code("8339-4".to_string())
-            .system(LOINC_SYSTEM.to_string())
-            .display("Birth weight Measured".to_string())
-            .build()
-            .ok(),
+        .code("8339-4".to_string())
+        .system(LOINC_SYSTEM.to_string())
+        .display("Birth weight Measured".to_string())
+        .build()
+        .ok(),*/
         Coding::builder()
             .code("27113001".to_string())
             .system(SNOMED_SYSTEM.to_string())
-            .display("Body weight (observable entity)".to_string())
-            .version(SNOMED_VERSION.to_string())
+            // profile currently does not allow display and version
+            //.display("Body weight (observable entity)".to_string())
+            //.version(SNOMED_VERSION.to_string())
             .build()
             .ok(),
     ]
@@ -102,8 +106,9 @@ const CODING_BODY_HEIGHT: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
         Coding::builder()
             .code("1153637007".to_string())
             .system(SNOMED_SYSTEM.to_string())
-            .display("Body height (observable entity)".to_string())
-            .version(SNOMED_VERSION.to_string())
+            // profile currently does not allow display and version
+            //.display("Body height (observable entity)".to_string())
+            //.version(SNOMED_VERSION.to_string())
             .build()
             .ok(),
     ]
@@ -270,13 +275,14 @@ fn map_body_weight(
             config.observation.system.clone(),
         )?;
 
+        // current profile has fixed unit to kg
         return Ok(Some(
             get_birth_obs_builder(
                 msg,
                 identifier,
-                quantity_value,
-                "g".to_string(),
-                "gramm".to_string(),
+                quantity_value.div(1000f64),
+                "kg".to_string(),
+                "kilogram".to_string(),
                 config.observation.profile_weight.to_string(),
                 config,
             )?
@@ -420,7 +426,7 @@ mod tests {
                                 if let ObservationValue::Quantity(q) = obs.value.clone().unwrap()
                                     && let Some(value) = q.value
                                 {
-                                    let expected = 3390f64;
+                                    let expected = 3.39f64;
                                     assert_expected_code(obs_code_value, value, &expected);
                                 }
                             }
@@ -489,7 +495,7 @@ mod tests {
         assert!(CODING_BODY_HEIGHT.clone().iter().all(|v| v.is_some()));
         assert_eq!(CODING_BODY_HEIGHT.clone().len(), 3);
         assert!(CODING_BODY_WEIGHT.clone().iter().all(|v| v.is_some()));
-        assert_eq!(CODING_BODY_WEIGHT.clone().len(), 3);
+        assert_eq!(CODING_BODY_WEIGHT.clone().len(), 2);
         assert!(
             CODING_HEAD_CIRCUMFERENCE
                 .clone()
