@@ -14,7 +14,7 @@ use log::{Level, log};
 
 pub(super) fn map(
     msg: &Message,
-    config: Fhir,
+    config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Vec<BundleEntry>, MappingError> {
     let mut r: Vec<BundleEntry> = vec![];
@@ -22,11 +22,12 @@ pub(super) fn map(
         match msg_type {
             // location changes only at patient movement and admission
             MessageType::A02 | MessageType::A01 => {
-                if let Ok(Some(locations)) = create_locations(msg, &config, resources) {
+                if let Ok(Some(locations)) = create_locations(msg, config, resources) {
                     for location in locations.iter() {
                         r.push(bundle_entry(
                             location.clone(),
                             EntryRequestType::UpdateAsCreate,
+                            config,
                         )?);
                     }
                 }
@@ -34,8 +35,8 @@ pub(super) fn map(
 
             // department stays the same - we have only a short contact at another location
             MessageType::A04 => {
-                if let Some(loc) = map_ward_location(msg, &config, resources)? {
-                    r.push(bundle_entry(loc, EntryRequestType::UpdateAsCreate)?);
+                if let Some(loc) = map_ward_location(msg, config, resources)? {
+                    r.push(bundle_entry(loc, EntryRequestType::UpdateAsCreate, config)?);
                 }
             }
             _ => {
@@ -257,7 +258,7 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
         );
         let msg = Message::parse_with_lenient_newlines(&input, true).expect("parse hl7 failed");
 
-        let result = map(&msg, get_test_config(), &get_dummy_resources()).expect("map failed");
+        let result = map(&msg, &get_test_config(), &get_dummy_resources()).expect("map failed");
 
         assert_eq!(result.len(), expected_number_locations);
 
@@ -337,7 +338,7 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
         );
         let msg = Message::parse_with_lenient_newlines(&input, true).expect("parse hl7 failed");
 
-        let result = map(&msg, get_test_config(), &get_dummy_resources()).expect("map failed");
+        let result = map(&msg, &get_test_config(), &get_dummy_resources()).expect("map failed");
 
         let loca: Location = resource_from(result.first().expect("one element expected"))
             .expect("location expected");

@@ -16,6 +16,7 @@ use fhir_model::r4b::resources::{
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity, Reference};
 use hl7_parser::Message;
+use std::ops::Div;
 use std::sync::LazyLock;
 
 const LOINC_PATIENT_DISPOSITION: &str = "67162-8";
@@ -52,10 +53,11 @@ const CODING_HEAD_CIRCUMFERENCE: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|
             .build()
             .ok(),
         Coding::builder()
-            .code("363811000".to_string())
+            .code("363812007".to_string())
             .system(SNOMED_SYSTEM.to_string())
-            .display("Head circumference measure (observable entity)".to_string())
-            .version(SNOMED_VERSION.to_string())
+            // profile currently does not allow display and version
+            //.display("Head circumference measure (observable entity)".to_string())
+            //.version(SNOMED_VERSION.to_string())
             .build()
             .ok(),
     ]
@@ -69,17 +71,19 @@ const CODING_BODY_WEIGHT: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
             .display("Body weight".to_string())
             .build()
             .ok(),
+        /* currently only two ntries allowed
         Coding::builder()
-            .code("8339-4".to_string())
-            .system(LOINC_SYSTEM.to_string())
-            .display("Birth weight Measured".to_string())
-            .build()
-            .ok(),
+        .code("8339-4".to_string())
+        .system(LOINC_SYSTEM.to_string())
+        .display("Birth weight Measured".to_string())
+        .build()
+        .ok(),*/
         Coding::builder()
             .code("27113001".to_string())
             .system(SNOMED_SYSTEM.to_string())
-            .display("Body weight (observable entity)".to_string())
-            .version(SNOMED_VERSION.to_string())
+            // profile currently does not allow display and version
+            //.display("Body weight (observable entity)".to_string())
+            //.version(SNOMED_VERSION.to_string())
             .build()
             .ok(),
     ]
@@ -102,8 +106,9 @@ const CODING_BODY_HEIGHT: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
         Coding::builder()
             .code("1153637007".to_string())
             .system(SNOMED_SYSTEM.to_string())
-            .display("Body height (observable entity)".to_string())
-            .version(SNOMED_VERSION.to_string())
+            // profile currently does not allow display and version
+            //.display("Body height (observable entity)".to_string())
+            //.version(SNOMED_VERSION.to_string())
             .build()
             .ok(),
     ]
@@ -129,19 +134,35 @@ pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
 
     if let (Some(pid), Some(visit)) = (pid, visit) {
         if let Some(is_alive) = map_vital_status(msg, config, pid, visit)? {
-            result.push(bundle_entry(is_alive, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                is_alive,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
         }
 
         if let Some(head) = map_head_circumference(msg, config, pid, visit)? {
-            result.push(bundle_entry(head, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                head,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
         }
 
         if let Some(weight) = map_body_weight(msg, config, pid, visit)? {
-            result.push(bundle_entry(weight, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                weight,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
         }
 
         if let Some(length) = map_body_length(msg, config, pid, visit)? {
-            result.push(bundle_entry(length, EntryRequestType::UpdateAsCreate)?);
+            result.push(bundle_entry(
+                length,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
         }
     }
     Ok(result)
@@ -224,6 +245,7 @@ fn map_body_length(
                 )?,
                 quantity_value,
                 "cm".to_string(),
+                "centimeter".to_string(),
                 config.observation.profile_height.to_string(),
                 config,
             )?
@@ -253,12 +275,14 @@ fn map_body_weight(
             config.observation.system.clone(),
         )?;
 
+        // current profile has fixed unit to kg
         return Ok(Some(
             get_birth_obs_builder(
                 msg,
                 identifier,
-                quantity_value,
-                "g".to_string(),
+                quantity_value.div(1000f64),
+                "kg".to_string(),
+                "kilogram".to_string(),
                 config.observation.profile_weight.to_string(),
                 config,
             )?
@@ -293,6 +317,7 @@ fn map_head_circumference(
                 identifier,
                 quantity_value,
                 "cm".to_string(),
+                "centimeter".to_string(),
                 config.observation.profile_head_circumference.to_string(),
                 config,
             )?
@@ -315,6 +340,7 @@ fn get_birth_obs_builder(
     msg: &Message,
     identifier: Identifier,
     quantity_value: f64,
+    unit_code: String,
     unit: String,
     profile: String,
     config: &Fhir,
@@ -335,7 +361,8 @@ fn get_birth_obs_builder(
             Quantity::builder()
                 .value(quantity_value)
                 .system(UCUM_SYSTEM.to_string())
-                .code(unit)
+                .code(unit_code.clone())
+                .unit(unit)
                 .build()?,
         ))
         .subject(subject_ref(msg, &config.person.system)?)
@@ -399,7 +426,7 @@ mod tests {
                                 if let ObservationValue::Quantity(q) = obs.value.clone().unwrap()
                                     && let Some(value) = q.value
                                 {
-                                    let expected = 3390f64;
+                                    let expected = 3.39f64;
                                     assert_expected_code(obs_code_value, value, &expected);
                                 }
                             }
@@ -468,7 +495,7 @@ mod tests {
         assert!(CODING_BODY_HEIGHT.clone().iter().all(|v| v.is_some()));
         assert_eq!(CODING_BODY_HEIGHT.clone().len(), 3);
         assert!(CODING_BODY_WEIGHT.clone().iter().all(|v| v.is_some()));
-        assert_eq!(CODING_BODY_WEIGHT.clone().len(), 3);
+        assert_eq!(CODING_BODY_WEIGHT.clone().len(), 2);
         assert!(
             CODING_HEAD_CIRCUMFERENCE
                 .clone()

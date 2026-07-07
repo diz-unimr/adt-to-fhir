@@ -18,6 +18,7 @@ use crate::hl7::parser::{
     PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
     get_message_key, message_type, query,
 };
+use EncounterType::Einrichtungskontakt;
 use anyhow::anyhow;
 use chrono::NaiveDate;
 use fhir_model::DateTime;
@@ -29,7 +30,6 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
 };
-use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 use hl7_parser::message::Field;
 use log::{Level, log};
@@ -46,7 +46,7 @@ enum EncounterType {
 impl From<&EncounterType> for Coding {
     fn from(t: &EncounterType) -> Self {
         match t {
-            EncounterType::Einrichtungskontakt => Coding::builder()
+            Einrichtungskontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("einrichtungskontakt".to_string())
                 .display("Einrichtungskontakt".to_string())
@@ -70,7 +70,7 @@ impl From<&EncounterType> for Coding {
 
 pub(super) fn map(
     msg: &Message,
-    config: Fhir,
+    config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Vec<BundleEntry>, MappingError> {
     let mut result: Vec<BundleEntry> = vec![];
@@ -92,17 +92,26 @@ pub(super) fn map(
         | MessageType::A07
         | MessageType::A08
         | MessageType::A13 => {
-            let enc_admit = map_einrichtungskontakt(msg, &config, resources)?;
-            result.push(bundle_entry(enc_admit, EntryRequestType::UpdateAsCreate)?);
+            let enc_admit = map_einrichtungskontakt(msg, config, resources)?;
+            result.push(bundle_entry(
+                enc_admit,
+                EntryRequestType::UpdateAsCreate,
+                config,
+            )?);
 
-            if let Some(enc_dep) = map_abteilungskontakt(msg, &config, resources)? {
-                result.push(bundle_entry(enc_dep, EntryRequestType::UpdateAsCreate)?);
+            if let Some(enc_dep) = map_abteilungskontakt(msg, config, resources)? {
+                result.push(bundle_entry(
+                    enc_dep,
+                    EntryRequestType::UpdateAsCreate,
+                    config,
+                )?);
             }
 
-            if let Some(care_site_enc) = map_versorgungsstellenkontakt(msg, &config, resources)? {
+            if let Some(care_site_enc) = map_versorgungsstellenkontakt(msg, config, resources)? {
                 result.push(bundle_entry(
                     care_site_enc,
                     EntryRequestType::UpdateAsCreate,
+                    config,
                 )?);
             }
             Ok(result)
@@ -115,31 +124,32 @@ pub(super) fn map(
                 || message_type == MessageType::A38
             {
                 let enc_admit =
-                    base_encounter(msg, &config, resources, &EncounterType::Einrichtungskontakt)?
-                        .build()?;
-                result.push(bundle_entry(enc_admit, EntryRequestType::Delete)?)
+                    base_encounter(msg, config, resources, &Einrichtungskontakt)?.build()?;
+                result.push(bundle_entry(enc_admit, EntryRequestType::Delete, config)?)
             }
 
             result.push(bundle_entry(
                 base_encounter(
                     msg,
-                    &config,
+                    config,
                     resources,
                     &EncounterType::Fachabteilungskontakt,
                 )?
                 .build()?,
                 EntryRequestType::Delete,
+                config,
             )?);
 
             result.push(bundle_entry(
                 base_encounter(
                     msg,
-                    &config,
+                    config,
                     resources,
                     &EncounterType::Versorgungsstellenkontakt,
                 )?
                 .build()?,
                 EntryRequestType::Delete,
+                config,
             )?);
 
             Ok(result)
@@ -175,7 +185,7 @@ fn map_einrichtungskontakt(
     resources: &ResourceMap,
 ) -> Result<Encounter, MappingError> {
     // base encounter
-    let mut enc = base_encounter(msg, config, resources, &EncounterType::Einrichtungskontakt)?
+    let mut enc = base_encounter(msg, config, resources, &Einrichtungskontakt)?
         // serviceProvider -> Hospital
         .service_provider(
             Reference::builder()
@@ -200,12 +210,9 @@ fn map_einrichtungskontakt(
         ];
     }
 
-    if let Ok(diagnosis) = map_conditions(msg, config) {
-        enc.diagnosis = diagnosis;
-    }
-    if let Ok(mothers_encounter) = map_mothers_encounter(msg, config) {
-        enc.part_of = mothers_encounter
-    }
+    enc.diagnosis = map_conditions(msg, config)?;
+
+    enc.part_of = map_mothers_encounter(msg, config)?;
 
     if let Some(bed_status) = query(msg, PV1_2)
         && bed_status == "NS"
@@ -215,7 +222,9 @@ fn map_einrichtungskontakt(
         // With bed status 'NS' we get only some additional ambulatory treatment,
         // which will be represented by ambulatory class 'Abteilungskontakt' and
         // 'Versorgungsstellenkontakt'
+        // upper level encounter 'einrichtungskontakt' should stay 'IMP'
         enc.class.code = Some("IMP".to_string());
+        enc.class.display = Some("inpatient encounter".to_string());
     }
     Ok(enc)
 }
@@ -453,9 +462,7 @@ fn map_level_identifier(
     let visit_number = map_visit_number(msg)?;
 
     let (system, value) = match encounter_type {
-        EncounterType::Einrichtungskontakt => {
-            (&config.fall.einrichtungskontakt.system, visit_number)
-        }
+        Einrichtungskontakt => (&config.fall.einrichtungskontakt.system, visit_number),
         Fachabteilungskontakt => (&config.fall.abteilungskontakt.system, zbe_id?),
         Versorgungsstellenkontakt => (&config.fall.versorgungsstellenkontakt.system, zbe_id?),
     };
@@ -473,16 +480,23 @@ fn map_encounter_type(
     resources: &ResourceMap,
 ) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
     // Kontaktebene
-    let mut coding = vec![Some(enc_type.into())];
+    let kontaktebene = CodeableConcept::builder()
+        .coding(vec![Some(enc_type.into())])
+        .build()?;
 
-    if let Some(c) = map_kontaktart(msg, resources, enc_type)? {
-        // Kontaktart
-        coding.push(Some(c));
+    let kontaktart: Option<CodeableConcept> = {
+        if let Some(art) = map_kontaktart(msg, resources, enc_type)? {
+            // Kontaktart
+            Some(CodeableConcept::builder().coding(vec![Some(art)]).build()?)
+        } else {
+            None
+        }
+    };
+    if let Some(kontaktart) = kontaktart {
+        Ok(vec![Some(kontaktebene), Some(kontaktart)])
+    } else {
+        Ok(vec![Some(kontaktebene)])
     }
-
-    Ok(vec![Some(
-        CodeableConcept::builder().coding(coding).build()?,
-    )])
 }
 
 fn fab_ref(fab: &str, config: &Fhir) -> Result<Reference, MappingError> {
@@ -497,28 +511,33 @@ fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>
     if let Some(bed_status) = query(msg, PV1_2)
         && bed_status.eq("O")
     {
-        // ambulatory has no admission reason or discharge status
         return Ok(None);
     }
 
     let discharge = map_entlassgrund(msg)?;
+    let admit_source = map_admit_source(msg)?;
 
-    let hospitalization = EncounterHospitalization::builder()
-        .discharge_disposition(CodeableConcept::builder().extension(discharge).build()?);
-
-    if let Some(admit_source) = map_admit_source(msg)? {
-        return Ok(Some(
-            hospitalization
-                .admit_source(
-                    CodeableConcept::builder()
-                        .coding(vec![Some(admit_source)])
-                        .build()?,
-                )
-                .build()?,
-        ));
+    // Wenn beide None sind, gibt es keine Hospitalization
+    if discharge.is_empty() && admit_source.is_none() {
+        return Ok(None);
     }
 
-    Ok(None)
+    let mut builder = EncounterHospitalization::builder();
+
+    if !discharge.is_empty() {
+        builder =
+            builder.discharge_disposition(CodeableConcept::builder().extension(discharge).build()?);
+    }
+
+    if let Some(coding) = admit_source {
+        builder = builder.admit_source(
+            CodeableConcept::builder()
+                .coding(vec![Some(coding)])
+                .build()?,
+        );
+    }
+
+    Ok(Some(builder.build()?))
 }
 
 fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
@@ -556,7 +575,7 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     let start: DateTime;
     let end: Option<DateTime>;
     match lvl {
-        EncounterType::Einrichtungskontakt => {
+        Einrichtungskontakt => {
             start = parse_datetime(
                 query(msg, PV1_44).ok_or(MissingMessageValue("PV1.44".to_string()))?,
             )?;
@@ -566,7 +585,7 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                 None => None,
             };
         }
-        EncounterType::Fachabteilungskontakt | EncounterType::Versorgungsstellenkontakt => {
+        Fachabteilungskontakt | Versorgungsstellenkontakt => {
             start =
                 parse_datetime(query(msg, ZBE_2).ok_or(MissingMessageValue("ZBE-2".to_string()))?)?;
             end = match query(msg, ZBE_3) {
@@ -595,13 +614,7 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
     match (period.start.as_ref(), period.end.as_ref()) {
         (None, None) => EncounterStatus::Unknown,
         (_, Some(_)) => EncounterStatus::Finished,
-        (Some(start), _) => {
-            if start.lt(&DateTime::DateTime(OffsetDateTime::now_utc().into())) {
-                EncounterStatus::InProgress
-            } else {
-                EncounterStatus::Planned
-            }
-        }
+        (Some(_), _) => EncounterStatus::InProgress,
     }
 }
 
@@ -633,7 +646,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
         "TS" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
             .code("SS".to_string())
-            .display("short-stay".to_string())
+            .display("short stay".to_string())
             .build()?),
         _ => Err(anyhow!("Invalid encounter_class code (PV1.2): {}", code)),
     }
@@ -956,7 +969,7 @@ fn map_diagnose_local_codes(
         }
 
         // Behandlungsdiagnose
-        "BD" => {
+        "BD" | "Beh." => {
             result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
 
             // not supported by 2026 profile
@@ -1261,10 +1274,13 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
         let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
 EVN|A03|202111230904|202111230904||Muster
 PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
+PV1|1|O|NEPPOLAMB^^^NEP^NEP^987600|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
+IN1|1|105313145|AOK HESSEN|AOK Hessen|^^Marburg^^35039^D||||AOK^1^^^1&gesetzlich||||||50001|||||||1|||||||||R|||||454874316|||||||U|
+IN2|1||||||||||||||||||||||||||||^PC^0^K
 DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||20230101131500|do-not-know|||||||||1|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345677|U
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
-        let x = &map_conditions(&msg, &get_test_config());
+        let x = &map(&msg, &get_test_config(), &get_dummy_resources());
         match x {
             Ok(_) => panic!("we have an unsupported condition type - this is not OK!"),
 
@@ -1282,7 +1298,7 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
 
         let config = get_test_config();
 
-        let result = map(&msg, config.clone(), &get_dummy_resources());
+        let result = map(&msg, &config, &get_dummy_resources());
 
         assert!(result.is_ok());
 
@@ -1424,7 +1440,7 @@ ZBE|30674176^ORBIS|202208221309||INSERT
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let result = map(&msg, get_test_config(), &get_dummy_resources());
+        let result = map(&msg, &get_test_config(), &get_dummy_resources());
 
         result
             .map_err(|e| panic!("failed with error: {}", e.to_string()))
@@ -1486,7 +1502,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let actual = map(&msg, get_test_config(), &get_dummy_resources()).unwrap();
+        let actual = map(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
 
         assert_eq!(actual.len(), 1);
     }
@@ -1545,12 +1561,12 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     fn get_enc_type_coding(actual: &Encounter, index: usize) -> Coding {
         let type_coding = actual
             .r#type
-            .first()
+            .get(index)
             .unwrap()
             .as_ref()
             .unwrap()
             .coding
-            .get(index)
+            .first()
             .unwrap()
             .as_ref()
             .unwrap()
@@ -1568,7 +1584,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let actual = map(&msg, get_test_config(), &get_dummy_resources());
+        let actual = map(&msg, &get_test_config(), &get_dummy_resources());
         assert!(actual.is_err());
         assert_eq!(
             actual.unwrap_err().to_string(),
@@ -1589,13 +1605,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         assert_eq!(
             abteilung_result
                 .r#type
-                .get(0)
+                .get(1)
                 .unwrap()
                 .as_ref()
                 .unwrap()
                 .coding
                 .clone()
-                .get(1)
+                .first()
                 .unwrap()
                 .as_ref()
                 .unwrap()
@@ -1610,13 +1626,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         assert_eq!(
             einrichtung_result
                 .r#type
-                .get(0)
+                .get(1)
                 .unwrap()
                 .as_ref()
                 .unwrap()
                 .coding
                 .clone()
-                .get(1)
+                .first()
                 .unwrap()
                 .as_ref()
                 .unwrap()
@@ -1639,13 +1655,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         assert_eq!(
             abteilung_result
                 .r#type
-                .get(0)
+                .get(1)
                 .unwrap()
                 .as_ref()
                 .unwrap()
                 .coding
                 .clone()
-                .get(1)
+                .first()
                 .unwrap()
                 .as_ref()
                 .unwrap()
@@ -1660,13 +1676,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         assert_eq!(
             einrichtung_result
                 .r#type
-                .get(0)
+                .get(1)
                 .unwrap()
                 .as_ref()
                 .unwrap()
                 .coding
                 .clone()
-                .get(1)
+                .first()
                 .unwrap()
                 .as_ref()
                 .unwrap()
@@ -1847,5 +1863,31 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             map_einrichtungskontakt(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
 
         assert!(einrichtungskontakt.extension.is_empty());
+    }
+    #[test]
+    fn test_amb_condition() {
+        let hl7 = read_test_resource("a08_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let mapped_conditions = map_conditions(&msg, &get_test_config());
+
+        assert!(mapped_conditions.is_ok());
+        assert_eq!(mapped_conditions.unwrap().len(), 23);
+
+        let mapped_enc = map(&msg, &get_test_config(), &get_dummy_resources());
+        assert!(mapped_enc.is_ok());
+
+        let enc_r = mapped_enc
+            .unwrap()
+            .first()
+            .unwrap()
+            .resource
+            .clone()
+            .unwrap();
+        if let Ok(enc) = Encounter::try_from(enc_r) {
+            assert_eq!(enc.diagnosis.len(), 23);
+        } else {
+            panic!("failed parse to encounter")
+        }
     }
 }

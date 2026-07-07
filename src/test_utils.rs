@@ -7,8 +7,12 @@ pub(crate) mod tests {
     use crate::fhir::resources::{Department, ResourceMap, ValidPeriod, Ward};
     use chrono::NaiveDate;
     use fhir_model::WrongResourceType;
-    use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
+    use fhir_model::r4b::codes::IssueSeverity;
+    use fhir_model::r4b::resources::{
+        Bundle, BundleEntry, OperationOutcome, OperationOutcomeIssue, Resource,
+    };
     use fhir_model::r4b::types::Meta;
+    use serde_json::Value;
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
@@ -39,10 +43,10 @@ pub(crate) mod tests {
             condition: SystemConfig { system: "https://fhir.diz.uni-marburg.de/sid/condition-id".to_string() },
             observation: ObservationConfig {
                 system: "https://fhir.diz.uni-marburg.de/sid/observation-id".to_string(),
-                profile_weight: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergewicht|2025.0.4".to_string(),
-                profile_head_circumference: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-kopfumfang|2025.0.4".to_string(),
+                profile_weight: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/koerpergewicht|2025.0.4".to_string(),
+                profile_head_circumference: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/kopfumfang|2025.0.4".to_string(),
                 profile_vital_status: "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Vitalstatus|2026.0.0".to_string(),
-                profile_height: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/mii-pr-icu-muv-koerpergroesse|2025.0.4".to_string(),
+                profile_height: "https://www.medizininformatik-initiative.de/fhir/ext/modul-icu/StructureDefinition/koerpergroesse|2025.0.4".to_string(),
             },
             organization: OrganizationConfig {
                 department: SystemConfig { system: "https://fhir.diz.uni-marburg.de/sid/department".to_string() },
@@ -164,5 +168,59 @@ pub(crate) mod tests {
 
         fs::read_to_string(file_path.display().to_string())
             .unwrap_or_else(|_| panic!("Test resource not found: {}", file_path.display()))
+    }
+
+    pub(crate) fn send_to_validate(
+        request_url: &str,
+        serialized_resource: String,
+    ) -> OperationOutcome {
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .post(request_url)
+            .body(serialized_resource)
+            .send()
+            .unwrap();
+
+        response.json().unwrap()
+    }
+
+    pub(crate) fn validate_with_server(
+        test_file: &str,
+        raw: &Value,
+        show_level: &IssueSeverity,
+    ) -> bool {
+        let outcome = send_to_validate("http://localhost:8080/validateResource", raw.to_string());
+        outcome.issue.iter().all(|i| {
+            if let Some(outcome) = i {
+                match outcome.severity {
+                    IssueSeverity::Error | IssueSeverity::Fatal => {
+                        print_outcome_details(outcome, test_file);
+                        false
+                    }
+                    IssueSeverity::Information => true,
+                    IssueSeverity::Warning => {
+                        if IssueSeverity::Warning.eq(show_level) {
+                            print_outcome_details(outcome, test_file);
+                        }
+                        true
+                    }
+                }
+            } else {
+                false
+            }
+        })
+    }
+
+    fn print_outcome_details(issue: &OperationOutcomeIssue, test_file: &str) {
+        let details = issue.details.as_ref().unwrap();
+
+        println!(
+            "{}: Resource {} is invalid code: '{}' at: '{}",
+            issue.severity,
+            test_file,
+            issue.code,
+            issue.expression.clone().first().unwrap().as_ref().unwrap()
+        );
+        println!("Details: {:#?}", details.text.as_ref().unwrap());
     }
 }

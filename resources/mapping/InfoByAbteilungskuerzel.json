@@ -32,7 +32,7 @@
     "fachabteilungsSchluessel": "2100"
   },
   "HNO": {
-    "abteilungsBezeichnung": "Hals-, Nasen- Ohrenheilkunde",
+    "abteilungsBezeichnung": "Hals-, Nasen-, Ohrenheilkunde",
     "fachabteilungsSchluessel": "2600"
   },
   "HUMG": {
@@ -152,7 +152,7 @@
     "fachabteilungsSchluessel": "1600"
   },
   "URO": {
-    "abteilungsBezeichnung": "Urologie und Kinderurologie",
+    "abteilungsBezeichnung": "Urologie",
     "fachabteilungsSchluessel": "2200"
   },
   "VIR": {

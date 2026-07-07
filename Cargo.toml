@@ -26,7 +26,10 @@ opentelemetry = "0.32.0"
 opentelemetry_sdk = "0.32.1"
 opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
 itertools = "0.14.0"
+uuid = { version = "1", features = ["v5"] }
+
 
 [dev-dependencies]
 rstest = "0.26.1"
 mock-collector = "0.2.12"
+reqwest = { version = "0.13.4", features = ["json"] }
