@@ -18,6 +18,7 @@ use crate::hl7::parser::{
     PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
     get_message_key, message_type, query,
 };
+use EncounterType::Einrichtungskontakt;
 use anyhow::anyhow;
 use chrono::NaiveDate;
 use fhir_model::DateTime;
@@ -46,7 +47,7 @@ enum EncounterType {
 impl From<&EncounterType> for Coding {
     fn from(t: &EncounterType) -> Self {
         match t {
-            EncounterType::Einrichtungskontakt => Coding::builder()
+            Einrichtungskontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("einrichtungskontakt".to_string())
                 .display("Einrichtungskontakt".to_string())
@@ -124,8 +125,7 @@ pub(super) fn map(
                 || message_type == MessageType::A38
             {
                 let enc_admit =
-                    base_encounter(msg, config, resources, &EncounterType::Einrichtungskontakt)?
-                        .build()?;
+                    base_encounter(msg, config, resources, &Einrichtungskontakt)?.build()?;
                 result.push(bundle_entry(enc_admit, EntryRequestType::Delete, config)?)
             }
 
@@ -186,7 +186,7 @@ fn map_einrichtungskontakt(
     resources: &ResourceMap,
 ) -> Result<Encounter, MappingError> {
     // base encounter
-    let mut enc = base_encounter(msg, config, resources, &EncounterType::Einrichtungskontakt)?
+    let mut enc = base_encounter(msg, config, resources, &Einrichtungskontakt)?
         // serviceProvider -> Hospital
         .service_provider(
             Reference::builder()
@@ -223,7 +223,9 @@ fn map_einrichtungskontakt(
         // With bed status 'NS' we get only some additional ambulatory treatment,
         // which will be represented by ambulatory class 'Abteilungskontakt' and
         // 'Versorgungsstellenkontakt'
+        // upper level encounter 'einrichtungskontakt' should stay 'IMP'
         enc.class.code = Some("IMP".to_string());
+        enc.class.display = Some("inpatient encounter".to_string());
     }
     Ok(enc)
 }
@@ -461,9 +463,7 @@ fn map_level_identifier(
     let visit_number = map_visit_number(msg)?;
 
     let (system, value) = match encounter_type {
-        EncounterType::Einrichtungskontakt => {
-            (&config.fall.einrichtungskontakt.system, visit_number)
-        }
+        Einrichtungskontakt => (&config.fall.einrichtungskontakt.system, visit_number),
         Fachabteilungskontakt => (&config.fall.abteilungskontakt.system, zbe_id?),
         Versorgungsstellenkontakt => (&config.fall.versorgungsstellenkontakt.system, zbe_id?),
     };
@@ -481,16 +481,23 @@ fn map_encounter_type(
     resources: &ResourceMap,
 ) -> Result<Vec<Option<CodeableConcept>>, MappingError> {
     // Kontaktebene
-    let mut coding = vec![Some(enc_type.into())];
+    let kontaktebene = CodeableConcept::builder()
+        .coding(vec![Some(enc_type.into())])
+        .build()?;
 
-    if let Some(c) = map_kontaktart(msg, resources, enc_type)? {
-        // Kontaktart
-        coding.push(Some(c));
+    let kontaktart: Option<CodeableConcept> = {
+        if let Some(art) = map_kontaktart(msg, resources, enc_type)? {
+            // Kontaktart
+            Some(CodeableConcept::builder().coding(vec![Some(art)]).build()?)
+        } else {
+            None
+        }
+    };
+    if let Some(kontaktart) = kontaktart {
+        Ok(vec![Some(kontaktebene), Some(kontaktart)])
+    } else {
+        Ok(vec![Some(kontaktebene)])
     }
-
-    Ok(vec![Some(
-        CodeableConcept::builder().coding(coding).build()?,
-    )])
 }
 
 fn fab_ref(fab: &str, config: &Fhir) -> Result<Reference, MappingError> {
@@ -569,7 +576,7 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     let start: DateTime;
     let end: Option<DateTime>;
     match lvl {
-        EncounterType::Einrichtungskontakt => {
+        Einrichtungskontakt => {
             start = parse_datetime(
                 query(msg, PV1_44).ok_or(MissingMessageValue("PV1.44".to_string()))?,
             )?;
@@ -579,7 +586,7 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                 None => None,
             };
         }
-        EncounterType::Fachabteilungskontakt | EncounterType::Versorgungsstellenkontakt => {
+        Fachabteilungskontakt | Versorgungsstellenkontakt => {
             start =
                 parse_datetime(query(msg, ZBE_2).ok_or(MissingMessageValue("ZBE-2".to_string()))?)?;
             end = match query(msg, ZBE_3) {
@@ -608,13 +615,7 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
     match (period.start.as_ref(), period.end.as_ref()) {
         (None, None) => EncounterStatus::Unknown,
         (_, Some(_)) => EncounterStatus::Finished,
-        (Some(start), _) => {
-            if start.lt(&DateTime::DateTime(OffsetDateTime::now_utc().into())) {
-                EncounterStatus::InProgress
-            } else {
-                EncounterStatus::Planned
-            }
-        }
+        (Some(_), _) => EncounterStatus::InProgress,
     }
 }
 
