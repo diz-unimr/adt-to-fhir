@@ -52,7 +52,7 @@ const CODING_HEAD_CIRCUMFERENCE: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|
             .build()
             .ok(),
         Coding::builder()
-            .code("363811000".to_string())
+            .code("363812007".to_string())
             .system(SNOMED_SYSTEM.to_string())
             .display("Head circumference measure (observable entity)".to_string())
             .version(SNOMED_VERSION.to_string())
