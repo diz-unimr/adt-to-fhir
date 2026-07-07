@@ -30,7 +30,6 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
 };
-use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 use hl7_parser::message::Field;
 use log::{Level, log};
@@ -647,7 +646,7 @@ fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
         "TS" => Ok(Coding::builder()
             .system("http://terminology.hl7.org/CodeSystem/v3-ActCode".to_string())
             .code("SS".to_string())
-            .display("short-stay".to_string())
+            .display("short stay".to_string())
             .build()?),
         _ => Err(anyhow!("Invalid encounter_class code (PV1.2): {}", code)),
     }
@@ -1562,12 +1561,12 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     fn get_enc_type_coding(actual: &Encounter, index: usize) -> Coding {
         let type_coding = actual
             .r#type
-            .first()
+            .get(index)
             .unwrap()
             .as_ref()
             .unwrap()
             .coding
-            .get(index)
+            .first()
             .unwrap()
             .as_ref()
             .unwrap()
@@ -1606,13 +1605,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         assert_eq!(
             abteilung_result
                 .r#type
-                .get(0)
+                .get(1)
                 .unwrap()
                 .as_ref()
                 .unwrap()
                 .coding
                 .clone()
-                .get(1)
+                .first()
                 .unwrap()
                 .as_ref()
                 .unwrap()
@@ -1627,13 +1626,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         assert_eq!(
             einrichtung_result
                 .r#type
-                .get(0)
+                .get(1)
                 .unwrap()
                 .as_ref()
                 .unwrap()
                 .coding
                 .clone()
-                .get(1)
+                .first()
                 .unwrap()
                 .as_ref()
                 .unwrap()
@@ -1656,13 +1655,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         assert_eq!(
             abteilung_result
                 .r#type
-                .get(0)
+                .get(1)
                 .unwrap()
                 .as_ref()
                 .unwrap()
                 .coding
                 .clone()
-                .get(1)
+                .first()
                 .unwrap()
                 .as_ref()
                 .unwrap()
@@ -1677,13 +1676,13 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         assert_eq!(
             einrichtung_result
                 .r#type
-                .get(0)
+                .get(1)
                 .unwrap()
                 .as_ref()
                 .unwrap()
                 .coding
                 .clone()
-                .get(1)
+                .first()
                 .unwrap()
                 .as_ref()
                 .unwrap()
