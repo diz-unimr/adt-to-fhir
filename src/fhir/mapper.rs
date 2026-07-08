@@ -1,9 +1,9 @@
 use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError, ParsingError};
-use crate::fhir::resources::ResourceMap;
+use crate::fhir::resources::{ResourceMap, is_valid_date};
 use crate::fhir::{encounter, location, observation, organization, patient};
 use crate::hl7::parser::{
-    MessageType, PID_2, PID_4, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, PV1_19_1, get_message_key,
+    MessageType, PID_2, PID_4, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, PV1_19_1, ZBE_2, get_message_key,
     message_type, query,
 };
 use anyhow::anyhow;
@@ -369,6 +369,25 @@ pub fn full_url_from_identifiers(identifiers: &[Identifier], config: &Fhir) -> S
     let uuid = Uuid::new_v5(&namespace, input.as_bytes());
     format!("urn:uuid:{}", uuid)
 }
+
+pub(crate) fn is_ward_valid_icu(msg: &Message, resources: &ResourceMap) -> bool {
+    query(msg, PV1_3_1)
+        .and_then(|ward_id| resources.ward_map.get(ward_id))
+        .is_some_and(|ward| {
+            ward.is_icu
+                && query(msg, ZBE_2)
+                    .and_then(|zbe_start| {
+                        let option = NaiveDate::parse_from_str(zbe_start, "%Y%m%d%H%M");
+                        option.ok()
+                    })
+                    .is_some_and(|n_date| {
+                        ward.valid_period
+                            .iter()
+                            .any(|period| is_valid_date(period, &n_date))
+                    })
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

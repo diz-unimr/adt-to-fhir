@@ -136,6 +136,8 @@ pub(crate) mod tests {
                     },
                 ),
             ]),
+            // fixme: add some values for tests
+            department_id_map: HashMap::from([]),
         }
     }
 
