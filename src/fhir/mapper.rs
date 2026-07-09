@@ -88,7 +88,7 @@ impl FhirMapper {
         let e = encounter::map(v2_msg, &self.config, &self.resources)?;
         let l = location::map(v2_msg, &self.config, &self.resources)?;
         let obs = observation::map(v2_msg, &self.config)?;
-        let org = organization::map(v2_msg, &self.config)?;
+        let org = organization::map(v2_msg, &self.config, &self.resources)?;
         let res = p
             .into_iter()
             .chain(e)

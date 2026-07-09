@@ -385,7 +385,7 @@ fn get_service_type(
         "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
 
     if let Some(fab) = parse_fab(msg) {
-        match resources.map_fab_schluessel(fab, get_message_key(msg)?, config) {
+        match resources.map_fab_schluessel(fab, get_message_key(msg)?, config, resources) {
             Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
             Err(e) => return Err(e),
             Ok(None) => {}

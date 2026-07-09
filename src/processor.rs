@@ -533,6 +533,7 @@ mod tests {
             resources: ResourceMap {
                 department_map: Default::default(),
                 ward_map: Default::default(),
+                department_id_map: Default::default(),
             },
         });
 

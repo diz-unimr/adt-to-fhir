@@ -1,7 +1,9 @@
 use crate::config::{CheckMode, Fhir};
 use crate::error::MappingError;
 use crate::error::MappingError::MissingResourceError;
+use anyhow::Context;
 use chrono::NaiveDate;
+use fhir_model::r4b::resources::CodeSystem;
 use fhir_model::r4b::types::{CodeableConcept, Coding};
 use log::{Level, log};
 use serde::Deserialize;
@@ -58,6 +60,8 @@ pub(crate) struct ResourceMap {
     pub(crate) department_map: HashMap<String, Department>,
     /// Map with key: Stationskürzel
     pub(crate) ward_map: HashMap<String, Ward>,
+    /// Map medical department id (Fachabteilungschluessel) as key to its official name
+    pub(crate) department_id_map: HashMap<String, String>,
 }
 
 impl ResourceMap {
@@ -73,6 +77,7 @@ impl ResourceMap {
         Ok(ResourceMap {
             department_map: init_department_map()?,
             ward_map: init_ward_map()?,
+            department_id_map: init_departments_id_map()?,
         })
     }
 
@@ -87,6 +92,7 @@ impl ResourceMap {
         code: &str,
         msg_id: &str,
         config: &Fhir,
+        resources: &ResourceMap,
     ) -> Result<Option<CodeableConcept>, MappingError> {
         let key = self.find_key(code);
 
@@ -108,6 +114,22 @@ impl ResourceMap {
                 return Ok(None);
             }
 
+            let department_id_display = match resources
+                .department_id_map
+                .get(&dep.fachabteilungs_schluessel)
+            {
+                None => {
+                    return Err(MissingResourceError {
+                        resource: "Fachabteilungsschluessel-erweitert.json".to_string(),
+                        value: format!(
+                            "department {} -> key {}",
+                            code, &dep.fachabteilungs_schluessel
+                        ),
+                    });
+                }
+                Some(d) => d,
+            };
+
             Ok(Some(
                 CodeableConcept::builder()
                     .coding(vec![Some(
@@ -117,7 +139,7 @@ impl ResourceMap {
                                 .to_string(),
                         )
                         .code(dep.fachabteilungs_schluessel.to_string())
-                        .display(dep.abteilungs_bezeichnung.to_string())
+                        .display(department_id_display.to_string())
                         .build()?,
                 )])
                     .build()?,
@@ -165,7 +187,7 @@ fn error_if_strict(
 ) -> Result<Option<CodeableConcept>, MappingError> {
     match config.check_mode {
         CheckMode::Strict => Err(MissingResourceError {
-            resource: "Fachabteilungsschlüssel".into(),
+            resource: "Fachabteilungsschlüssel".to_string(),
             value: code.to_string(),
         }),
         CheckMode::Lenient => {
@@ -218,11 +240,33 @@ fn read_mapping_resource(file_name: &str) -> Result<String, anyhow::Error> {
     Ok(fs::read_to_string(file_path.display().to_string())?)
 }
 
+fn init_departments_id_map() -> Result<HashMap<String, String>, anyhow::Error> {
+    let resource_data = read_mapping_resource("Fachabteilungsschluessel-erweitert.json")
+        .context("Konnte Fachabteilungsschluessel-erweitert.json nicht lesen")?;
+
+    let code_system: CodeSystem = serde_json::from_str(&resource_data)
+        .context("Fachabteilungsschluessel-erweitert.json ist kein valides CodeSystem")?;
+
+    code_system
+        .concept
+        .iter()
+        .flatten() // Option<T> in der Liste überspringen statt unwrap()
+        .map(|concept| {
+            let code = concept.code.clone();
+            let display = concept
+                .display
+                .clone()
+                .with_context(|| format!("Kein 'display' für Code '{}'", code))?;
+            Ok((code, display))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::fhir::resources::{Department, ResourceMap};
-    use crate::test_utils::tests::get_test_config;
+    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
     use std::collections::HashMap;
 
     #[test]
@@ -246,6 +290,7 @@ mod tests {
                 ),
             ]),
             ward_map: Default::default(),
+            department_id_map: get_dummy_resources().department_id_map.clone(),
         };
 
         let expected = Coding::builder()
@@ -256,7 +301,7 @@ mod tests {
             .unwrap();
 
         let actual = resources
-            .map_fab_schluessel("POL", "1234", &config)
+            .map_fab_schluessel("POL", "1234", &config, &resources)
             .unwrap()
             .unwrap()
             .coding
@@ -268,7 +313,7 @@ mod tests {
         assert_eq!(actual, expected);
 
         let actual = resources
-            .map_fab_schluessel("POLAMB", "1234", &config)
+            .map_fab_schluessel("POLAMB", "1234", &config, &resources)
             .unwrap()
             .unwrap()
             .coding
@@ -282,11 +327,11 @@ mod tests {
         let expected = Coding::builder()
             .system("http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert".into())
             .code("3700".into())
-            .display("Microbiologie".into())
+            .display("Sonstige Fachabteilung".into())
             .build()
             .unwrap();
         let actual = resources
-            .map_fab_schluessel("MICROYXZ", "1234", &config)
+            .map_fab_schluessel("MICROYXZ", "1234", &config, &resources)
             .unwrap()
             .unwrap()
             .coding
@@ -297,7 +342,7 @@ mod tests {
 
         assert_eq!(actual, expected);
 
-        match resources.map_fab_schluessel("does not exist", "1234", &config) {
+        match resources.map_fab_schluessel("does not exist", "1234", &config, &resources) {
             Ok(result) => panic!(
                 "check mode strict should produce an error! but got: {:?}",
                 result
@@ -313,7 +358,7 @@ mod tests {
         }
 
         config.check_mode = CheckMode::Lenient;
-        match resources.map_fab_schluessel("does not exist", "1234", &config) {
+        match resources.map_fab_schluessel("does not exist", "1234", &config, &resources) {
             Ok(result) => {
                 let actual = result.unwrap().coding.first().unwrap().clone().unwrap();
                 let expected = Coding::builder()

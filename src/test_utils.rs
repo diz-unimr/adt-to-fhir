@@ -136,6 +136,16 @@ pub(crate) mod tests {
                     },
                 ),
             ]),
+            department_id_map: HashMap::from([
+                ("0800".to_string(), "Pneumologie".to_string()),
+                (
+                    "2600".to_string(),
+                    "Hals-, Nasen-, Ohrenheilkunde".to_string(),
+                ),
+                ("1000".to_string(), "Pädiatrie".to_string()),
+                ("2200".to_string(), "Urologie".to_string()),
+                ("3700".to_string(), "Sonstige Fachabteilung".to_string()),
+            ]),
         }
     }
 
