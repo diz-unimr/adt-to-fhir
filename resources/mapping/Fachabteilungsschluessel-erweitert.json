@@ -1,13 +1,33 @@
 {
   "resourceType": "CodeSystem",
   "id": "Fachabteilungsschluessel-erweitert",
-  "url": "",
   "name": "CodeSystemFachabteilungsschluesselErweitert",
-  "title": "Fachabteilun gsschluessel Erweitert",
   "status": "active",
-  "experimental": false,
-  "caseSensitive": false,
   "content": "fragment",
   "concept": [
+    {
+      "code": "0800",
+      "display": "Pneumologie"
+    },
+    {
+      "code": "1300",
+      "display": "Kinderchirurgie"
+    },
+    {
+      "code": "2200",
+      "display": "Urologie"
+    },
+    {
+      "code": "2600",
+      "display": "Hals-, Nasen-, Ohrenheilkunde"
+    },
+    {
+      "code": "0400",
+      "display": "Nephrologie"
+    },
+    {
+      "code": "1000",
+      "display": "Pädiatrie"
+    }
   ]
 }
