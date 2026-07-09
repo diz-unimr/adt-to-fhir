@@ -1,0 +1,13 @@
+{
+  "resourceType": "CodeSystem",
+  "id": "Fachabteilungsschluessel-erweitert",
+  "url": "",
+  "name": "CodeSystemFachabteilungsschluesselErweitert",
+  "title": "Fachabteilun gsschluessel Erweitert",
+  "status": "active",
+  "experimental": false,
+  "caseSensitive": false,
+  "content": "fragment",
+  "concept": [
+  ]
+}
