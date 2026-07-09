@@ -18,6 +18,7 @@ auto-commiting.
 
 > [!WARNING]  
 > TODO
+> see wiki pages for now.
 
 ## Configuration properties
 
