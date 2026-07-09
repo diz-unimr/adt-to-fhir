@@ -136,6 +136,7 @@ pub(crate) mod tests {
                     },
                 ),
             ]),
+            department_id_map: Default::default(),
         }
     }
 
