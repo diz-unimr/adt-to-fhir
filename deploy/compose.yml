@@ -12,3 +12,5 @@ services:
       # - ./cert:/app/cert:ro
       - ./InfoStation.json:/app/resources/mapping/InfoStation.json:ro
       - ./InfoByAbteilungskuerzel.json:/app/resources/mapping/InfoByAbteilungskuerzel.json:ro
+      # download it from http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert
+      - ./Fachabteilungsschluessel-erweitert.json:/app/resources/mapping/Fachabteilungsschluessel-erweitert.json

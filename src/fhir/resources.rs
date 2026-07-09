@@ -92,6 +92,7 @@ impl ResourceMap {
         code: &str,
         msg_id: &str,
         config: &Fhir,
+        resources: &ResourceMap,
     ) -> Result<Option<CodeableConcept>, MappingError> {
         let key = self.find_key(code);
 
@@ -113,6 +114,22 @@ impl ResourceMap {
                 return Ok(None);
             }
 
+            let department_id_display = match resources
+                .department_id_map
+                .get(&dep.fachabteilungs_schluessel)
+            {
+                None => {
+                    return Err(MissingResourceError {
+                        resource: "Fachabteilungsschluessel-erweitert.json".to_string(),
+                        value: format!(
+                            "department {} -> key {}",
+                            code, &dep.fachabteilungs_schluessel
+                        ),
+                    });
+                }
+                Some(d) => d,
+            };
+
             Ok(Some(
                 CodeableConcept::builder()
                     .coding(vec![Some(
@@ -122,7 +139,7 @@ impl ResourceMap {
                                 .to_string(),
                         )
                         .code(dep.fachabteilungs_schluessel.to_string())
-                        .display(dep.abteilungs_bezeichnung.to_string())
+                        .display(department_id_display.to_string())
                         .build()?,
                 )])
                     .build()?,
@@ -170,7 +187,7 @@ fn error_if_strict(
 ) -> Result<Option<CodeableConcept>, MappingError> {
     match config.check_mode {
         CheckMode::Strict => Err(MissingResourceError {
-            resource: "Fachabteilungsschlüssel".into(),
+            resource: "Fachabteilungsschlüssel".to_string(),
             value: code.to_string(),
         }),
         CheckMode::Lenient => {
@@ -249,7 +266,7 @@ fn init_departments_id_map() -> Result<HashMap<String, String>, anyhow::Error> {
 mod tests {
     use super::*;
     use crate::fhir::resources::{Department, ResourceMap};
-    use crate::test_utils::tests::get_test_config;
+    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
     use std::collections::HashMap;
 
     #[test]
@@ -273,7 +290,7 @@ mod tests {
                 ),
             ]),
             ward_map: Default::default(),
-            department_id_map: Default::default(),
+            department_id_map: get_dummy_resources().department_id_map.clone(),
         };
 
         let expected = Coding::builder()
@@ -284,7 +301,7 @@ mod tests {
             .unwrap();
 
         let actual = resources
-            .map_fab_schluessel("POL", "1234", &config)
+            .map_fab_schluessel("POL", "1234", &config, &resources)
             .unwrap()
             .unwrap()
             .coding
@@ -296,7 +313,7 @@ mod tests {
         assert_eq!(actual, expected);
 
         let actual = resources
-            .map_fab_schluessel("POLAMB", "1234", &config)
+            .map_fab_schluessel("POLAMB", "1234", &config, &resources)
             .unwrap()
             .unwrap()
             .coding
@@ -310,11 +327,11 @@ mod tests {
         let expected = Coding::builder()
             .system("http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert".into())
             .code("3700".into())
-            .display("Microbiologie".into())
+            .display("Sonstige Fachabteilung".into())
             .build()
             .unwrap();
         let actual = resources
-            .map_fab_schluessel("MICROYXZ", "1234", &config)
+            .map_fab_schluessel("MICROYXZ", "1234", &config, &resources)
             .unwrap()
             .unwrap()
             .coding
@@ -325,7 +342,7 @@ mod tests {
 
         assert_eq!(actual, expected);
 
-        match resources.map_fab_schluessel("does not exist", "1234", &config) {
+        match resources.map_fab_schluessel("does not exist", "1234", &config, &resources) {
             Ok(result) => panic!(
                 "check mode strict should produce an error! but got: {:?}",
                 result
@@ -341,7 +358,7 @@ mod tests {
         }
 
         config.check_mode = CheckMode::Lenient;
-        match resources.map_fab_schluessel("does not exist", "1234", &config) {
+        match resources.map_fab_schluessel("does not exist", "1234", &config, &resources) {
             Ok(result) => {
                 let actual = result.unwrap().coding.first().unwrap().clone().unwrap();
                 let expected = Coding::builder()

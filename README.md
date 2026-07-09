@@ -60,25 +60,32 @@ Application properties are read from a properties file ([app.yaml](./app.yaml)) 
 | `fhir.organization.department.system`         | `https://fhir.diz.uni-marburg.de/sid/department`                                                                               | `Organization` (_Fachabteilung_) identifier system                                                                        |
 | `fhir.organization.ward.system`               | `https://fhir.diz.uni-marburg.de/sid/ward-id`                                                                                  | `Organization` (_Station_) identifier system                                                                              |
 
-### InfoByAbteilungskuerzel.json
+### Resource files
+
+#### InfoByAbteilungskuerzel.json
 
 We do not want false mapping result to 'unknown' by
 default. Therefore, we expect every department to have a valid entry. If
-department has no valid department identification code you may map "3700" value.
-Missing entries will result in mapping error and processing will stop.
+department has no valid department identification code you may map `3700` value.
+Missing entries will result in mapping error and processing will stop, if `fhir.check_mode` is set to `strict`,
+while `lenient` configuration will fall back to `3700`.
+
+Please not, department name `abteilungsBezeichnung` at this mapping is a __lokal name__, official medical department
+name will be mapped via department id from `Fachabteilungsschluessel-erweitert`(see section below).
+The lokal name will be used to create department organization resources.
 
 Content format is like th following example, _department short name_ must be unique.
 
 ```json
 {
   "department short name": {
-    "abteilungsBezeichnung": "department name",
+    "abteilungsBezeichnung": "lokal department name",
     "fachabteilungsSchluessel": "department id as defined at §301"
   }
 }
 ```
 
-### InfoStation.json
+#### InfoStation.json
 
 This mapping file is used to define which wards are used as _intensive care units_ and in which time periods they are
 assigned this status.
@@ -104,6 +111,15 @@ values.
   }
 }
 ```
+
+#### Department id code system
+
+In Germany most medical departments can be assigned a general department id _Fachabteilungsschlüssel_, the whole list
+is available via http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert and must be mapped as volume into
+your docker container. We support JSON format.
+
+This entries will be used to map encounter of second level (*Abteilungskontakt*) at property
+`encounter.serviceType.coding`.
 
 ### Environment variables
 

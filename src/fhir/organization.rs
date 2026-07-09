@@ -5,14 +5,19 @@ use fhir_model::r4b::codes::IdentifierUse;
 use crate::fhir::mapper::{
     EntryRequestType, bundle_entry, get_cc_with_one_code, get_meta, parse_fab, resource_ref,
 };
+use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{PV1_3_1, query};
 use fhir_model::r4b::resources::{BundleEntry, Organization, ResourceType};
 use fhir_model::r4b::types::Identifier;
 use hl7_parser::Message;
 
-pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, MappingError> {
+pub(crate) fn map(
+    msg: &Message,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Vec<BundleEntry>, MappingError> {
     let mut result = vec![];
-    if let Some(department_org) = map_department_org(msg, config)? {
+    if let Some(department_org) = map_department_org(msg, config, resources)? {
         result.push(bundle_entry(
             department_org,
             EntryRequestType::UpdateAsCreate,
@@ -29,24 +34,32 @@ pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
     Ok(result)
 }
 
-fn map_department_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
+fn map_department_org(
+    msg: &Message,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Option<Organization>, MappingError> {
     if let Some(fab_ref) = parse_fab(msg) {
-        Ok(Some(
-            Organization::builder()
-                .meta(get_meta(config)?)
-                .identifier(vec![Some(
-                    Identifier::builder()
-                        .value(fab_ref.to_string())
-                        .system(config.organization.department.system.to_string())
-                        .r#use(IdentifierUse::Usual)
-                        .build()?,
-                )])
-                .r#type(vec![Some(get_cc_with_one_code(
-                    "dept".to_string(),
-                    "http://terminology.hl7.org/CodeSystem/organization-type".to_string(),
-                )?)])
-                .build()?,
-        ))
+        let mut organization = Organization::builder()
+            .meta(get_meta(config)?)
+            .identifier(vec![Some(
+                Identifier::builder()
+                    .value(fab_ref.to_string())
+                    .system(config.organization.department.system.to_string())
+                    .r#use(IdentifierUse::Usual)
+                    .build()?,
+            )])
+            .r#type(vec![Some(get_cc_with_one_code(
+                "dept".to_string(),
+                "http://terminology.hl7.org/CodeSystem/organization-type".to_string(),
+            )?)])
+            .build()?;
+
+        // local department name may differ from official medical department name
+        if let Some(department_entry) = resources.department_map.get(fab_ref) {
+            organization.name = Some(department_entry.abteilungs_bezeichnung.to_string());
+        }
+        Ok(Some(organization))
     } else {
         Ok(None)
     }
@@ -87,7 +100,7 @@ fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, Ma
 #[cfg(test)]
 mod tests {
     use crate::fhir::organization::{map_department_org, map_ward_org};
-    use crate::test_utils::tests::get_test_config;
+    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
     use hl7_parser::Message;
 
     #[test]
@@ -108,7 +121,7 @@ PV1|1|I|^^^^^945400^^^|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||
             Ok(None) => { // expect None}
             }
         }
-        match map_department_org(&msg, &get_test_config()) {
+        match map_department_org(&msg, &get_test_config(), &get_dummy_resources()) {
             Ok(Some(_)) => {
                 panic!("expect None result")
             }
@@ -133,16 +146,18 @@ PV1|1|I|POLPOLAMB^^^POL^POLPOL^945400^^^|R^^HL7~01^Normalfall^301||||||N||||||N|
             Ok(Some(actual)) => {
                 assert!(!actual.identifier.is_empty());
                 assert!(!actual.r#type.is_empty());
+                assert!(actual.name.is_none());
             }
 
             _ => {
                 panic!("expect some result")
             }
         }
-        match map_department_org(&msg, &get_test_config()) {
+        match map_department_org(&msg, &get_test_config(), &get_dummy_resources()) {
             Ok(Some(actual)) => {
                 assert!(!actual.identifier.is_empty());
                 assert!(!actual.r#type.is_empty());
+                assert_eq!(actual.name, Some("Pneumologie".to_string()));
             }
 
             _ => {
