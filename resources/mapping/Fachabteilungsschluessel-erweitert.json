@@ -7,27 +7,27 @@
   "concept": [
     {
       "code": "0800",
-      "display": "Pneumologie"
+      "display": "Test 0800"
     },
     {
       "code": "1300",
-      "display": "Kinderchirurgie"
+      "display": "Test 1300"
     },
     {
       "code": "2200",
-      "display": "Urologie"
+      "display": "Test 2200"
     },
     {
       "code": "2600",
-      "display": "Hals-, Nasen-, Ohrenheilkunde"
+      "display": "Test 2600"
     },
     {
       "code": "0400",
-      "display": "Nephrologie"
+      "display": "Test 0400"
     },
     {
       "code": "1000",
-      "display": "Pädiatrie"
+      "display": "Test 1000"
     }
   ]
 }
