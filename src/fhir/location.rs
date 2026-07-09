@@ -2,13 +2,13 @@ use crate::config::Fhir;
 use crate::error::MappingError;
 use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, get_meta,
-    is_inpatient_location, parse_fab, resource_ref,
+    is_inpatient_location, is_ward_valid_icu, parse_fab, resource_ref,
 };
 use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{MessageType, PV1_3_1, PV1_3_2, PV1_3_3, message_type, query};
 use anyhow::anyhow;
 use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
-use fhir_model::r4b::types::{CodeableConcept, Reference};
+use fhir_model::r4b::types::Reference;
 use hl7_parser::Message;
 use log::{Level, log};
 
@@ -100,23 +100,6 @@ pub(crate) fn create_locations(
 
     Ok(Some(result))
 }
-
-fn map_location_type_icu(
-    pv1_3_1_value: &str,
-    resources: &ResourceMap,
-) -> Result<Option<Vec<Option<CodeableConcept>>>, MappingError> {
-    if let Some(ward_entry) = resources.ward_map.get(pv1_3_1_value)
-        && ward_entry.is_icu
-    {
-        Ok(Some(vec![Some(get_cc_with_one_code(
-            "ICU".to_string(),
-            "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
-        )?)]))
-    } else {
-        Ok(None)
-    }
-}
-
 pub(crate) fn map_ward_location(
     msg: &Message,
     config: &Fhir,
@@ -135,8 +118,12 @@ pub(crate) fn map_ward_location(
             )?)])
             .build()
             .map_err(MappingError::BuilderError)?;
-        if let Some(icu_coding) = map_location_type_icu(ward_id, resources).transpose() {
-            location.r#type = icu_coding?;
+
+        if is_ward_valid_icu(msg, resources) {
+            location.r#type = vec![Some(get_cc_with_one_code(
+                "ICU".to_string(),
+                "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
+            )?)];
         }
         if let Some(dep_id) = department {
             location.managing_organization = Some(resource_ref(
@@ -333,6 +320,7 @@ EVN|A01|202111221030|202111221029||EIDAMN
 PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
 NK1|1|Fr. Test|14^Ehefrau||s.Pat.||||||||||U|^YYYYMMDDHHMMSS|||||||||||||||||^^^ORBIS^PN~^^^ORBIS^PI~^^^ORBIS^PT
 PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331
+ZBE|30674176^ORBIS|202208221309||INSERT
 "#,
             pv1_3_value
         );
@@ -341,13 +329,15 @@ PV1|1|I|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01
         let result = map(&msg, &get_test_config(), &get_dummy_resources()).expect("map failed");
 
         let loca: Location = resource_from(result.first().expect("one element expected"))
-            .expect("location expected");
+            .unwrap_or_else(|_| panic!("location expected - location entry is {}", pv1_3_value));
 
         if expect_icu_type {
             let type_code = loca
                 .r#type
                 .first()
-                .expect("location type is expected")
+                .unwrap_or_else(|| {
+                    panic!("location type expected - location entry is {}", pv1_3_value)
+                })
                 .clone()
                 .expect("codable concept expected")
                 .coding
