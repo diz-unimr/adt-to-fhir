@@ -801,9 +801,9 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
                                 test_file,
                             );
 
-                            let has_identifer = resource.as_identifiable_resource().unwrap();
+                            let has_identifier = resource.as_identifiable_resource().unwrap();
                             assert!(
-                                has_identifer.identifier().iter().all(|i| i
+                                has_identifier.identifier().iter().all(|i| i
                                     .clone()
                                     .unwrap()
                                     .value
