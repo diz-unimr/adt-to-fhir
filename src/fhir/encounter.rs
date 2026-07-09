@@ -656,7 +656,7 @@ fn map_kontaktart(
     resources: &ResourceMap,
     enc_type: &EncounterType,
 ) -> Result<Option<Coding>, MappingError> {
-    if &Versorgungsstellenkontakt == enc_type || &Fachabteilungskontakt == enc_type {
+    if &Versorgungsstellenkontakt == enc_type {
         let is_valid_ward = is_ward_valid_icu(msg, resources);
         if is_valid_ward {
             return Ok(Some(
@@ -1513,11 +1513,15 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             .unwrap()
             .unwrap();
 
-        let type_coding = get_enc_type_coding(&actual, 1);
-        assert_eq!(
-            type_coding.code.clone().unwrap().as_str(),
-            "intensivstationaer"
-        );
+        let type_coding = actual
+            .r#type
+            .first()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .coding
+            .clone();
+        assert_eq!(type_coding.clone().len(), 1);
 
         let f = get_enc_type_coding(&actual, 0);
         assert_eq!(f.code.clone().unwrap().as_str(), "abteilungskontakt");
