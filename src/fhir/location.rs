@@ -8,7 +8,6 @@ use crate::fhir::resources::ResourceMap;
 use crate::hl7::parser::{MessageType, PV1_3_1, PV1_3_2, PV1_3_3, message_type, query};
 use anyhow::anyhow;
 use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
-use fhir_model::r4b::types::Reference;
 use hl7_parser::Message;
 use log::{Level, log};
 
@@ -189,25 +188,35 @@ pub(crate) fn map_bed_location(
 }
 
 pub fn to_encounter_location(location: Location) -> Result<EncounterLocation, MappingError> {
-    if let Some(identifier) = location
+    let identifier = location
         .identifier
         .first()
-        .ok_or(MappingError::Other(anyhow!("failed to access identifier")))?
+        .and_then(|i| i.as_ref())
+        .ok_or_else(|| MappingError::Other(anyhow!("failed to access identifier")))?;
+
+    let identifier_value = identifier
+        .value
+        .as_deref()
+        .ok_or_else(|| MappingError::Other(anyhow!("identifier value is missing")))?;
+
+    let system = identifier
+        .system
+        .as_deref()
+        .ok_or_else(|| MappingError::Other(anyhow!("identifier system is missing")))?;
+
+    let phys_type = location
+        .physical_type
         .clone()
-    {
-        return Ok(EncounterLocation::builder()
-            .physical_type(
-                location
-                    .physical_type
-                    .clone()
-                    .ok_or(MappingError::Other(anyhow!(
-                        "physical type ist missing".to_string()
-                    )))?,
-            )
-            .location(Reference::builder().identifier(identifier).build()?)
-            .build()?);
-    };
-    Err(MappingError::Other(anyhow!("failed to access identifier")))
+        .ok_or_else(|| MappingError::Other(anyhow!("physical type is missing")))?;
+
+    Ok(EncounterLocation::builder()
+        .physical_type(phys_type)
+        .location(resource_ref(
+            &ResourceType::Location,
+            identifier_value,
+            system,
+        )?)
+        .build()?)
 }
 
 #[cfg(test)]
