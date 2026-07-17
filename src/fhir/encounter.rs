@@ -357,13 +357,13 @@ fn map_abteilungskontakt(
 ) -> Result<Option<Encounter>, MappingError> {
     if let Some(service_type) = get_service_type(msg, resources, config)? {
         // base encounter
-        let mut enc = base_encounter(
-            msg,
-            config,
-            resources,
-            &EncounterType::Fachabteilungskontakt,
-        )?
-        .build()?;
+        let mut enc = base_encounter(msg, config, resources, &Fachabteilungskontakt)?
+            .part_of(resource_ref(
+                &ResourceType::Encounter,
+                map_visit_number(msg)?,
+                &config.fall.einrichtungskontakt.system,
+            )?)
+            .build()?;
 
         enc.service_type = Some(service_type);
         if let Some(fab) = parse_fab(msg) {
@@ -1949,6 +1949,60 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
                 );
             }
         });
+    }
+
+    #[test]
+    fn map_part_of_test() {
+        let hl7 = read_test_resource("a03_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let config = &get_test_config();
+        let resources = &get_dummy_resources();
+        let einrichtung = map_einrichtungskontakt(&msg, config, resources).unwrap();
+        let einrichtung_identifier = einrichtung.identifier.first().unwrap().clone().unwrap();
+        let ident_value = einrichtung_identifier.value.as_ref().unwrap();
+
+        let abteilung = map_abteilungskontakt(&msg, config, resources).unwrap();
+
+        let abteilung_part_of = abteilung
+            .as_ref()
+            .unwrap()
+            .part_of
+            .as_ref()
+            .unwrap()
+            .reference
+            .as_ref()
+            .unwrap();
+        abteilung_part_of.ends_with(ident_value);
+        let abteilung_identifier = abteilung
+            .unwrap()
+            .identifier
+            .first()
+            .unwrap()
+            .clone()
+            .unwrap();
+        let abteilung_ident_value = abteilung_identifier.value.as_ref().unwrap();
+
+        let versorgung = map_versorgungsstellenkontakt(&msg, config, resources).unwrap();
+
+        let versorgung_part_of = versorgung
+            .as_ref()
+            .unwrap()
+            .part_of
+            .as_ref()
+            .unwrap()
+            .reference
+            .as_ref()
+            .unwrap();
+
+        versorgung_part_of.ends_with(
+            format!(
+                "{}|{}",
+                abteilung_identifier.system.as_ref().unwrap(),
+                abteilung_ident_value
+            )
+            .as_str(),
+        );
     }
 
     #[test]
