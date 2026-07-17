@@ -92,11 +92,16 @@ pub(super) fn map(
         | MessageType::A08
         | MessageType::A13 => {
             let enc_admit = map_einrichtungskontakt(msg, config, resources)?;
-            result.push(bundle_entry(
-                enc_admit,
-                EntryRequestType::UpdateAsCreate,
-                config,
-            )?);
+
+            let mut lvl_1_request_type = EntryRequestType::UpdateAsCreate;
+            if message_type == MessageType::A04 {
+                // A04 hat eine eigene Bewegung-ID und kein Ende-Zeitpunkt. Einrichtungskontakt
+                // darf nur angelegt werden, falls er fehlt, sonst würden wir eventuell beendete
+                // Fälle wieder öffen!
+                lvl_1_request_type = EntryRequestType::ConditionalCreate;
+            }
+
+            result.push(bundle_entry(enc_admit, lvl_1_request_type, config)?);
 
             if let Some(enc_dep) = map_abteilungskontakt(msg, config, resources)? {
                 result.push(bundle_entry(
@@ -352,13 +357,13 @@ fn map_abteilungskontakt(
 ) -> Result<Option<Encounter>, MappingError> {
     if let Some(service_type) = get_service_type(msg, resources, config)? {
         // base encounter
-        let mut enc = base_encounter(
-            msg,
-            config,
-            resources,
-            &EncounterType::Fachabteilungskontakt,
-        )?
-        .build()?;
+        let mut enc = base_encounter(msg, config, resources, &Fachabteilungskontakt)?
+            .part_of(resource_ref(
+                &ResourceType::Encounter,
+                map_visit_number(msg)?,
+                &config.fall.einrichtungskontakt.system,
+            )?)
+            .build()?;
 
         enc.service_type = Some(service_type);
         if let Some(fab) = parse_fab(msg) {
@@ -1042,6 +1047,7 @@ mod tests {
     use crate::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
+    use fhir_model::r4b::codes::HTTPVerb;
     use hl7_parser::Message;
     use rstest::rstest;
     use std::default::Default;
@@ -1874,5 +1880,170 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
         } else {
             panic!("failed parse to encounter")
         }
+    }
+    #[test]
+    fn map_period_test_a04() {
+        let hl7 = read_test_resource("a04_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let levels = [
+            Einrichtungskontakt,
+            Fachabteilungskontakt,
+            Versorgungsstellenkontakt,
+        ];
+        levels.iter().for_each(|lvl| {
+            let result = map_period(&msg, lvl);
+            assert!(&result.is_ok());
+
+            if &Einrichtungskontakt == lvl {
+                assert!(result.as_ref().unwrap().end.is_none());
+                assert_eq!(
+                    result.as_ref().unwrap().start,
+                    Some(parse_datetime(query(&msg, PV1_44).unwrap()).unwrap())
+                );
+            } else {
+                assert_eq!(
+                    result.as_ref().unwrap().start,
+                    Some(parse_datetime(query(&msg, ZBE_2).unwrap()).unwrap())
+                );
+                assert_eq!(
+                    result.as_ref().unwrap().end,
+                    Some(parse_datetime(query(&msg, ZBE_2).unwrap()).unwrap())
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn map_period_test_a03() {
+        let hl7 = read_test_resource("a03_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let levels = [
+            Einrichtungskontakt,
+            Fachabteilungskontakt,
+            Versorgungsstellenkontakt,
+        ];
+        levels.iter().for_each(|lvl| {
+            let result = map_period(&msg, lvl);
+            assert!(&result.is_ok());
+
+            if lvl == &Einrichtungskontakt {
+                assert_eq!(
+                    result.as_ref().unwrap().start,
+                    Some(parse_datetime(query(&msg, PV1_44).unwrap()).unwrap())
+                );
+                assert_eq!(
+                    result.as_ref().unwrap().end,
+                    Some(parse_datetime(query(&msg, PV1_45).unwrap()).unwrap())
+                );
+            } else {
+                assert_eq!(
+                    result.as_ref().unwrap().start,
+                    Some(parse_datetime(query(&msg, ZBE_2).unwrap()).unwrap())
+                );
+
+                assert_eq!(
+                    result.as_ref().unwrap().end,
+                    Some(parse_datetime(query(&msg, ZBE_3).unwrap()).unwrap())
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn map_part_of_test() {
+        let hl7 = read_test_resource("a03_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+
+        let config = &get_test_config();
+        let resources = &get_dummy_resources();
+        let einrichtung = map_einrichtungskontakt(&msg, config, resources).unwrap();
+        let einrichtung_identifier = einrichtung.identifier.first().unwrap().clone().unwrap();
+        let ident_value = einrichtung_identifier.value.as_ref().unwrap();
+
+        let abteilung = map_abteilungskontakt(&msg, config, resources).unwrap();
+
+        let abteilung_part_of = abteilung
+            .as_ref()
+            .unwrap()
+            .part_of
+            .as_ref()
+            .unwrap()
+            .reference
+            .as_ref()
+            .unwrap();
+        abteilung_part_of.ends_with(ident_value);
+        let abteilung_identifier = abteilung
+            .unwrap()
+            .identifier
+            .first()
+            .unwrap()
+            .clone()
+            .unwrap();
+        let abteilung_ident_value = abteilung_identifier.value.as_ref().unwrap();
+
+        let versorgung = map_versorgungsstellenkontakt(&msg, config, resources).unwrap();
+
+        let versorgung_part_of = versorgung
+            .as_ref()
+            .unwrap()
+            .part_of
+            .as_ref()
+            .unwrap()
+            .reference
+            .as_ref()
+            .unwrap();
+
+        versorgung_part_of.ends_with(
+            format!(
+                "{}|{}",
+                abteilung_identifier.system.as_ref().unwrap(),
+                abteilung_ident_value
+            )
+            .as_str(),
+        );
+    }
+
+    #[test]
+    fn map_enc_for_a04() {
+        let hl7 = read_test_resource("a04_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+        let result = map(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
+
+        assert_eq!(
+            result
+                .first()
+                .as_ref()
+                .unwrap()
+                .request
+                .as_ref()
+                .unwrap()
+                .method,
+            HTTPVerb::Post
+        );
+
+        assert_eq!(
+            result
+                .get(1)
+                .as_ref()
+                .unwrap()
+                .request
+                .as_ref()
+                .unwrap()
+                .method,
+            HTTPVerb::Put
+        );
+        assert_eq!(
+            result
+                .get(2)
+                .as_ref()
+                .unwrap()
+                .request
+                .as_ref()
+                .unwrap()
+                .method,
+            HTTPVerb::Put
+        );
     }
 }

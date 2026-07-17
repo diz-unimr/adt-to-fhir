@@ -498,7 +498,6 @@ mod tests {
     #[case("A11", "DELETE", "", 5)]
     #[case("A12", "DELETE", "", 4)]
     #[case("A27", "DELETE", "", 5)]
-    #[case("A04", "PUT", "PUT", 8)]
     #[case("A02", "PUT", "POST", 10)]
     fn map_request_and_encounter_type_test(
         #[case] msg_type: String,
