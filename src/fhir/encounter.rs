@@ -218,18 +218,6 @@ fn map_einrichtungskontakt(
 
     enc.part_of = map_mothers_encounter(msg, config)?;
 
-    if let Some(bed_status) = query(msg, PV1_2)
-        && bed_status == "NS"
-    {
-        // case status change 'nachstationär'
-        // Here we do not want to change in-patient encounter status after discharge.
-        // With bed status 'NS' we get only some additional ambulatory treatment,
-        // which will be represented by ambulatory class 'Abteilungskontakt' and
-        // 'Versorgungsstellenkontakt'
-        // upper level encounter 'einrichtungskontakt' should stay 'IMP'
-        enc.class.code = Some("IMP".to_string());
-        enc.class.display = Some("inpatient encounter".to_string());
-    }
     Ok(enc)
 }
 
@@ -593,13 +581,17 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
             start =
                 parse_datetime(query(msg, ZBE_2).ok_or(MissingMessageValue("ZBE-2".to_string()))?)?;
             end = match query(msg, ZBE_3) {
+                // if end of movement is available use it
                 Some(end) => Some(parse_datetime(end)?),
                 None => {
-                    // A04 get never an end date form source system - therefore we use start date here as well
-                    if MessageType::A04 == message_type(msg).map_err(MessageAccessError::from)? {
-                        Some(start.clone())
-                    } else {
-                        None
+                    match (
+                        query(msg, PV1_2),
+                        message_type(msg).map_err(MessageAccessError::from)?,
+                    ) {
+                        // A04 get never an end date form source system - therefore we use start date here as well
+                        // 'NS' fallback post-inpatient is day patient status thus has no end of movement like A04
+                        (Some("NS"), _) | (_, MessageType::A04) => Some(start.clone()),
+                        (_, _) => None,
                     }
                 }
             };
@@ -1047,6 +1039,7 @@ mod tests {
     use crate::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
+    use fhir_model::r4b::codes::EncounterStatus::Finished;
     use fhir_model::r4b::codes::HTTPVerb;
     use hl7_parser::Message;
     use rstest::rstest;
@@ -1586,7 +1579,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 
     #[test]
     fn test_nachstationaer() {
-        let hl7 = read_test_resource("a07_nachstationaer_test.hl7");
+        let hl7 = read_test_resource("a05_ns_test.hl7");
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
 
         let res = get_dummy_resources();
@@ -1632,7 +1625,38 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
                 .unwrap(),
             "nachstationaer"
         );
-        assert_eq!(einrichtung_result.class.code.as_ref().unwrap(), "IMP");
+        assert_eq!(
+            einrichtung_result.class.code.as_ref().unwrap(),
+            "AMB",
+            "post-in-patient changes class to ambulatory"
+        );
+
+        assert_eq!(
+            einrichtung_result.status, Finished,
+            "encounter lvl1 is still closed!"
+        );
+        assert!(
+            einrichtung_result.period.as_ref().unwrap().end.is_some(),
+            "end date must be set"
+        );
+
+        assert_ne!(
+            einrichtung_result.period.as_ref().unwrap().start,
+            abteilung_result.period.as_ref().unwrap().start,
+            "nachstationär kontakt must be closed"
+        );
+
+        assert_eq!(
+            abteilung_result.period.as_ref().unwrap().start,
+            abteilung_result.period.as_ref().unwrap().end,
+            "post-inpatient is day-patient care - no end date provided - need to be closed period"
+        );
+
+        assert!(
+            map_versorgungsstellenkontakt(&msg, &get_test_config(), &res)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

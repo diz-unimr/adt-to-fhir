@@ -139,7 +139,7 @@ pub enum MessageType {
     A03,
     /// Registration
     A04,
-    /// PreAdmit
+    /// PreAdmit - also used as beginn of a post-inpatient care
     A05,
     /// ChangeOutpatientToInpatient
     A06,
