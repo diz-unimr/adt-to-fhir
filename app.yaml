@@ -18,7 +18,7 @@ kafka:
 
 fhir:
   check_mode: lenient
-  meta_source: "#orbis_adt"
+  meta_source: "https://fhir.diz.uni-marburg.de/data-source/orbis_adt"
   facility_id: "12345678"
   bundle_identifier_system: https://fhir.diz.uni-marburg.de/sid/bundle-id
   person:

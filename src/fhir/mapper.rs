@@ -750,6 +750,35 @@ PV1|1|{}|{}|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||0
             assert_eq!(parse_fab(&msg), Some(expected));
         }
     }
+
+    #[test]
+    fn missing_encounter_start_datetime() {
+        let input = r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280918||ADT^A02|11658910|P|2.5|||||DE||DE
+EVN|A02|201111280915|201111280915||TEST
+PID|1|111111|111111||Musterfrau^Marta|Mustergeburtsname|20090515|F|||Mustergasse 10^^Musterort^^33333^DE||012345/1234^^PH|||S|||||||Marburg|N||DE|Kindergartenkind
+PV1|1|I|IDIST041^041-10^^KCH^^123444|R||IDIST041^041-13^1^KCH^^123444|||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||21600000||K||||||||||||||||||1300||||||||||||A
+ZBE|44444444^ORBIS|202601280923||INSERT"#;
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        let result = mapper.map(input);
+        assert!(result.is_ok());
+
+        let raw: Value = serde_json::from_str(&result.unwrap().unwrap()).unwrap();
+
+        let b: Bundle = serde_json::from_value(raw).unwrap();
+        assert!(!b.entry.is_empty());
+
+        b.entry.iter().for_each(|entry| {
+            let resource = entry.clone().unwrap().resource.unwrap();
+
+            assert_ne!(
+                resource.resource_type(),
+                ResourceType::Encounter,
+                "if start date time is missing we cannot create encounter resources"
+            );
+        });
+    }
+
     #[test]
     fn test_all_hl7_files() {
         let test_files = vec![
