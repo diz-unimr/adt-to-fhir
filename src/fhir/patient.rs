@@ -12,6 +12,7 @@ use crate::hl7::parser::{
     field_repeats, get_message_key, message_type, query, repeat_component, repeat_subcomponents,
     segment_value,
 };
+use crate::model::person_dto::Person;
 use anyhow::anyhow;
 use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
@@ -56,11 +57,11 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
         }
         MessageType::A34 | MessageType::A40 => {
             // create fhir-patch
-            let (identifier, patch) = create_patient_merge(msg, &config)?;
+             let (parameters,target) = create_patient_merge_hl7(msg, &config)?;
             Ok(vec![patch_bundle_entry(
-                identifier,
+                parameters,
                 &ResourceType::Patient,
-                &patch, &config
+                &target, &config
             )?])
         }
         MessageType::A11
@@ -125,89 +126,160 @@ fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
     Ok(res)
 }
 
+fn map_addresses_dto(dto: &Person) -> Result<Vec<Option<Address>>, MappingError> {
+    let mut res = vec![];
+
+    for elem in dto.address.clone() {
+        let mut addr = Address::builder().r#type(AddressType::Both).build()?;
+
+        if let Some(addr_elem) = elem {
+            // line
+
+            addr.line = addr_elem.street_and_number.clone();
+
+            // city
+            if let Some(city) = addr_elem.city {
+                addr.city = Some(city.to_string());
+            }
+            // postal code
+            if let Some(postal_code) = addr_elem.zip_code {
+                addr.postal_code = Some(postal_code.to_string());
+            }
+            // country
+            if let Some(country) = addr_elem.country {
+                addr.country = Some(country.to_string());
+            }
+
+            if !addr.line.is_empty() && addr.line.iter().all(|l| l.is_some()) && addr.city.is_some()
+            {
+                // street must have at least 1 line and city must also have a value
+                res.push(Some(addr));
+            }
+        }
+    }
+
+    Ok(res)
+}
+fn create_patient_merge_dto(
+    patient_dto: &Person,
+    config: &Fhir,
+) -> Result<(Option<(Parameters, Identifier)>), MappingError> {
+    match (patient_dto.pid.clone(), patient_dto.replaced_by_pid.clone()) {
+        (Some(replaced_patient_id), Some(new_pid)) => Ok(Some(create_patient_merge(
+            replaced_patient_id,
+            new_pid,
+            config,
+        )?)),
+        (_, _) => Ok(None),
+    }
+}
 fn create_patient_merge(
+    replaced_patient_id: String,
+    new_pid: String,
+    config: &Fhir,
+) -> Result<(Parameters, Identifier), MappingError> {
+    {
+        let params = Parameters::builder()
+            .parameter(vec![Some(
+                ParametersParameter::builder()
+                    .name("operation".to_string())
+                    .part(vec![
+                        Some(
+                            ParametersParameter::builder()
+                                .name("type".to_string())
+                                .value(ParametersParameterValue::Code("add".to_string()))
+                                .build()?,
+                        ),
+                        Some(
+                            ParametersParameter::builder()
+                                .name("path".to_string())
+                                .value(ParametersParameterValue::String(
+                                    ResourceType::Patient.to_string(),
+                                ))
+                                .build()?,
+                        ),
+                        Some(
+                            ParametersParameter::builder()
+                                .name("name".to_string())
+                                .value(ParametersParameterValue::String("link".to_string()))
+                                .build()?,
+                        ),
+                        Some(
+                            ParametersParameter::builder()
+                                .name("value".to_string())
+                                .part(vec![
+                                    Some(
+                                        ParametersParameter::builder()
+                                            .name("other".to_string())
+                                            .value(ParametersParameterValue::Reference(
+                                                Reference::builder()
+                                                    .reference(upsert_reference(
+                                                        &ResourceType::Patient,
+                                                        &create_patient_identifier_pid(
+                                                            new_pid.to_string(),
+                                                            config,
+                                                        )?,
+                                                    )?)
+                                                    .r#type(ResourceType::Patient.to_string())
+                                                    .build()?,
+                                            ))
+                                            .build()?,
+                                    ),
+                                    Some(
+                                        ParametersParameter::builder()
+                                            .name("type".to_string())
+                                            .value(ParametersParameterValue::Code(
+                                                "replaced-by".to_string(),
+                                            ))
+                                            .build()?,
+                                    ),
+                                ])
+                                .build()?,
+                        ),
+                    ])
+                    .build()?,
+            )])
+            .build()?;
+
+        Ok((
+            params,
+            Identifier::builder()
+                .system(config.person.system.to_string())
+                .value(replaced_patient_id.to_string())
+                .build()?,
+        ))
+    }
+}
+fn create_patient_merge_hl7(
     msg: &Message,
     config: &Fhir,
 ) -> Result<(Parameters, Identifier), MappingError> {
-    let params = Parameters::builder()
-        .parameter(vec![Some(
-            ParametersParameter::builder()
-                .name("operation".to_string())
-                .part(vec![
-                    Some(
-                        ParametersParameter::builder()
-                            .name("type".to_string())
-                            .value(ParametersParameterValue::Code("add".to_string()))
-                            .build()?,
-                    ),
-                    Some(
-                        ParametersParameter::builder()
-                            .name("path".to_string())
-                            .value(ParametersParameterValue::String(
-                                ResourceType::Patient.to_string(),
-                            ))
-                            .build()?,
-                    ),
-                    Some(
-                        ParametersParameter::builder()
-                            .name("name".to_string())
-                            .value(ParametersParameterValue::String("link".to_string()))
-                            .build()?,
-                    ),
-                    Some(
-                        ParametersParameter::builder()
-                            .name("value".to_string())
-                            .part(vec![
-                                Some(
-                                    ParametersParameter::builder()
-                                        .name("other".to_string())
-                                        .value(ParametersParameterValue::Reference(
-                                            Reference::builder()
-                                                .reference(upsert_reference(
-                                                    &ResourceType::Patient,
-                                                    &create_patient_identifier(msg, config)?,
-                                                )?)
-                                                .r#type(ResourceType::Patient.to_string())
-                                                .build()?,
-                                        ))
-                                        .build()?,
-                                ),
-                                Some(
-                                    ParametersParameter::builder()
-                                        .name("type".to_string())
-                                        .value(ParametersParameterValue::Code(
-                                            "replaced-by".to_string(),
-                                        ))
-                                        .build()?,
-                                ),
-                            ])
-                            .build()?,
-                    ),
-                ])
-                .build()?,
-        )])
-        .build()?;
+    let replaced_patient_id = query(msg, PID_2)
+        .map(String::from)
+        .ok_or(MissingMessageValue("PID.2".to_string()))?;
+    let new_patient_id =
+        query(msg, MRG_1)
+            .map(String::from)
+            .ok_or(MessageAccessError::MissingMessageSegment(
+                "MRG.1".to_string(),
+            ))?;
 
-    Ok((
-        params,
-        Identifier::builder()
-            .system(config.person.system.to_string())
-            .value(query(msg, MRG_1).map(String::from).ok_or(
-                MessageAccessError::MissingMessageSegment("MRG.1".to_string()),
-            )?)
-            .build()?,
-    ))
+    create_patient_merge(new_patient_id, replaced_patient_id, config)
 }
 
 fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier, MappingError> {
+    let pid = query(msg, PID_2)
+        .map(String::from)
+        .ok_or(MissingMessageValue("PID.2".to_string()))?;
+
+    create_patient_identifier_pid(pid, config)
+}
+
+fn create_patient_identifier_pid(pid: String, config: &Fhir) -> Result<Identifier, MappingError> {
     Identifier::builder()
         .r#use(IdentifierUse::Usual)
         .system(config.person.system.to_owned())
-        .value(
-            query(msg, PID_2)
-                .map(String::from)
-                .ok_or(MissingMessageValue("PID.2".to_string()))?,
-        )
+        .value(pid)
         .r#type(get_cc_with_one_code(
             "MR".to_string(),
             "http://terminology.hl7.org/CodeSystem/v2-0203".to_string(),
@@ -720,7 +792,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
                 .unwrap();
 
         // act
-        let (params, _) = create_patient_merge(&msg, config).unwrap();
+        let (params, _) = create_patient_merge_hl7(&msg, config).unwrap();
 
         // get value parameters from result
         let values: Vec<ParametersParameter> = params

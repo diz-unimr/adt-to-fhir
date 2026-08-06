@@ -5,6 +5,7 @@ mod error;
 mod fhir;
 mod hl7;
 mod metrics;
+pub mod model;
 mod processor;
 pub mod test_utils;
 
