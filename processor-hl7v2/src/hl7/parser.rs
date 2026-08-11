@@ -1,6 +1,6 @@
-use crate::error::MessageTypeError::MissingMessageType;
-use crate::error::{MessageTypeError, ParsingError};
 use crate::hl7::parser::MessageType::*;
+use crate::hl7_error::Hl7MessageTypeError::MissingMessageType;
+use crate::hl7_error::{Hl7MessageTypeError, Hl7ParsingError};
 use anyhow::anyhow;
 use hl7_parser::Message;
 use hl7_parser::message::{Repeat, Segment};
@@ -12,122 +12,122 @@ use std::str::FromStr;
 /// old patient identifier value
 ///
 /// __note:__ only used at correction of patient data (e.g. merge operation)
-pub(crate) const MRG_1: &str = "MRG.1";
+pub const MRG_1: &str = "MRG.1";
 
 /// message key
 ///
 /// __note:__ always present
-pub(crate) const MSH_10: &str = "MSH.10";
+pub const MSH_10: &str = "MSH.10";
 
 /// patient identifier
 ///
 /// __note:__ always present (preferred before PID.3)
-pub(crate) const PID_2: &str = "PID.2";
+pub const PID_2: &str = "PID.2";
 /// patient identifier list
 ///
 /// __note:__ always present
-pub(crate) const PID_3_1: &str = "PID.3.1";
+pub const PID_3_1: &str = "PID.3.1";
 /// encounter identifier (medical case id)
 ///
-pub(crate) const PID_4: &str = "PID.4";
+pub const PID_4: &str = "PID.4";
 /// patient name
 ///
 /// PID.5.7 (L) legal name, (M) maiden name
 /// __note:__ repeats and components inside
-pub(crate) const PID_5: &str = "PID.5";
+pub const PID_5: &str = "PID.5";
 /// patient birthdate
-pub(crate) const PID_7: &str = "PID.7";
+pub const PID_7: &str = "PID.7";
 /// patient gender
-pub(crate) const PID_8: &str = "PID.8";
+pub const PID_8: &str = "PID.8";
 /// marital status
-pub(crate) const PID_16_1: &str = "PID.16.1";
+pub const PID_16_1: &str = "PID.16.1";
 
 /// mothers encounter number
 ///
 /// __note:__ only at birth context set
-pub(crate) const PID_21_1: &str = "PID.21.1";
+pub const PID_21_1: &str = "PID.21.1";
 /// multiple birth indicator
-pub(crate) const PID_24: &str = "PID.24";
+pub const PID_24: &str = "PID.24";
 /// Birth order
-pub(crate) const PID_25: &str = "PID.25";
+pub const PID_25: &str = "PID.25";
 /// patient death datetime
-pub(crate) const PID_29: &str = "PID.29";
+pub const PID_29: &str = "PID.29";
 /// patient death confirmation flag
-pub(crate) const PID_30: &str = "PID.30";
+pub const PID_30: &str = "PID.30";
 
 /// patient class
 ///
 /// inpatient(I), ambulatory(O), emergency (E)...
-pub(crate) const PV1_2: &str = "PV1.2";
+pub const PV1_2: &str = "PV1.2";
 /// ward short name
 ///
 /// __note:__ may be empty
-pub(crate) const PV1_3_1: &str = "PV1.3.1";
+pub const PV1_3_1: &str = "PV1.3.1";
 /// patient location room
-pub(crate) const PV1_3_2: &str = "PV1.3.2";
+pub const PV1_3_2: &str = "PV1.3.2";
 /// patient location bed number
-pub(crate) const PV1_3_3: &str = "PV1.3.3";
+pub const PV1_3_3: &str = "PV1.3.3";
 /// department short name
 ///
 /// __note:__ in rare cases empty (ambulatory bed status and ward visit)
-pub(crate) const PV1_3_4: &str = "PV1.3.4";
+pub const PV1_3_4: &str = "PV1.3.4";
 /// based on message type this may be 'department' or 'private clinic department' or 'generic location'
 ///
 /// __note:__ usually set
-pub(crate) const PV1_3_5: &str = "PV1.3.5";
+pub const PV1_3_5: &str = "PV1.3.5";
 /// admission source
-pub(crate) const PV1_4_1: &str = "PV1.4.1";
+pub const PV1_4_1: &str = "PV1.4.1";
 /// admission reason
 ///
 /// digit 3 & 4
-pub(crate) const PV1_4__2_1: &str = "PV1.4[2].1";
+pub const PV1_4__2_1: &str = "PV1.4[2].1";
 /// encounter number (medical case id)
 ///
 /// __note:__ usually set, may be missing first messages at encounter planning
-pub(crate) const PV1_19_1: &str = "PV1.19.1";
+pub const PV1_19_1: &str = "PV1.19.1";
 /// discharge reason
-pub(crate) const PV1_36_1: &str = "PV1.36.1";
+pub const PV1_36_1: &str = "PV1.36.1";
 /// clinical department code (german §301 Fachabteilungsschlüssel)
 ///
 /// __note:__ often set
-pub(crate) const PV1_39_1: &str = "PV1.39.1";
+pub const PV1_39_1: &str = "PV1.39.1";
 /// discharge disposition
-pub(crate) const PV1_40_1: &str = "PV1.40.1";
+pub const PV1_40_1: &str = "PV1.40.1";
 /// encounter beginn date time
-pub(crate) const PV1_44: &str = "PV1.44";
+pub const PV1_44: &str = "PV1.44";
 /// encounter end date time
-pub(crate) const PV1_45: &str = "PV1.45";
+pub const PV1_45: &str = "PV1.45";
 
 /// admission reason
 ///
 /// digit 1 & 2
-pub(crate) const PV2_3_1: &str = "PV2.3.1";
+pub const PV2_3_1: &str = "PV2.3.1";
 
 /// patient movement identifier
 ///
 /// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
-pub(crate) const ZBE_1_1: &str = "ZBE.1.1";
+pub const ZBE_1_1: &str = "ZBE.1.1";
 /// beginning of patient movement (timestamp)
 ///
 /// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
-pub(crate) const ZBE_2: &str = "ZBE.2.1";
+pub const ZBE_2: &str = "ZBE.2.1";
 /// end of patient movement (timestamp)
 ///
 /// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
-pub(crate) const ZBE_3: &str = "ZBE.3.1";
+pub const ZBE_3: &str = "ZBE.3.1";
 
 /// birth weight
 ///
 /// __note:__ segment only at birth context present
-pub(crate) const ZNG_7: &str = "ZNG.7";
+pub const ZNG_7: &str = "ZNG.7";
 /// head circumference at birth
 ///
 /// __note:__ segment only at birth context present
-pub(crate) const ZNG_11: &str = "ZNG.11";
+pub const ZNG_11: &str = "ZNG.11";
 /// body length at birth
 ///
 /// __note:__ segment only at birth context present
-pub(crate) const ZNG_6: &str = "ZNG.6";
+pub const ZNG_6: &str = "ZNG.6";
 
 #[derive(PartialEq, Debug)]
 pub enum MessageType {
@@ -188,9 +188,9 @@ impl Display for MessageType {
 }
 
 impl FromStr for MessageType {
-    type Err = MessageTypeError;
+    type Err = Hl7MessageTypeError;
 
-    fn from_str(s: &str) -> Result<Self, MessageTypeError> {
+    fn from_str(s: &str) -> Result<Self, Hl7MessageTypeError> {
         match s {
             "A01" => Ok(A01),
             "A02" => Ok(A02),
@@ -216,12 +216,12 @@ impl FromStr for MessageType {
             "A45" => Ok(A45),
             "A47" => Ok(A47),
             "A50" => Ok(A50),
-            _ => Err(MessageTypeError::UnknownMessageType(s.to_string())),
+            _ => Err(Hl7MessageTypeError::UnknownMessageType(s.to_string())),
         }
     }
 }
 
-pub(crate) fn message_type(msg: &Message) -> Result<MessageType, MessageTypeError> {
+pub fn message_type(msg: &Message) -> Result<MessageType, Hl7MessageTypeError> {
     MessageType::from_str(
         msg.segment("EVN")
             .ok_or(MissingMessageType("missing EVN segment".to_string()))?
@@ -239,7 +239,7 @@ pub(crate) fn message_type(msg: &Message) -> Result<MessageType, MessageTypeErro
 /// let value = query(msg, "PID.1");
 /// ```
 /// [`None`] is returned if segments are empty or missing.
-pub(crate) fn query<'a>(msg: &'a Message<'_>, location: &str) -> Option<&'a str> {
+pub fn query<'a>(msg: &'a Message<'_>, location: &str) -> Option<&'a str> {
     msg.query(location)
         .map(|l| l.raw_value())
         .filter(|s| !s.is_empty())
@@ -248,7 +248,7 @@ pub(crate) fn query<'a>(msg: &'a Message<'_>, location: &str) -> Option<&'a str>
 /// Get component value of a repeating field.
 ///
 /// Returns non-empty string slices ([`Option<&str>`]) or [`None`].
-pub(crate) fn repeat_component<'a>(repeat: &Repeat<'a>, component: usize) -> Option<&'a str> {
+pub fn repeat_component<'a>(repeat: &Repeat<'a>, component: usize) -> Option<&'a str> {
     repeat
         .component(component)
         .map(|c| c.raw_value())
@@ -258,10 +258,7 @@ pub(crate) fn repeat_component<'a>(repeat: &Repeat<'a>, component: usize) -> Opt
 /// Get subcomponent values of a repeating field.
 ///
 /// Subcomponent values are non-empty string slices ([`Option<&str>`]) or [`None`].
-pub(crate) fn repeat_subcomponents<'a>(
-    repeat: &Repeat<'a>,
-    component: usize,
-) -> Option<Vec<&'a str>> {
+pub fn repeat_subcomponents<'a>(repeat: &Repeat<'a>, component: usize) -> Option<Vec<&'a str>> {
     repeat.component(component).map(|c| {
         c.subcomponents
             .iter()
@@ -274,7 +271,7 @@ pub(crate) fn repeat_subcomponents<'a>(
 /// Get field repeats of the provided query.
 ///
 /// Returns an iterator of [`Repeat`], if query targets a [`Field`].
-pub(crate) fn field_repeats<'a>(
+pub fn field_repeats<'a>(
     msg: &'a Message<'_>,
     query: &str,
 ) -> Option<impl Iterator<Item = &'a Repeat<'a>>> {
@@ -294,7 +291,7 @@ pub(crate) fn field_repeats<'a>(
 /// `&str`-Wert des Eintrags. Sollte einer oder mehre Indexe außerhalb der verfügbaren Felder
 /// liegen, so wird `None` zurückgeliefert.
 ///
-pub(crate) fn segment_value<'a>(
+pub fn segment_value<'a>(
     segment: &Segment<'a>,
     field_number: usize,
     repeat_number: usize,
@@ -310,15 +307,17 @@ pub(crate) fn segment_value<'a>(
         .and_then(|r| repeat_component(r, component_number))
 }
 
-pub(crate) fn get_message_key<'a>(msg: &'a Message<'_>) -> Result<&'a str, ParsingError> {
-    query(msg, MSH_10).ok_or(ParsingError::Other(anyhow!("failed to parse message key")))
+pub fn get_message_key<'a>(msg: &'a Message<'_>) -> Result<&'a str, Hl7ParsingError> {
+    query(msg, MSH_10).ok_or(Hl7ParsingError::Other(anyhow!(
+        "failed to parse message key"
+    )))
 }
 
-pub(crate) fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, ParsingError> {
+pub fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, Hl7ParsingError> {
     if !input.is_empty() && input.chars().all(|c| c.is_ascii_digit()) {
         Ok(true)
     } else {
-        Err(ParsingError::Other(anyhow!(
+        Err(Hl7ParsingError::Other(anyhow!(
             "input '{}' should be numeric but got '{}'",
             source,
             input
@@ -432,18 +431,21 @@ EVN|A01|202111221030|202111221029||
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
 
-        assert!(matches!(get_message_key(&msg), Err(ParsingError::Other(_))));
+        assert!(matches!(
+            get_message_key(&msg),
+            Err(Hl7ParsingError::Other(_))
+        ));
     }
     #[test]
     fn check_is_numeric_ascii_test() {
         assert!(check_is_numeric_ascii("01", "test").unwrap());
 
-        if let Err(ParsingError::Other(_)) = check_is_numeric_ascii("", "test-empty") {
+        if let Err(Hl7ParsingError::Other(_)) = check_is_numeric_ascii("", "test-empty") {
         } else {
             panic!("check_is_numeric_ascii failed for empty input");
         }
 
-        if let Err(ParsingError::Other(_)) = check_is_numeric_ascii("a", "test-empty") {
+        if let Err(Hl7ParsingError::Other(_)) = check_is_numeric_ascii("a", "test-empty") {
         } else {
             panic!("check_is_numeric_ascii failed for alphanumeric input");
         }

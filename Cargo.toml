@@ -10,7 +10,6 @@ log = "0.4.29"
 env_logger = "0.11.9"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 futures = "0.3.32"
-config = "0.15.19"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 fhir-model = { version = "0.12.1", default-features = false, features = ["builders", "r4b"] }
@@ -21,13 +20,15 @@ chrono = { version = "0.4.44", features = ["serde"] }
 chrono-tz = "0.10.4"
 regex = "1.12.3"
 tokio-util = "0.7.18"
-validator = { version = "0.20.0", features = ["derive"] }
 opentelemetry = "0.32.0"
 opentelemetry_sdk = "0.32.1"
 opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
 itertools = "0.15.0"
 uuid = { version = "1", features = ["v5"] }
-
+fhir-core = { path = "fhir-core" }
+processor-hl7v2 = { path = "processor-hl7v2" }
+processor-csv = { path = "processor-csv" }
+adt-config = { path = "adt-config" }
 
 [dev-dependencies]
 rstest = "0.26.1"

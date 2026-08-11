@@ -1,5 +1,5 @@
 #[cfg(test)]
-pub mod tests {
+pub(crate) mod tests {
     use adt_config::config::{
         CheckMode, FallConfig, Fhir, LocationConfig, ObservationConfig, OrganizationConfig,
         PatientConfig, SystemConfig,

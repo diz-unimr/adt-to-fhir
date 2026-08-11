@@ -1,15 +1,16 @@
-use crate::config::Fhir;
 use crate::error::MappingError;
 use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, get_meta,
     is_inpatient_location, is_ward_valid_icu, parse_fab, resource_ref,
 };
-use crate::fhir::resources::ResourceMap;
-use crate::hl7::parser::{MessageType, PV1_3_1, PV1_3_2, PV1_3_3, message_type, query};
+
+use adt_config::config::Fhir;
+use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
 use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
 use hl7_parser::Message;
 use log::{Level, log};
+use processor_hl7v2::hl7::parser::{MessageType, PV1_3_1, PV1_3_2, PV1_3_3, message_type, query};
 
 pub(super) fn map(
     msg: &Message,
@@ -222,10 +223,10 @@ pub fn to_encounter_location(location: Location) -> Result<EncounterLocation, Ma
 #[cfg(test)]
 mod tests {
     use crate::fhir::location::map;
-    use crate::hl7::parser::{PV1_3_1, query};
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, resource_from};
     use fhir_model::r4b::resources::Location;
     use hl7_parser::Message;
+    use processor_hl7v2::hl7::parser::{PV1_3_1, query};
     use rstest::rstest;
 
     #[rstest]

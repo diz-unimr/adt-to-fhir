@@ -1,4 +1,3 @@
-use crate::config::Fhir;
 use crate::error::MessageAccessError::MissingMessageValue;
 use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::encounter::EncounterType::{Fachabteilungskontakt, Versorgungsstellenkontakt};
@@ -9,17 +8,16 @@ use crate::fhir::mapper::{
     EntryRequestType, bundle_entry, get_cc_with_one_code, is_begleitperson, is_inpatient_location,
     is_ward_valid_icu, map_visit_number, parse_datetime, parse_fab, resource_ref, subject_ref,
 };
-use crate::fhir::resources::ResourceMap;
+use adt_config::config::Fhir;
+
 use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
-use crate::hl7::parser::{
-    MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1, PV1_36_1,
-    PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
-    get_message_key, message_type, query,
-};
 use EncounterType::Einrichtungskontakt;
+use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
+use fhir_core::fhir_error::FhirMappingError;
+use fhir_core::model::fab_mapping::map_fab_schluessel;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterLocationStatus, EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
@@ -32,6 +30,12 @@ use fhir_model::r4b::types::{
 use hl7_parser::Message;
 use hl7_parser::message::Field;
 use log::{Level, log};
+use processor_hl7v2::hl7::parser::{
+    MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1, PV1_36_1,
+    PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
+    get_message_key, message_type, query,
+};
+use processor_hl7v2::hl7_error::Hl7MappingError;
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -79,7 +83,7 @@ pub(super) fn map(
     }
 
     let msg_type = message_type(msg);
-    let message_type = msg_type.map_err(MessageAccessError::MessageTypeError)?;
+    let message_type = msg_type.map_err(MappingError::Hl7MessageTypeError)?;
 
     match message_type {
         MessageType::A01
@@ -163,7 +167,7 @@ pub(super) fn map(
     }
 }
 
-fn should_msg_be_skipped(msg: &Message) -> Result<bool, ParsingError> {
+fn should_msg_be_skipped(msg: &Message) -> Result<bool, MappingError> {
     if is_begleitperson(msg).is_ok_and(|v| v) {
         log!(
             Level::Debug,
@@ -378,9 +382,12 @@ fn get_service_type(
         "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
 
     if let Some(fab) = parse_fab(msg) {
-        match resources.map_fab_schluessel(fab, get_message_key(msg)?, config, resources) {
+        let msg_id = get_message_key(msg)?;
+        match map_fab_schluessel(fab, msg_id, config, resources) {
             Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
-            Err(e) => return Err(e),
+            Err(e) => match e {
+                MappingError => {}
+            },
             Ok(None) => {}
         };
     }
@@ -584,10 +591,7 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                 // if end of movement is available use it
                 Some(end) => Some(parse_datetime(end)?),
                 None => {
-                    match (
-                        query(msg, PV1_2),
-                        message_type(msg).map_err(MessageAccessError::from)?,
-                    ) {
+                    match (query(msg, PV1_2), message_type(msg)?) {
                         // A04 get never an end date form source system - therefore we use start date here as well
                         // 'NS' fallback post-inpatient is day patient status thus has no end of movement like A04
                         (Some("NS"), _) | (_, MessageType::A04) => Some(start.clone()),
@@ -808,7 +812,7 @@ fn map_lvl_3_locations(
     }
 }
 
-fn get_location_status(msg: &Message) -> Result<EncounterLocationStatus, MessageAccessError> {
+fn get_location_status(msg: &Message) -> Result<EncounterLocationStatus, MappingError> {
     match message_type(msg) {
         Ok(MessageType::A04) | Ok(MessageType::A03) => Ok(EncounterLocationStatus::Completed),
         Ok(_) => {
@@ -1036,9 +1040,9 @@ fn map_diagnose_local_codes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
+    use adt_config::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use fhir_model::r4b::codes::EncounterStatus::Finished;
     use fhir_model::r4b::codes::HTTPVerb;
     use hl7_parser::Message;

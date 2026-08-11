@@ -1,56 +1,48 @@
 use chrono::ParseError;
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::{BuilderError, DateFormatError, time};
-
-use processor_hl7v2::hl7_error;
 use rdkafka::error::KafkaError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub(crate) enum ProcessingError {
+pub enum Hl7ProcessingError {
     #[error("kafka error: {0}")]
     Kafka(#[from] KafkaError),
     #[error(transparent)]
-    Mapping(#[from] MappingError),
+    Mapping(#[from] Hl7MappingError),
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum MappingError {
+pub enum Hl7MappingError {
     #[error(transparent)]
-    MessageError(#[from] MessageAccessError),
+    MessageError(#[from] Hl7MessageAccessError),
     #[error(transparent)]
     BuilderError(#[from] BuilderError),
     #[error(transparent)]
-    FormattingError(#[from] ParsingError),
+    FormattingError(#[from] Hl7ParsingError),
     #[error("failed to lookup resource {resource} with value {value}")]
     MissingResourceError { resource: String, value: String },
     #[error(transparent)]
     Hl7ParseError(#[from] hl7_parser::parser::ParseError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
-    #[error(transparent)]
-    Hl7ParsingError(#[from] hl7_error::Hl7ParsingError),
-    #[error(transparent)]
-    Hl7MessageTypeError(#[from] hl7_error::Hl7MessageTypeError),
 }
 
-impl MappingError {
+impl Hl7MappingError {
     pub(crate) fn name(&self) -> &str {
         match self {
-            MappingError::MessageError(_) => "MessageError",
-            MappingError::BuilderError(_) => "BuilderError",
-            MappingError::FormattingError(_) => "FormattingError",
-            MappingError::MissingResourceError { .. } => "MissingResourceError",
-            MappingError::Hl7ParseError(_) => "Hl7ParseError",
-            MappingError::Other(_) => "Other",
-            MappingError::Hl7ParsingError(_) => "Hl7ParsingError",
-            MappingError::Hl7MessageTypeError(_) => "Hl7MessageTypeError",
+            Hl7MappingError::MessageError(_) => "MessageError",
+            Hl7MappingError::BuilderError(_) => "BuilderError",
+            Hl7MappingError::FormattingError(_) => "FormattingError",
+            Hl7MappingError::MissingResourceError { .. } => "MissingResourceError",
+            Hl7MappingError::Hl7ParseError(_) => "Hl7ParseError",
+            Hl7MappingError::Other(_) => "Other",
         }
     }
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum ParsingError {
+pub enum Hl7ParsingError {
     #[error(transparent)]
     DateFormatError(#[from] DateFormatError),
     #[error(transparent)]
@@ -70,13 +62,13 @@ pub(crate) enum ParsingError {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum MessageAccessError {
+pub(crate) enum Hl7MessageAccessError {
     #[error("Missing message segment {0}")]
     MissingMessageSegment(String),
     #[error("Missing message field value at {0}")]
     MissingMessageValue(String),
     #[error(transparent)]
-    MessageTypeError(#[from] MessageTypeError),
+    MessageTypeError(#[from] Hl7MessageTypeError),
     #[error("Message content '{0}' at {1} is unsupported")]
     UnsupportedContentError(String, String),
     #[error(transparent)]
@@ -86,7 +78,7 @@ pub(crate) enum MessageAccessError {
 }
 
 #[derive(Debug, Error)]
-pub enum MessageTypeError {
+pub enum Hl7MessageTypeError {
     #[error("Unknown message type: {0}")]
     UnknownMessageType(String),
     #[error("Missing message type: {0}")]

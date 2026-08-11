@@ -1,51 +1,50 @@
-use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
-use crate::model::person_dto::Address;
+pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
+
+use fhir_core::model::person_dto::AddressDto;
 use hl7_parser::Message;
 
-impl Address {
-    pub(crate) fn from_hl7(msg: &Message) -> Vec<Option<Address>> {
-        let mut res = vec![];
+pub(crate) fn address_from_hl7(msg: &Message) -> Vec<Option<AddressDto>> {
+    let mut res = vec![];
 
-        if let Some(addr_repeats) = field_repeats(msg, "PID.11") {
-            for addr_elem in addr_repeats {
-                let mut addr = Address::new();
+    if let Some(addr_repeats) = field_repeats(msg, "PID.11") {
+        for addr_elem in addr_repeats {
+            let mut addr = AddressDto::new();
 
-                // line
-                if let Some(lines) = repeat_subcomponents(addr_elem, 1) {
-                    addr.street_and_number =
-                        lines.into_iter().map(|l| Some(l.to_string())).collect();
-                }
-                // city
-                if let Some(city) = repeat_component(addr_elem, 3) {
-                    addr.city = Some(city.to_string());
-                }
-                // postal code
-                if let Some(postal_code) = repeat_component(addr_elem, 5) {
-                    addr.zip_code = Some(postal_code.to_string());
-                }
-                // country
-                if let Some(country) = repeat_component(addr_elem, 6) {
-                    addr.country = Some(country.to_string());
-                }
+            // line
+            if let Some(lines) = repeat_subcomponents(addr_elem, 1) {
+                addr.street_and_number = lines.into_iter().map(|l| Some(l.to_string())).collect();
+            }
+            // city
+            if let Some(city) = repeat_component(addr_elem, 3) {
+                addr.city = Some(city.to_string());
+            }
+            // postal code
+            if let Some(postal_code) = repeat_component(addr_elem, 5) {
+                addr.zip_code = Some(postal_code.to_string());
+            }
+            // country
+            if let Some(country) = repeat_component(addr_elem, 6) {
+                addr.country = Some(country.to_string());
+            }
 
-                if !addr.street_and_number.is_empty()
-                    && addr.street_and_number.iter().all(|l| l.is_some())
-                    && addr.city.is_some()
-                {
-                    // street must have at least 1 line and city must also have a value
-                    res.push(Some(addr));
-                }
+            if !addr.street_and_number.is_empty()
+                && addr.street_and_number.iter().all(|l| l.is_some())
+                && addr.city.is_some()
+            {
+                // street must have at least 1 line and city must also have a value
+                res.push(Some(addr));
             }
         }
-        res
     }
+    res
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn address_from_hl7() {
+    fn address_from_hl7_test() {
         let raw_msg = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.5||123456789|NE|NE||8859/1
 EVN|A01|202111221030|202111221029||EIDAMN
 PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
@@ -61,7 +60,7 @@ ZNG||||||35|
 "#;
 
         let msg = Message::parse_with_lenient_newlines(raw_msg, true).unwrap();
-        let result = Address::from_hl7(&msg);
+        let result = address_from_hl7(&msg);
         assert_eq!(result.len(), 1);
         let address = result.first().unwrap().clone().unwrap();
         assert_eq!(address.zip_code, Some("57334".to_string()));

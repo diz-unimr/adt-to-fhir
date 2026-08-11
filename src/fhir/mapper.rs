@@ -1,11 +1,5 @@
-use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError, ParsingError};
-use crate::fhir::resources::{ResourceMap, is_valid_date};
 use crate::fhir::{encounter, location, observation, organization, patient};
-use crate::hl7::parser::{
-    MessageType, PID_2, PID_4, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, PV1_19_1, ZBE_2, get_message_key,
-    message_type, query,
-};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -17,14 +11,20 @@ use fhir_model::r4b::resources::{
     ResourceType,
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
+use processor_hl7v2::hl7::parser::{
+    MessageType, PID_2, PID_4, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, PV1_19_1, ZBE_2, get_message_key,
+    message_type, query,
+};
 
+use adt_config::config::Fhir;
+use adt_config::resources::ResourceMap;
+use fhir_core::model::fab_mapping::is_valid_date;
 use fhir_model::time::{Month, OffsetDateTime};
 use fhir_model::{BuilderError, Instant};
 use fhir_model::{Date, DateTime, time};
 use hl7_parser::Message;
 use log::{Level, log};
 use std::slice;
-
 use uuid::Uuid;
 
 pub(crate) struct FhirMapper {

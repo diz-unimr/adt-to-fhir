@@ -1,8 +1,8 @@
 use crate::ClientConfig;
-use crate::config::{Kafka, Ssl};
 use crate::error::{MappingError, ProcessingError};
 use crate::fhir::mapper::FhirMapper;
 use crate::metrics::{errors, process_count, process_latency};
+use adt_config::config::{Kafka, Ssl};
 use futures::TryStreamExt;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
@@ -389,11 +389,11 @@ fn set_ssl_config(mut c: ClientConfig, ssl_config: Option<Ssl>) -> ClientConfig 
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{AppConfig, Kafka};
     use crate::fhir::mapper::FhirMapper;
-    use crate::fhir::resources::ResourceMap;
     use crate::processor::{Context, Processor, deserialize_message};
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
+    use adt_config::config::{AppConfig, Kafka};
+    use adt_config::resources::ResourceMap;
     use fhir_model::r4b::resources::{Bundle, ResourceType};
     use rdkafka::ClientConfig;
     use rdkafka::consumer::{Consumer, StreamConsumer};

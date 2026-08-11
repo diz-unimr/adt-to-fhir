@@ -1,18 +1,13 @@
 extern crate core;
-
-mod config;
 mod error;
 mod fhir;
-mod hl7;
 mod metrics;
-pub mod model;
 mod processor;
-pub mod test_utils;
-
+pub(crate) mod test_utils;
 use crate::fhir::mapper::FhirMapper;
 use crate::metrics::init_meter_provider;
 use crate::processor::{Context, Processor};
-use config::AppConfig;
+use adt_config::config::AppConfig;
 use log::{error, info};
 use rdkafka::ClientConfig;
 use std::process;

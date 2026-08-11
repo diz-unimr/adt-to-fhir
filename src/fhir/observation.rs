@@ -1,13 +1,10 @@
-use crate::config::Fhir;
 use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::mapper::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, map_visit_number,
     parse_datetime, resource_ref, subject_ref,
 };
 use crate::fhir::patient::map_deceased;
-use crate::hl7::parser::{
-    MessageType, PID_2, PV1_19_1, ZBE_2, ZNG_6, ZNG_7, ZNG_11, message_type, query,
-};
+use adt_config::config::Fhir;
 use anyhow::anyhow;
 use fhir_model::r4b::codes::ObservationStatus;
 use fhir_model::r4b::resources::{
@@ -16,6 +13,9 @@ use fhir_model::r4b::resources::{
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity, Reference};
 use hl7_parser::Message;
+use processor_hl7v2::hl7::parser::{
+    MessageType, PID_2, PV1_19_1, ZBE_2, ZNG_6, ZNG_7, ZNG_11, message_type, query,
+};
 use std::ops::Div;
 use std::sync::LazyLock;
 

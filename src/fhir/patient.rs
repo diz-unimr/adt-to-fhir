@@ -1,4 +1,3 @@
-use crate::config::Fhir;
 use crate::error::MappingError;
 use crate::error::MessageAccessError;
 use crate::error::MessageAccessError::MissingMessageValue;
@@ -7,18 +6,15 @@ use crate::fhir::mapper::{
     bundle_entry, get_cc_with_one_code, parse_date, parse_datetime, patch_bundle_entry,
     upsert_reference,
 };
-use crate::hl7::parser::{
-    MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29, PID_30,
-    field_repeats, get_message_key, message_type, query, repeat_component, repeat_subcomponents,
-    segment_value,
-};
-use crate::model::person_dto::Person;
+use adt_config::config::Fhir;
+
 use anyhow::anyhow;
+use fhir_core::model::person_dto::PersonDto;
 use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
     BundleEntry, ParametersParameter, ParametersParameterValue, PatientDeceased,
-    PatientMultipleBirth, ResourceType,
+    PatientMultipleBirth, Person, ResourceType,
 };
 use fhir_model::r4b::resources::{Parameters, Patient};
 use fhir_model::r4b::types::{
@@ -29,16 +25,22 @@ use fhir_model::r4b::types::{Identifier, Meta};
 use hl7_parser::Message;
 use hl7_parser::message::Segment;
 use log::{Level, log, warn};
+use processor_hl7v2::hl7::parser::{
+    MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29, PID_30,
+    get_message_key, message_type, query, segment_value,
+};
+use processor_hl7v2::hl7_person_converter::{
+    field_repeats, repeat_component, repeat_subcomponents,
+};
 use regex::Regex;
 use std::fmt::Debug;
 use std::sync::LazyLock;
 use std::vec;
 
 pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, MappingError> {
-    let msg_type = message_type(msg);
+    let msg_type = message_type(msg)?;
 
-    let message_type_value = msg_type.map_err(MessageAccessError::MessageTypeError)?;
-    match message_type_value {
+    match msg_type {
         MessageType::A01
         | MessageType::A04
         | MessageType::A05
@@ -46,22 +48,22 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
         | MessageType::A07
         | MessageType::A08
         => {
-            let patient = map_patient(msg, &config)?;
+            let patient = map_patient(msg, config)?;
             // update-as-create
-            Ok(vec![bundle_entry(patient, UpdateAsCreate, &config)?])
+            Ok(vec![bundle_entry(patient, UpdateAsCreate, config)?])
         }
         MessageType::A02 | MessageType::A03 | MessageType::A31 => {
-            let patient = map_patient(msg, &config)?;
+            let patient = map_patient(msg, config)?;
             // conditional-create
-            Ok(vec![bundle_entry(patient, ConditionalCreate, &config)?])
+            Ok(vec![bundle_entry(patient, ConditionalCreate, config)?])
         }
         MessageType::A34 | MessageType::A40 => {
             // create fhir-patch
-             let (parameters,target) = create_patient_merge_hl7(msg, &config)?;
+             let (parameters,target) = create_patient_merge_hl7(msg, config)?;
             Ok(vec![patch_bundle_entry(
                 parameters,
                 &ResourceType::Patient,
-                &target, &config
+                &target, config
             )?])
         }
         MessageType::A11
@@ -83,9 +85,9 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
             Ok(vec![])
         }
         MessageType::A29 => {
-            let patient = map_patient(msg, &config)?;
+            let patient = map_patient(msg, config)?;
             // delete
-            Ok(vec![bundle_entry(patient, Delete, &config)?])
+            Ok(vec![bundle_entry(patient, Delete, config)?])
         }
         other => Err(MappingError::from(anyhow!("Invalid message type: {other}"))),
     }
@@ -126,7 +128,7 @@ fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
     Ok(res)
 }
 
-fn map_addresses_dto(dto: &Person) -> Result<Vec<Option<Address>>, MappingError> {
+fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, MappingError> {
     let mut res = vec![];
 
     for elem in dto.address.clone() {
@@ -161,7 +163,7 @@ fn map_addresses_dto(dto: &Person) -> Result<Vec<Option<Address>>, MappingError>
     Ok(res)
 }
 fn create_patient_merge_dto(
-    patient_dto: &Person,
+    patient_dto: &PersonDto,
     config: &Fhir,
 ) -> Result<(Option<(Parameters, Identifier)>), MappingError> {
     match (patient_dto.pid.clone(), patient_dto.replaced_by_pid.clone()) {

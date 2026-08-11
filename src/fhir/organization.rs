@@ -1,15 +1,15 @@
-use crate::config::Fhir;
 use crate::error::MappingError;
+use adt_config::config::Fhir;
 use fhir_model::r4b::codes::IdentifierUse;
 
 use crate::fhir::mapper::{
     EntryRequestType, bundle_entry, get_cc_with_one_code, get_meta, parse_fab, resource_ref,
 };
-use crate::fhir::resources::ResourceMap;
-use crate::hl7::parser::{PV1_3_1, query};
+use adt_config::resources::ResourceMap;
 use fhir_model::r4b::resources::{BundleEntry, Organization, ResourceType};
 use fhir_model::r4b::types::Identifier;
 use hl7_parser::Message;
+use processor_hl7v2::hl7::parser::{PV1_3_1, query};
 
 pub(crate) fn map(
     msg: &Message,
