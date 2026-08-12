@@ -38,7 +38,6 @@ use processor_hl7v2::hl7::parser::{
     get_message_key, message_type, query,
 };
 use processor_hl7v2::hl7_error::Hl7MappingError;
-use serde::__private229::de::IdentifierDeserializer;
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
