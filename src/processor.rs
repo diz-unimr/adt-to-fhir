@@ -391,9 +391,10 @@ fn set_ssl_config(mut c: ClientConfig, ssl_config: Option<Ssl>) -> ClientConfig 
 mod tests {
     use crate::fhir::mapper::FhirMapper;
     use crate::processor::{Context, Processor, deserialize_message};
-    use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
+
     use adt_config::config::{AppConfig, Kafka};
     use adt_config::resources::ResourceMap;
+    use adt_config::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use fhir_model::r4b::resources::{Bundle, ResourceType};
     use rdkafka::ClientConfig;
     use rdkafka::consumer::{Consumer, StreamConsumer};

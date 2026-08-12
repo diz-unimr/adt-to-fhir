@@ -16,7 +16,7 @@ dependencies = [
  "chrono",
  "config",
  "fhir-model",
- "log",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",
@@ -42,13 +42,10 @@ dependencies = [
  "opentelemetry 0.32.0",
  "opentelemetry-otlp 0.32.0",
  "opentelemetry_sdk 0.32.1",
- "processor-csv",
  "processor-hl7v2",
  "rdkafka",
  "regex",
- "reqwest",
  "rstest",
- "serde",
  "serde_json",
  "thiserror",
  "tokio",
@@ -1945,14 +1942,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "535d180e0ecab6268a3e718bb9fd44db66bbbc256257165fc699dadf70d16fe7"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "processor-csv"
-version = "0.1.0"
-dependencies = [
- "fhir-core",
- "log",
 ]
 
 [[package]]

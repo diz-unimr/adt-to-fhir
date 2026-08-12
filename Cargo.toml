@@ -10,7 +10,7 @@ log = "0.4.29"
 env_logger = "0.11.9"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 futures = "0.3.32"
-serde = { version = "1.0.228", features = ["derive"] }
+#serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 fhir-model = { version = "0.12.1", default-features = false, features = ["builders", "r4b"] }
 hl7-parser = "0.3.0"
@@ -27,10 +27,11 @@ itertools = "0.15.0"
 uuid = { version = "1", features = ["v5"] }
 fhir-core = { path = "fhir-core" }
 processor-hl7v2 = { path = "processor-hl7v2" }
-processor-csv = { path = "processor-csv" }
 adt-config = { path = "adt-config" }
+#processor-csv = { path = "processor-csv" }
 
 [dev-dependencies]
 rstest = "0.26.1"
 mock-collector = "0.2.12"
-reqwest = { version = "0.13.4", features = ["json"] }
+adt-config = { path = "adt-config", features = ["test-utils"] }
+

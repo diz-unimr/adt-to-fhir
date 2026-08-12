@@ -3,7 +3,7 @@ mod error;
 mod fhir;
 mod metrics;
 mod processor;
-pub(crate) mod test_utils;
+
 use crate::fhir::mapper::FhirMapper;
 use crate::metrics::init_meter_provider;
 use crate::processor::{Context, Processor};
@@ -72,5 +72,36 @@ async fn main() {
 
     if let Err(e) = meter_provider.shutdown() {
         error!("Error shutting down meter provider: {e:?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use adt_config::config::AppConfig;
+    use config::Environment;
+    use std::collections::HashMap;
+
+    #[test]
+    fn default_config_validates() {
+        match AppConfig::new() {
+            Ok(_) => {}
+            Err(e) => {
+                panic!("{}", e)
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_config_fails() {
+        // override validated property with invalid data
+        let source = Environment::default().source(Some({
+            let mut env = HashMap::new();
+            env.insert("kafka.num_partitions".into(), "0".into());
+            env
+        }));
+
+        let c = adt_config::config::AppConfig::with_env(source);
+
+        assert!(c.is_err());
     }
 }

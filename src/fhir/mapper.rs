@@ -391,7 +391,7 @@ pub(crate) fn is_ward_valid_icu(msg: &Message, resources: &ResourceMap) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::tests::{
+    use adt_config::test_utils::tests::{
         filter_resources, get_dummy_resources, get_test_config, has_profile, read_test_resource,
     };
     use fhir_model::DateTime::DateTime;

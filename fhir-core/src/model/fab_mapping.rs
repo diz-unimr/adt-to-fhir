@@ -147,7 +147,7 @@ pub fn is_valid_date(period: &ValidPeriod, date: &NaiveDate) -> bool {
 mod tests {
     use super::*;
 
-    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
+    use adt_config::test_utils::tests::{get_dummy_resources, get_test_config};
     use std::collections::HashMap;
 
     #[test]

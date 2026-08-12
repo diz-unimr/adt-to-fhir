@@ -328,7 +328,7 @@ pub fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, Hl7Pars
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::tests::read_test_resource;
+    use adt_config::test_utils::tests::read_test_resource;
     use hl7_parser::parser::parse_segment;
     use rstest::rstest;
 

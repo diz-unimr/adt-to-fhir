@@ -14,6 +14,8 @@ use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
 use EncounterType::Einrichtungskontakt;
+use adt_config::config_error::ConfigError;
+use adt_config::config_error::ConfigError::MissingResourceError;
 use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
 use fhir_core::fhir_error::FhirMappingError;
@@ -36,6 +38,7 @@ use processor_hl7v2::hl7::parser::{
     get_message_key, message_type, query,
 };
 use processor_hl7v2::hl7_error::Hl7MappingError;
+use serde::__private229::de::IdentifierDeserializer;
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -385,10 +388,17 @@ fn get_service_type(
         let msg_id = get_message_key(msg)?;
         match map_fab_schluessel(fab, msg_id, config, resources) {
             Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
-            Err(e) => match e {
-                MappingError => {}
-            },
             Ok(None) => {}
+            Err(e) => {
+                if let FhirMappingError::MissingResourceError { resource, value } = &e {
+                    return Err(MappingError::MissingResourceError {
+                        resource: resource.to_string(),
+                        value: value.to_string(),
+                    });
+                } else {
+                    return Err(MappingError::Other(anyhow!("".to_string())));
+                }
+            }
         };
     }
 
@@ -1041,8 +1051,8 @@ fn map_diagnose_local_codes(
 mod tests {
     use super::*;
     use crate::error::MessageAccessError::UnsupportedContentError;
-    use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use adt_config::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
+    use adt_config::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use fhir_model::r4b::codes::EncounterStatus::Finished;
     use fhir_model::r4b::codes::HTTPVerb;
     use hl7_parser::Message;

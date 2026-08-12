@@ -100,7 +100,7 @@ fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, Ma
 #[cfg(test)]
 mod tests {
     use crate::fhir::organization::{map_department_org, map_ward_org};
-    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
+    use adt_config::test_utils::tests::{get_dummy_resources, get_test_config};
     use hl7_parser::Message;
 
     #[test]

@@ -103,7 +103,7 @@ impl AppConfig {
     pub fn new() -> anyhow::Result<Self> {
         Self::with_env(Environment::default().separator("."))
     }
-    fn with_env(env: Environment) -> anyhow::Result<Self> {
+    pub fn with_env(env: Environment) -> anyhow::Result<Self> {
         Config::builder()
             // default config from file
             .add_source(File::with_name("app.yaml"))
@@ -122,31 +122,5 @@ impl AppConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::AppConfig;
-    use config::Environment;
-    use std::collections::HashMap;
-
-    #[test]
-    fn default_config_validates() {
-        match AppConfig::new() {
-            Ok(_) => {}
-            Err(e) => {
-                panic!("{}", e)
-            }
-        }
-    }
-
-    #[test]
-    fn invalid_config_fails() {
-        // override validated property with invalid data
-        let source = Environment::default().source(Some({
-            let mut env = HashMap::new();
-            env.insert("kafka.num_partitions".into(), "0".into());
-            env
-        }));
-
-        let c = AppConfig::with_env(source);
-
-        assert!(c.is_err());
-    }
+    // config test are in main crate, since app.yaml is alos there
 }

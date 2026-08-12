@@ -223,7 +223,7 @@ pub fn to_encounter_location(location: Location) -> Result<EncounterLocation, Ma
 #[cfg(test)]
 mod tests {
     use crate::fhir::location::map;
-    use crate::test_utils::tests::{get_dummy_resources, get_test_config, resource_from};
+    use adt_config::test_utils::tests::{get_dummy_resources, get_test_config, resource_from};
     use fhir_model::r4b::resources::Location;
     use hl7_parser::Message;
     use processor_hl7v2::hl7::parser::{PV1_3_1, query};

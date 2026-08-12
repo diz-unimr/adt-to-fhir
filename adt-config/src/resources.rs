@@ -90,7 +90,7 @@ fn init_ward_map() -> Result<HashMap<String, Ward>, anyhow::Error> {
 
 fn read_mapping_resource(file_name: &str) -> Result<String, anyhow::Error> {
     let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    file_path.push("resources/mapping");
+    file_path.push("../resources/mapping");
     file_path.push(file_name);
 
     Ok(fs::read_to_string(file_path.display().to_string())?)

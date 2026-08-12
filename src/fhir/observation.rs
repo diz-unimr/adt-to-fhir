@@ -376,7 +376,7 @@ mod tests {
         CODING_PATIENT_DISPOSITION, LOINC_BODY_HEIGHT, LOINC_BODY_WEIGHT, LOINC_HEAD_CIRCUMFERENCE,
         LOINC_PATIENT_DISPOSITION, map,
     };
-    use crate::test_utils::tests::{get_test_config, read_test_resource};
+    use adt_config::test_utils::tests::{get_test_config, read_test_resource};
     use fhir_model::r4b::resources::{Observation, ObservationValue, Resource};
     use hl7_parser::Message;
     use rstest::rstest;

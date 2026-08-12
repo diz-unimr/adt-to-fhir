@@ -1,13 +1,17 @@
-#[cfg(test)]
-pub(crate) mod tests {
+#[cfg(any(test, feature = "test-utils"))]
+pub mod tests {
     use crate::config::{
         CheckMode, FallConfig, Fhir, LocationConfig, ObservationConfig, OrganizationConfig,
         PatientConfig, SystemConfig,
     };
     use crate::resources::{Department, ResourceMap, ValidPeriod, Ward};
     use chrono::NaiveDate;
+    use config::Value;
     use fhir_model::WrongResourceType;
-    use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
+    use fhir_model::r4b::codes::IssueSeverity;
+    use fhir_model::r4b::resources::{
+        Bundle, BundleEntry, OperationOutcome, OperationOutcomeIssue, Resource,
+    };
     use fhir_model::r4b::types::Meta;
     use std::collections::HashMap;
     use std::fs;
@@ -145,14 +149,14 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn resource_from<T: TryFrom<Resource, Error = WrongResourceType>>(
+    pub fn resource_from<T: TryFrom<Resource, Error = WrongResourceType>>(
         e: &BundleEntry,
     ) -> Result<T, WrongResourceType> {
         let r = e.resource.clone().unwrap();
         T::try_from(r)
     }
 
-    pub(crate) fn filter_resources<T: TryFrom<Resource, Error = WrongResourceType>>(
+    pub fn filter_resources<T: TryFrom<Resource, Error = WrongResourceType>>(
         bundle: &Bundle,
     ) -> Vec<T> {
         bundle
@@ -163,16 +167,66 @@ pub(crate) mod tests {
             .collect()
     }
 
-    pub(crate) fn has_profile(meta: &Meta, profile: &str) -> bool {
+    pub fn has_profile(meta: &Meta, profile: &str) -> bool {
         meta.profile.iter().flatten().any(|m| m == profile)
     }
 
-    pub(crate) fn read_test_resource(file_name: &str) -> String {
+    pub fn read_test_resource(file_name: &str) -> String {
         let mut file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        file_path.push("resources/test");
+        file_path.push("../resources/test");
         file_path.push(file_name);
 
         fs::read_to_string(file_path.display().to_string())
             .unwrap_or_else(|_| panic!("Test resource not found: {}", file_path.display()))
+    }
+
+    pub(crate) fn send_to_validate(
+        request_url: &str,
+        serialized_resource: String,
+    ) -> OperationOutcome {
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .post(request_url)
+            .body(serialized_resource)
+            .send()
+            .unwrap();
+
+        response.json().unwrap()
+    }
+
+    pub fn validate_with_server(test_file: &str, raw: &Value, show_level: &IssueSeverity) -> bool {
+        let outcome = send_to_validate("http://localhost:8080/validateResource", raw.to_string());
+        outcome.issue.iter().all(|i| {
+            if let Some(outcome) = i {
+                match outcome.severity {
+                    IssueSeverity::Error | IssueSeverity::Fatal => {
+                        print_outcome_details(outcome, test_file);
+                        false
+                    }
+                    IssueSeverity::Information => true,
+                    IssueSeverity::Warning => {
+                        if IssueSeverity::Warning.eq(show_level) {
+                            print_outcome_details(outcome, test_file);
+                        }
+                        true
+                    }
+                }
+            } else {
+                false
+            }
+        })
+    }
+
+    fn print_outcome_details(issue: &OperationOutcomeIssue, test_file: &str) {
+        let details = issue.details.as_ref().unwrap();
+
+        println!(
+            "{}: Resource {} is invalid code: '{}' at: '{}",
+            issue.severity,
+            test_file,
+            issue.code,
+            issue.expression.clone().first().unwrap().as_ref().unwrap()
+        );
+        println!("Details: {:#?}", details.text.as_ref().unwrap());
     }
 }

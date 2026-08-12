@@ -702,7 +702,8 @@ fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtens
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::tests::get_test_config;
+
+    use adt_config::test_utils::tests::get_test_config;
     use fhir_model::Date;
     use fhir_model::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Delete;
