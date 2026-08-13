@@ -1,0 +1,10 @@
+[package]
+name = "processor-csv"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fhir-core = { path = "../fhir-core" }
+log = "0.4"
+[dev-dependencies]
+adt-config = { path = "../adt-config", features = ["test-utils"] }

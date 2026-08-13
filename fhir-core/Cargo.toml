@@ -1,0 +1,21 @@
+[package]
+name = "fhir-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+adt-config = { path = "../adt-config" }
+fhir-model = { version = "0.12.1", default-features = false, features = ["builders", "r4b"] }
+log = "0.4"
+anyhow = "1.0"
+thiserror = "2.0"
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+derive_builder = "0.20"
+
+[dev-dependencies]
+rstest = "0.26"
+mock-collector = "0.2"
+reqwest = { version = "0.13", features = ["json", "blocking"] }
+adt-config = { path = "../adt-config", features = ["test-utils"] }
