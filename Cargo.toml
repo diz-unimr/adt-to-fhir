@@ -4,22 +4,22 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rdkafka = { version = "0.38.0", features = ["ssl", "cmake-build"] }
-tokio = { version = "1.50.0", features = ["full"] }
-log = "0.4.29"
-env_logger = "0.11.9"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-futures = "0.3.32"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-fhir-model = { version = "0.12.1", default-features = false, features = ["builders", "r4b"] }
+rdkafka = { version = "0.38", features = ["ssl", "cmake-build"] }
+tokio = { version = "1.50", features = ["full"] }
+log = "0.4"
+env_logger = "0.11"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+fhir-model = { version = "0.12", default-features = false, features = ["builders", "r4b"] }
 hl7-parser = "0.3.0"
-anyhow = "1.0.102"
-thiserror = "2.0.18"
-chrono = { version = "0.4.44", features = ["serde"] }
+anyhow = "1.0"
+thiserror = "2.0"
+chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10.4"
-regex = "1.12.3"
-tokio-util = "0.7.18"
+regex = "1.12"
+tokio-util = "0.7"
 opentelemetry = "0.32.0"
 opentelemetry_sdk = "0.32.1"
 opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
@@ -28,11 +28,11 @@ uuid = { version = "1", features = ["v5"] }
 fhir-core = { path = "fhir-core" }
 processor-hl7v2 = { path = "processor-hl7v2" }
 adt-config = { path = "adt-config" }
-config = "0.15.25"
+config = "0.15"
 #processor-csv = { path = "processor-csv" }
 
 [dev-dependencies]
-rstest = "0.26.1"
-mock-collector = "0.2.12"
+rstest = "0.26"
+mock-collector = "0.2"
 adt-config = { path = "adt-config", features = ["test-utils"] }
 

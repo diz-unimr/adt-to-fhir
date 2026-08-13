@@ -1,13 +1,10 @@
 use crate::model::meta::{Meta, Operation};
 use chrono::NaiveDate;
+use derive_builder::Builder;
 
 impl crate::model::meta::ModelDto for PersonDto {
     fn id(&self) -> String {
-        if let Some(pid) = &self.pid {
-            pid.to_string()
-        } else {
-            String::new()
-        }
+        self.pid.to_string()
     }
 
     fn operation(&self) -> Operation {
@@ -16,27 +13,47 @@ impl crate::model::meta::ModelDto for PersonDto {
 }
 
 /// Main structure for person data
-#[derive(Debug, Clone, PartialEq)]
+
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(setter(into))]
 pub struct PersonDto {
     pub meta: Meta,
-    pub pid: Option<String>,
+    pub pid: String,
+    #[builder(default)]
     pub last_name: Option<String>,
+    #[builder(default)]
     pub name_prefix: Option<String>,
+    #[builder(default)]
     pub name_suffix: Option<String>,
+    #[builder(default)]
     pub maiden_name: Option<String>,
+    #[builder(default)]
     pub first_names: Option<String>,
+    #[builder(default)]
     pub title: Option<String>,
-    pub gender: Option<GenderDto>,
+    pub gender: GenderDto,
+    #[builder(default)]
     pub date_of_birth: Option<NaiveDate>,
+    #[builder(default)]
     pub marital_status: Option<MaritalStatusDto>,
+    #[builder(default)]
     pub nationality: Option<String>,
+    #[builder(default)]
     pub is_multiple_birth: Option<bool>,
+
+    #[builder(default)]
     pub multiple_birth_order: Option<u32>,
+    #[builder(default)]
     pub mother_case_number_birth: Option<String>,
+    #[builder(default)]
     pub is_deceased_indicator: Option<bool>,
+    #[builder(default)]
     pub occupation: Option<String>,
+    #[builder(default)]
     pub time_of_death: Option<NaiveDate>,
+    #[builder(default)]
     pub replaced_by_pid: Option<String>,
+    #[builder(default)]
     pub address: Vec<Option<AddressDto>>,
 }
 
@@ -130,23 +147,6 @@ impl MaritalStatusDto {
         }
     }
 
-    /// Returns the HL7 input code(s) that map to this status
-    pub fn to_hl7_codes(&self) -> Vec<&'static str> {
-        match self {
-            MaritalStatusDto::LegallySeparated => vec!["A", "E"],
-            MaritalStatusDto::Divorced => vec!["D"],
-            MaritalStatusDto::Married => vec!["M"],
-            MaritalStatusDto::NeverMarried => vec!["S"],
-            MaritalStatusDto::Widowed => vec!["W"],
-            MaritalStatusDto::CommonLaw => vec!["C"],
-            MaritalStatusDto::DomesticPartner => vec!["G", "P", "R"],
-            MaritalStatusDto::Annulled => vec!["N"],
-            MaritalStatusDto::Interlocutory => vec!["I"],
-            MaritalStatusDto::Unmarried => vec!["B"],
-            MaritalStatusDto::Unknown => vec!["UNK"],
-        }
-    }
-
     /// Returns the HL7 v3 MaritalStatus code
     pub fn to_v3_code(&self) -> &'static str {
         match self {
@@ -200,7 +200,8 @@ impl MaritalStatusDto {
 }
 
 /// Address structure
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(setter(into))]
 pub struct AddressDto {
     pub street_and_number: Vec<Option<String>>,
     pub city: Option<String>,
@@ -208,110 +209,10 @@ pub struct AddressDto {
     pub country: Option<String>,
 }
 
-impl AddressDto {
-    pub fn new() -> Self {
-        AddressDto {
-            street_and_number: vec![None],
-            city: None,
-            zip_code: None,
-            country: None,
-        }
-    }
-}
-
-impl Default for AddressDto {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PersonDto {
-    /// Creates a new empty Person
-    pub fn new() -> Self {
-        PersonDto {
-            meta: Meta::new(),
-            pid: None,
-            last_name: None,
-            name_prefix: None,
-            name_suffix: None,
-            maiden_name: None,
-            first_names: None,
-            title: None,
-            gender: None,
-            date_of_birth: None,
-            marital_status: None,
-            nationality: None,
-            is_multiple_birth: None,
-            multiple_birth_order: None,
-            mother_case_number_birth: None,
-            is_deceased_indicator: None,
-            occupation: None,
-            time_of_death: None,
-            replaced_by_pid: None,
-            address: vec![None],
-        }
-    }
-
-    /// Checks if the person is valid (all relevant fields filled)
-    pub fn is_valid(&self) -> bool {
-        self.pid.is_some()
-            && self.last_name.is_some()
-            && self.first_names.is_some()
-            && self.date_of_birth.is_some()
-    }
-
-    /// Returns the full name
-    pub fn full_name(&self) -> String {
-        let mut name = String::new();
-
-        if let Some(ref title) = self.title {
-            name.push_str(title);
-            name.push(' ');
-        }
-
-        if let Some(ref first_name) = self.first_names {
-            name.push_str(first_name);
-            name.push(' ');
-        }
-
-        if let Some(ref last_name) = self.last_name {
-            name.push_str(last_name);
-        }
-
-        if let Some(ref suffix) = self.name_suffix {
-            name.push(' ');
-            name.push_str(suffix);
-        }
-
-        name.trim().to_string()
-    }
-}
-
-impl Default for PersonDto {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_create_person() {
-        let person = PersonDto {
-            pid: Some("12345".to_string()),
-            last_name: Some("Mustermann".to_string()),
-            first_names: Some("Max".to_string()),
-            date_of_birth: Some(NaiveDate::from_ymd_opt(1990, 1, 15).unwrap()),
-            gender: Some(GenderDto::Male),
-            ..PersonDto::new()
-        };
-
-        assert_eq!(person.full_name(), "Max Mustermann");
-        assert!(person.is_valid());
-    }
-
+    use crate::model::meta::MetaBuilder;
     #[test]
     fn test_gender_conversion() {
         assert_eq!(GenderDto::from_hl7("M"), Some(GenderDto::Male));
@@ -419,11 +320,8 @@ mod tests {
             zip_code: Some("12345".to_string()),
             country: Some("Germany".to_string()),
         };
-
-        let person = PersonDto {
-            address: vec![Some(address)],
-            ..PersonDto::new()
-        };
+        let mut person = get_minimal_person();
+        person.address = vec![Some(address)];
 
         assert!(!person.address.is_empty());
         assert_eq!(
@@ -439,22 +337,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_full_name_with_title_and_suffix() {
-        let person = PersonDto {
-            title: Some("Dr.".to_string()),
-            first_names: Some("Max".to_string()),
-            last_name: Some("Mustermann".to_string()),
-            name_suffix: Some("Jr.".to_string()),
-            ..PersonDto::new()
-        };
-
-        assert_eq!(person.full_name(), "Dr. Max Mustermann Jr.");
-    }
-
-    #[test]
-    fn test_invalid_person() {
-        let person = PersonDto::new();
-        assert!(!person.is_valid());
+    fn get_minimal_person() -> PersonDto {
+        PersonDtoBuilder::default()
+            .meta(
+                MetaBuilder::default()
+                    .id(42u64)
+                    .operation(Operation::UpdateAsCreate)
+                    .build()
+                    .unwrap(),
+            )
+            .pid("42")
+            .gender(GenderDto::Unknown)
+            .build()
+            .unwrap()
     }
 }

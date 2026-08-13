@@ -29,9 +29,7 @@ use processor_hl7v2::hl7::parser::{
     MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29, PID_30,
     get_message_key, message_type, query, segment_value,
 };
-use processor_hl7v2::hl7_person_converter::{
-    field_repeats, repeat_component, repeat_subcomponents,
-};
+use processor_hl7v2::hl7_to_patient_dto::{field_repeats, repeat_component, repeat_subcomponents};
 use regex::Regex;
 use std::fmt::Debug;
 use std::sync::LazyLock;
@@ -167,7 +165,7 @@ fn create_patient_merge_dto(
     config: &Fhir,
 ) -> Result<(Option<(Parameters, Identifier)>), MappingError> {
     match (patient_dto.pid.clone(), patient_dto.replaced_by_pid.clone()) {
-        (Some(replaced_patient_id), Some(new_pid)) => Ok(Some(create_patient_merge(
+        (replaced_patient_id, Some(new_pid)) => Ok(Some(create_patient_merge(
             replaced_patient_id,
             new_pid,
             config,
