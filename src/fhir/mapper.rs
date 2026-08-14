@@ -401,7 +401,10 @@ mod tests {
         ResourceType,
     };
     use fhir_model::time;
+    use fhir_model::time::format_description::well_known::iso8601::FormattedComponents::DateTimeOffset;
+    use fhir_model::time::macros::datetime;
     use fhir_model::time::{Month, OffsetDateTime, Time};
+    use insta::assert_json_snapshot;
     use rstest::rstest;
     use serde_json::Value;
     use std::str::FromStr;
@@ -788,7 +791,11 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b,{
+                    ".meta.lastUpdated" =>
+                        "2026-08-14T07:52:30.71553162Z"
+                    }
+                );
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -809,7 +816,12 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+
+                assert_json_snapshot!(b,{
+                    ".meta.lastUpdated" =>
+                        "2026-08-14T07:52:30.711028405Z"
+                    }
+                );
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -830,7 +842,9 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b, { ".meta.lastUpdated"
+                    => "2026-08-14T07:52:30.711879467Z"}
+                );
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -851,7 +865,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b, {".meta.lastUpdated" => "2026-08-14T07:52:30.715157624Z"});
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -872,28 +886,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
-            }
-            Ok(None) => {
-                panic!("We should have been an error here - but got empty result!")
-            }
-            Err(e) => {
-                panic!("test failed result Error: {}", e.to_string())
-            }
-        }
-    }
-
-    #[test]
-    fn a08_update_snapshot_test() {
-        let test_file = "a08_test.hl7";
-        let binding = read_test_resource(test_file);
-
-        let mapper = FhirMapper::new(get_test_config()).unwrap();
-        match mapper.map(binding.as_str()) {
-            Ok(Some(result)) => {
-                let raw: Value = serde_json::from_str(&result).unwrap();
-                let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b, {".meta.lastUpdated" => "2026-08-14T07:52:30.714882827Z"});
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -914,7 +907,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b, {".meta.lastUpdated" => "2026-08-14T07:52:30.71805125Z"});
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -935,7 +928,28 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b, { ".meta.lastUpdated" => "2026-08-14T07:52:30.718090556Z"});
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a08_update_snapshot_test() {
+        let test_file = "a08_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                assert_json_snapshot!(b, {".meta.lastUpdated" => "2026-08-14T07:52:30.714534242Z"});
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -956,7 +970,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b, { ".meta.lastUpdated" => "2026-08-14T07:52:30.71116015Z"});
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -977,7 +991,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b, { ".meta.lastUpdated" => "2026-08-14T07:52:30.710562417Z"});
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")
@@ -998,7 +1012,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             Ok(Some(result)) => {
                 let raw: Value = serde_json::from_str(&result).unwrap();
                 let b: Bundle = serde_json::from_value(raw).unwrap();
-                insta::assert_json_snapshot!(b);
+                assert_json_snapshot!(b, {".meta.lastUpdated" => "2026-08-14T07:52:30.71123337Z"});
             }
             Ok(None) => {
                 panic!("We should have been an error here - but got empty result!")

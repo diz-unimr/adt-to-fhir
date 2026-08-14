@@ -35,4 +35,4 @@ config = "0.15"
 rstest = "0.26"
 mock-collector = "0.2"
 adt-config = { path = "adt-config", features = ["test-utils"] }
-insta = { version = "1", features = ["json"] }
+insta = { version = "1", features = ["json", "redactions"] }
