@@ -1,0 +1,79 @@
+---
+source: src/fhir/patient.rs
+expression: entry.first()
+---
+{
+  "fullUrl": "urn:uuid:672de0cf-1a82-5e98-975e-6c27ddada7d9",
+  "resource": {
+    "resourceType": "Patient",
+    "meta": {
+      "source": "test",
+      "profile": [
+        "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2026.0.1"
+      ]
+    },
+    "identifier": [
+      {
+        "use": "usual",
+        "type": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+              "code": "MR"
+            }
+          ]
+        },
+        "system": "https://fhir.diz.uni-marburg.de/sid/patient-id",
+        "value": "1234567",
+        "assigner": {
+          "identifier": {
+            "system": "http://fhir.de/sid/arge-ik/iknr",
+            "value": "260620431"
+          },
+          "display": "UKGM - Universitätsklinikum Marburg"
+        }
+      }
+    ],
+    "name": [
+      {
+        "use": "official",
+        "family": "Test-UCH",
+        "given": [
+          "Endoprothese"
+        ]
+      },
+      {
+        "use": "maiden",
+        "family": "Test"
+      }
+    ],
+    "gender": "male",
+    "birthDate": "1945-02-01",
+    "deceasedBoolean": false,
+    "address": [
+      {
+        "type": "both",
+        "line": [
+          "Baldinger Strasse",
+          "Baldinger Strasse"
+        ],
+        "city": "Marburg",
+        "postalCode": "35037",
+        "country": "DE"
+      }
+    ],
+    "maritalStatus": {
+      "coding": [
+        {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+          "code": "S",
+          "display": "Never Married"
+        }
+      ]
+    }
+  },
+  "request": {
+    "method": "DELETE",
+    "url": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1234567"
+  }
+}

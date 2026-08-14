@@ -844,8 +844,22 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
                 .unwrap()
         );
     }
+
     #[test]
-    fn test_delete_patient() {
+    fn patient_merge_snapshot_test() {
+        let config = &get_test_config();
+
+        let msg =
+            Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
+EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
+PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
+MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
+                .unwrap();
+        let entry = map(&msg, config).unwrap();
+        insta::assert_json_snapshot!(entry.first());
+    }
+    #[test]
+    fn test_delete_patient_snapshot() {
         let config = &get_test_config();
 
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20221121142711||ADT^A29^ADT_A21|71546182|P|2.5||684450133|NE|NE||8859/1
@@ -869,6 +883,8 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
                     .unwrap()
             )
         );
+
+        insta::assert_json_snapshot!(entry.first());
     }
 
     #[test]

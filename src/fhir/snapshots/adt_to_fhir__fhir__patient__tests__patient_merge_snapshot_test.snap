@@ -1,0 +1,49 @@
+---
+source: src/fhir/patient.rs
+expression: entry.first()
+---
+{
+  "fullUrl": "urn:uuid:5fb051bf-8433-5e92-8945-f311a5a12bd6",
+  "resource": {
+    "resourceType": "Parameters",
+    "parameter": [
+      {
+        "name": "operation",
+        "part": [
+          {
+            "name": "type",
+            "valueCode": "add"
+          },
+          {
+            "name": "path",
+            "valueString": "Patient"
+          },
+          {
+            "name": "name",
+            "valueString": "link"
+          },
+          {
+            "name": "value",
+            "part": [
+              {
+                "name": "other",
+                "valueReference": {
+                  "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1234567",
+                  "type": "Patient"
+                }
+              },
+              {
+                "name": "type",
+                "valueCode": "replaced-by"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "request": {
+    "method": "PATCH",
+    "url": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|09876543"
+  }
+}
