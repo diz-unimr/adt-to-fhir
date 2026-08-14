@@ -1,0 +1,554 @@
+---
+source: src/fhir/mapper.rs
+expression: b
+---
+{
+  "resourceType": "Bundle",
+  "meta": {
+    "lastUpdated": "2026-08-14T07:52:30.715157624Z"
+  },
+  "identifier": {
+    "system": "https://fhir.diz.uni-marburg.de/sid/bundle-id",
+    "value": "103601138"
+  },
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:f41b6d40-9295-5571-bfd6-17693ad1fcbd",
+      "resource": {
+        "resourceType": "Patient",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/patient-id",
+            "value": "1212121",
+            "assigner": {
+              "identifier": {
+                "system": "http://fhir.de/sid/arge-ik/iknr",
+                "value": "260620431"
+              },
+              "display": "UKGM - Universitätsklinikum Marburg"
+            }
+          },
+          {
+            "use": "official",
+            "system": "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id",
+            "value": "01010101",
+            "assigner": {
+              "identifier": {
+                "use": "official",
+                "type": {
+                  "coding": [
+                    {
+                      "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                      "code": "XX"
+                    }
+                  ]
+                },
+                "system": "http://fhir.de/sid/arge-ik/iknr",
+                "value": "99999999"
+              }
+            }
+          }
+        ],
+        "name": [
+          {
+            "use": "official",
+            "family": "Sokolovski",
+            "given": [
+              "Malina"
+            ]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1982-01-01",
+        "deceasedBoolean": false,
+        "address": [
+          {
+            "type": "both",
+            "line": [
+              "Hexengasse 1"
+            ],
+            "city": "Traumstadt",
+            "postalCode": "12345",
+            "country": "D"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "S",
+              "display": "Never Married"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3ef3bf8f-8e2b-5ab4-a1c9-8b8be9a1fda5",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-admit-id",
+            "value": "87654321"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "87654321"
+          }
+        ],
+        "status": "in-progress",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "einrichtungskontakt",
+                "display": "Einrichtungskontakt"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/kontaktart-de",
+                "code": "ub",
+                "display": "Untersuchung und Behandlung"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+        },
+        "period": {
+          "start": "2026-04-27T11:01:00Z"
+        },
+        "diagnosis": [
+          {
+            "condition": {
+              "reference": "Condition?identifier=https://fhir.diz.uni-marburg.de/sid/condition-id|13131313-1.1"
+            },
+            "use": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/diagnosis-role",
+                  "code": "CC",
+                  "display": "Chief complaint"
+                }
+              ]
+            },
+            "rank": 1
+          },
+          {
+            "condition": {
+              "reference": "Condition?identifier=https://fhir.diz.uni-marburg.de/sid/condition-id|13131313-1.1"
+            },
+            "use": {
+              "coding": [
+                {
+                  "system": "http://fhir.de/CodeSystem/KontaktDiagnoseProzedur",
+                  "code": "treatment-diagnosis",
+                  "display": "Behandlungsrelevante Diagnosen"
+                }
+              ]
+            },
+            "rank": 1
+          },
+          {
+            "condition": {
+              "reference": "Condition?identifier=https://fhir.diz.uni-marburg.de/sid/condition-id|13131313-1.1"
+            },
+            "use": {
+              "coding": [
+                {
+                  "system": "http://fhir.de/CodeSystem/KontaktDiagnoseProzedur",
+                  "code": "hospital-main-diagnosis",
+                  "display": "Krankenhaus Hauptdiagnose"
+                }
+              ]
+            },
+            "rank": 1
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|260620431"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "Encounter",
+        "ifNoneExist": "identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|87654321"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:0ef3f81f-baa6-5180-a0ad-73f807200748",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/departement-id",
+            "value": "88888888"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "87654321"
+          }
+        ],
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "abteilungskontakt",
+                "display": "Abteilungskontakt"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/kontaktart-de",
+                "code": "ub",
+                "display": "Untersuchung und Behandlung"
+              }
+            ]
+          }
+        ],
+        "serviceType": {
+          "coding": [
+            {
+              "system": "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert",
+              "code": "2600",
+              "display": "Hals-, Nasen-, Ohrenheilkunde"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+        },
+        "period": {
+          "start": "2026-08-28T06:34:00Z",
+          "end": "2026-08-28T06:34:00Z"
+        },
+        "serviceProvider": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|HNO"
+        },
+        "partOf": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|87654321"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/departement-id|88888888"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3e322c25-7ad7-56d2-8d84-1b6dd3552090",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/ward-id",
+            "value": "88888888"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "87654321"
+          }
+        ],
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "versorgungsstellenkontakt",
+                "display": "Versorgungsstellenkontakt"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/kontaktart-de",
+                "code": "ub",
+                "display": "Untersuchung und Behandlung"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+        },
+        "period": {
+          "start": "2026-08-28T06:34:00Z",
+          "end": "2026-08-28T06:34:00Z"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-caresite-id|HNOPOL"
+            },
+            "status": "completed",
+            "physicalType": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+                  "code": "wa"
+                }
+              ]
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|HNOPOL"
+        },
+        "partOf": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/departement-id|88888888"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|88888888"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:b16333ce-b27f-53a9-8c8c-4aa913f6467f",
+      "resource": {
+        "resourceType": "Location",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/location-caresite-id",
+            "value": "HNOPOL"
+          }
+        ],
+        "physicalType": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+              "code": "wa"
+            }
+          ]
+        },
+        "managingOrganization": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|HNO"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-caresite-id|HNOPOL"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:272df1e7-ca2f-5099-b6ad-48e29d10be87",
+      "resource": {
+        "resourceType": "Observation",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Vitalstatus|2026.0.0"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/observation-id",
+            "value": "67162-8_1212121_87654321"
+          }
+        ],
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "survey"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "67162-8",
+              "display": "Patient Disposition"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+        },
+        "encounter": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|87654321"
+        },
+        "effectiveDateTime": "2026-08-28T06:34:00Z",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/CodeSystem/Vitalstatus",
+              "code": "L"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation?identifier=https://fhir.diz.uni-marburg.de/sid/observation-id|67162-8_1212121_87654321"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:24bbf73f-343d-53fd-a3e5-a55a6db08bfe",
+      "resource": {
+        "resourceType": "Organization",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/department",
+            "value": "HNO"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "dept"
+              }
+            ]
+          }
+        ],
+        "name": "Hals-, Nasen-, Ohrenheilkunde"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|HNO"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:ce3ccadd-dd27-52de-907d-58bb96ddae72",
+      "resource": {
+        "resourceType": "Organization",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/ward-id",
+            "value": "HNOPOL"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "other"
+              }
+            ]
+          }
+        ],
+        "partOf": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|HNO"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|HNOPOL"
+      }
+    }
+  ]
+}

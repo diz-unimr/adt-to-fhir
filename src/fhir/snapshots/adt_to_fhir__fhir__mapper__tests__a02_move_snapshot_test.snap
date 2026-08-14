@@ -1,0 +1,437 @@
+---
+source: src/fhir/mapper.rs
+expression: b
+---
+{
+  "resourceType": "Bundle",
+  "meta": {
+    "lastUpdated": "2026-08-14T07:52:30.711028405Z"
+  },
+  "identifier": {
+    "system": "https://fhir.diz.uni-marburg.de/sid/bundle-id",
+    "value": "11658910"
+  },
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:49738d18-1573-53a5-aeee-8e65a8a67819",
+      "resource": {
+        "resourceType": "Patient",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/patient-id",
+            "value": "111111",
+            "assigner": {
+              "identifier": {
+                "system": "http://fhir.de/sid/arge-ik/iknr",
+                "value": "260620431"
+              },
+              "display": "UKGM - Universitätsklinikum Marburg"
+            }
+          }
+        ],
+        "name": [
+          {
+            "family": "Musterfrau",
+            "given": [
+              "Marta"
+            ]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "2009-05-15",
+        "address": [
+          {
+            "type": "both",
+            "line": [
+              "Mustergasse 10"
+            ],
+            "city": "Musterort",
+            "postalCode": "33333",
+            "country": "DE"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "S",
+              "display": "Never Married"
+            }
+          ]
+        },
+        "multipleBirthBoolean": false
+      },
+      "request": {
+        "method": "POST",
+        "url": "Patient",
+        "ifNoneExist": "identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|111111"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:eb564f12-f980-5893-8168-0960d3c6e499",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-admit-id",
+            "value": "21600000"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "21600000"
+          }
+        ],
+        "status": "in-progress",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "einrichtungskontakt",
+                "display": "Einrichtungskontakt"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|111111"
+        },
+        "period": {
+          "start": "2011-11-27T22:14:00Z"
+        },
+        "hospitalization": {
+          "admitSource": {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass",
+                "code": "R",
+                "display": "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
+              }
+            ]
+          }
+        },
+        "serviceProvider": {
+          "reference": "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|260620431"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|21600000"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:d1a0b969-a58c-546a-8ede-a22867e6bb97",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/departement-id",
+            "value": "44444444"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "21600000"
+          }
+        ],
+        "status": "in-progress",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "abteilungskontakt",
+                "display": "Abteilungskontakt"
+              }
+            ]
+          }
+        ],
+        "serviceType": {
+          "coding": [
+            {
+              "system": "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert",
+              "code": "1300",
+              "display": "Kinderchirurgie"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|111111"
+        },
+        "period": {
+          "start": "2026-01-28T08:23:00Z"
+        },
+        "serviceProvider": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|KCH"
+        },
+        "partOf": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|21600000"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/departement-id|44444444"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:94b07b51-d383-536a-8e5c-805ddf35f3ea",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/ward-id",
+            "value": "44444444"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "21600000"
+          }
+        ],
+        "status": "in-progress",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "IMP",
+          "display": "inpatient encounter"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "versorgungsstellenkontakt",
+                "display": "Versorgungsstellenkontakt"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|111111"
+        },
+        "period": {
+          "start": "2026-01-28T08:23:00Z"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-caresite-id|IDIST041"
+            },
+            "status": "active",
+            "physicalType": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+                  "code": "wa"
+                }
+              ]
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|IDIST041"
+        },
+        "partOf": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/departement-id|44444444"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|44444444"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:c2f755d2-d71f-5309-9e8d-ac2fad502903",
+      "resource": {
+        "resourceType": "Observation",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Vitalstatus|2026.0.0"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/observation-id",
+            "value": "67162-8_111111_21600000"
+          }
+        ],
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "survey"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "67162-8",
+              "display": "Patient Disposition"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|111111"
+        },
+        "encounter": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|21600000"
+        },
+        "effectiveDateTime": "2026-01-28T08:23:00Z",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/CodeSystem/Vitalstatus",
+              "code": "L"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation?identifier=https://fhir.diz.uni-marburg.de/sid/observation-id|67162-8_111111_21600000"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e6274ff4-36d5-559f-8276-d16ab3553dbe",
+      "resource": {
+        "resourceType": "Organization",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/department",
+            "value": "KCH"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "dept"
+              }
+            ]
+          }
+        ],
+        "name": "Kinderchirurgie"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|KCH"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:e1d1dcc3-80f4-5930-b39b-3c052a080157",
+      "resource": {
+        "resourceType": "Organization",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/ward-id",
+            "value": "IDIST041"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "other"
+              }
+            ]
+          }
+        ],
+        "partOf": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|KCH"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|IDIST041"
+      }
+    }
+  ]
+}

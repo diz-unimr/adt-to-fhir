@@ -778,7 +778,236 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             );
         });
     }
+    #[test]
+    fn a01_admission_snapshot_test() {
+        let test_file = "a01_test.hl7";
+        let binding = read_test_resource(test_file);
 
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a02_move_snapshot_test() {
+        let test_file = "a02_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a03_disscharge_snapshot_test() {
+        let test_file = "a03_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a04_treatment_snapshot_test() {
+        let test_file = "a04_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a05_post_inpatient_snapshot_test() {
+        let test_file = "a05_ns_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a08_update_snapshot_test() {
+        let test_file = "a08_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a06_shortstay_snapshot_test() {
+        let test_file = "a06_teilsstationaer_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a07_shortstay_snapshot_test() {
+        let test_file = "a07_nachstationaer_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a11_snapshot_test() {
+        let test_file = "a11_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a34_snapshot_test() {
+        let test_file = "a34_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn a38_snapshot_test() {
+        let test_file = "a38_test.hl7";
+        let binding = read_test_resource(test_file);
+
+        let mapper = FhirMapper::new(get_test_config()).unwrap();
+        match mapper.map(binding.as_str()) {
+            Ok(Some(result)) => {
+                let raw: Value = serde_json::from_str(&result).unwrap();
+                let b: Bundle = serde_json::from_value(raw).unwrap();
+                insta::assert_json_snapshot!(b);
+            }
+            Ok(None) => {
+                panic!("We should have been an error here - but got empty result!")
+            }
+            Err(e) => {
+                panic!("test failed result Error: {}", e.to_string())
+            }
+        }
+    }
     #[test]
     fn test_all_hl7_files() {
         let test_files = vec![

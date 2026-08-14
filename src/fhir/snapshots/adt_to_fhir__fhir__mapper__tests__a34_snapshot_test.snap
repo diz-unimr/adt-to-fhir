@@ -1,0 +1,62 @@
+---
+source: src/fhir/mapper.rs
+expression: b
+---
+{
+  "resourceType": "Bundle",
+  "meta": {
+    "lastUpdated": "2026-08-14T07:52:30.710562417Z"
+  },
+  "identifier": {
+    "system": "https://fhir.diz.uni-marburg.de/sid/bundle-id",
+    "value": "11663294"
+  },
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:5a777241-f58c-5d11-8098-fbcf36c95451",
+      "resource": {
+        "resourceType": "Parameters",
+        "parameter": [
+          {
+            "name": "operation",
+            "part": [
+              {
+                "name": "type",
+                "valueCode": "add"
+              },
+              {
+                "name": "path",
+                "valueString": "Patient"
+              },
+              {
+                "name": "name",
+                "valueString": "link"
+              },
+              {
+                "name": "value",
+                "part": [
+                  {
+                    "name": "other",
+                    "valueReference": {
+                      "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|111111",
+                      "type": "Patient"
+                    }
+                  },
+                  {
+                    "name": "type",
+                    "valueCode": "replaced-by"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "request": {
+        "method": "PATCH",
+        "url": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|944508"
+      }
+    }
+  ]
+}

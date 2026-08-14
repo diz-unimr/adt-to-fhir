@@ -1,0 +1,449 @@
+---
+source: src/fhir/mapper.rs
+expression: b
+---
+{
+  "resourceType": "Bundle",
+  "meta": {
+    "lastUpdated": "2026-08-14T07:52:30.71805125Z"
+  },
+  "identifier": {
+    "system": "https://fhir.diz.uni-marburg.de/sid/bundle-id",
+    "value": "103601138"
+  },
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:f41b6d40-9295-5571-bfd6-17693ad1fcbd",
+      "resource": {
+        "resourceType": "Patient",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "MR"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/patient-id",
+            "value": "1212121",
+            "assigner": {
+              "identifier": {
+                "system": "http://fhir.de/sid/arge-ik/iknr",
+                "value": "260620431"
+              },
+              "display": "UKGM - Universitätsklinikum Marburg"
+            }
+          },
+          {
+            "use": "official",
+            "system": "https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id",
+            "value": "01010101",
+            "assigner": {
+              "identifier": {
+                "use": "official",
+                "type": {
+                  "coding": [
+                    {
+                      "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                      "code": "XX"
+                    }
+                  ]
+                },
+                "system": "http://fhir.de/sid/arge-ik/iknr",
+                "value": "99999999"
+              }
+            }
+          }
+        ],
+        "name": [
+          {
+            "use": "official",
+            "family": "Sokolovski",
+            "given": [
+              "Muster"
+            ]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1982-01-01",
+        "deceasedBoolean": false,
+        "address": [
+          {
+            "type": "both",
+            "line": [
+              "Hexengasse 1"
+            ],
+            "city": "Traumstadt",
+            "postalCode": "12345",
+            "country": "D"
+          }
+        ],
+        "maritalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/v3-MaritalStatus",
+              "code": "S",
+              "display": "Never Married"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3ef3bf8f-8e2b-5ab4-a1c9-8b8be9a1fda5",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "extension": [
+          {
+            "extension": [
+              {
+                "url": "DritteStelle",
+                "valueCoding": {
+                  "system": "http://fhir.de/CodeSystem/dkgev/AufnahmegrundDritteStelle",
+                  "code": "0",
+                  "display": "Anderes"
+                }
+              },
+              {
+                "url": "VierteStelle",
+                "valueCoding": {
+                  "system": "http://fhir.de/CodeSystem/dkgev/AufnahmegrundVierteStelle",
+                  "code": "1",
+                  "display": "Normalfall"
+                }
+              }
+            ],
+            "url": "http://fhir.de/StructureDefinition/Aufnahmegrund"
+          }
+        ],
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-admit-id",
+            "value": "87654321"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "87654321"
+          }
+        ],
+        "status": "in-progress",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "SS",
+          "display": "short stay"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "einrichtungskontakt",
+                "display": "Einrichtungskontakt"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/kontaktart-de",
+                "code": "teilstationaer",
+                "display": "Teilstationäre Behandlung"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+        },
+        "period": {
+          "start": "2026-04-27T11:01:00Z"
+        },
+        "hospitalization": {
+          "admitSource": {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass",
+                "code": "R",
+                "display": "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
+              }
+            ]
+          }
+        },
+        "serviceProvider": {
+          "reference": "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|260620431"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|87654321"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:0ef3f81f-baa6-5180-a0ad-73f807200748",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/departement-id",
+            "value": "88888888"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "87654321"
+          }
+        ],
+        "status": "in-progress",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "SS",
+          "display": "short stay"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "abteilungskontakt",
+                "display": "Abteilungskontakt"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/kontaktart-de",
+                "code": "teilstationaer",
+                "display": "Teilstationäre Behandlung"
+              }
+            ]
+          }
+        ],
+        "serviceType": {
+          "coding": [
+            {
+              "system": "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert",
+              "code": "2200",
+              "display": "Urologie"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+        },
+        "period": {
+          "start": "2026-08-28T06:34:00Z"
+        },
+        "serviceProvider": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|URO"
+        },
+        "partOf": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|87654321"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/departement-id|88888888"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:3e322c25-7ad7-56d2-8d84-1b6dd3552090",
+      "resource": {
+        "resourceType": "Encounter",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/ward-id",
+            "value": "88888888"
+          },
+          {
+            "use": "official",
+            "type": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/v2-0203",
+                  "code": "VN"
+                }
+              ]
+            },
+            "system": "https://fhir.diz.uni-marburg.de/sid/encounter-id",
+            "value": "87654321"
+          }
+        ],
+        "status": "in-progress",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "SS",
+          "display": "short stay"
+        },
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/Kontaktebene",
+                "code": "versorgungsstellenkontakt",
+                "display": "Versorgungsstellenkontakt"
+              }
+            ]
+          },
+          {
+            "coding": [
+              {
+                "system": "http://fhir.de/CodeSystem/kontaktart-de",
+                "code": "teilstationaer",
+                "display": "Teilstationäre Behandlung"
+              }
+            ]
+          }
+        ],
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+        },
+        "period": {
+          "start": "2026-08-28T06:34:00Z"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-caresite-id|UROPOL"
+            },
+            "status": "active",
+            "physicalType": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+                  "code": "wa"
+                }
+              ]
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|UROPOL"
+        },
+        "partOf": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/departement-id|88888888"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|88888888"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:4a655d3b-9d11-5f93-9755-6ea824528737",
+      "resource": {
+        "resourceType": "Organization",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/department",
+            "value": "URO"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "dept"
+              }
+            ]
+          }
+        ],
+        "name": "Urologie"
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|URO"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:39ca2389-bd01-541f-a833-c759e3a2dc3a",
+      "resource": {
+        "resourceType": "Organization",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/ward-id",
+            "value": "UROPOL"
+          }
+        ],
+        "type": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "code": "other"
+              }
+            ]
+          }
+        ],
+        "partOf": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|URO"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|UROPOL"
+      }
+    }
+  ]
+}
