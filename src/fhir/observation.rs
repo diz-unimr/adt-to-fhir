@@ -188,7 +188,8 @@ fn map_vital_status(
             Some(MessageType::A01)
             | Some(MessageType::A02)
             | Some(MessageType::A03)
-            | Some(MessageType::A04) => Ok(Some(
+            | Some(MessageType::A04)
+            | Some(MessageType::A05) => Ok(Some(
                 get_basic_observation_builder(msg)?
                     .category(vec![Some(get_cc_with_one_code(
                         SURVEY_CATEGORY_CODE.into(),
