@@ -6,8 +6,9 @@ use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, get_cc_with_one_code, is_begleitperson, is_inpatient_location,
-    is_ward_valid_icu, map_visit_number, parse_datetime, parse_fab, resource_ref, subject_ref,
+    EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported, get_cc_with_one_code,
+    is_begleitperson, is_inpatient_location, is_ward_valid_icu, map_visit_number, parse_datetime,
+    parse_fab, resource_ref, subject_ref,
 };
 use crate::fhir::resources::ResourceMap;
 use crate::fhir::terminology::{
@@ -297,7 +298,7 @@ fn map_aufnahmegrund(msg: &Message) -> Result<Option<Vec<Extension>>, MappingErr
     }
 }
 
-fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
+fn map_entlassgrund(msg: &Message) -> Result<Option<Vec<Extension>>, MappingError> {
     let mut extension_components = vec![];
 
     // 1. und 2. Stelle
@@ -328,14 +329,14 @@ fn map_entlassgrund(msg: &Message) -> Result<Vec<Extension>, MappingError> {
         extension_components.push(dritte?);
     }
     if !extension_components.is_empty() {
-        return Ok(vec![
+        return Ok(Some(vec![
             Extension::builder()
                 .extension(extension_components)
                 .url("http://fhir.de/StructureDefinition/Entlassungsgrund".to_string())
                 .build()?,
-        ]);
+        ]));
     }
-    Ok(vec![])
+    Ok(None)
 }
 
 fn map_abteilungskontakt(
@@ -509,58 +510,68 @@ fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>
     let discharge = map_entlassgrund(msg)?;
     let admit_source = map_admit_source(msg)?;
 
-    // Wenn beide None sind, gibt es keine Hospitalization
-    if discharge.is_empty() && admit_source.is_none() {
-        return Ok(None);
-    }
-
-    let mut builder = EncounterHospitalization::builder();
-
-    if !discharge.is_empty() {
-        builder =
-            builder.discharge_disposition(CodeableConcept::builder().extension(discharge).build()?);
-    }
-
-    if let Some(coding) = admit_source {
-        builder = builder.admit_source(
-            CodeableConcept::builder()
-                .coding(vec![Some(coding)])
+    match (discharge, admit_source) {
+        (None, None) => Ok(None),
+        (Some(discharge), Some(admit_source)) => Ok(Some(
+            EncounterHospitalization::builder()
+                .discharge_disposition(CodeableConcept::builder().extension(discharge).build()?)
+                .admit_source(
+                    CodeableConcept::builder()
+                        .coding(vec![Some(admit_source)])
+                        .build()?,
+                )
                 .build()?,
-        );
+        )),
+        (Some(discharge), None) => {
+            // if discharge is present - admission source is mandatory by profile -> fallback data absent reason
+            Ok(Some(
+                EncounterHospitalization::builder()
+                    .discharge_disposition(CodeableConcept::builder().extension(discharge).build()?)
+                    .admit_source(coding_data_absent_reason_unsupported()?)
+                    .build()?,
+            ))
+        }
+        (None, Some(admit_source)) => Ok(Some(
+            EncounterHospitalization::builder()
+                .admit_source(
+                    CodeableConcept::builder()
+                        .coding(vec![Some(admit_source)])
+                        .build()?,
+                )
+                .build()?,
+        )),
     }
-
-    Ok(Some(builder.build()?))
 }
 
+/// currently we do not have full support of this dataitem in our hl7 messages
+/// only export __G__ for birth and __N__ for emergency
 fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
-    let code = query(msg, PV1_4_1).ok_or(MappingError::Other(anyhow!(
-        "Missing PV1-4.1 field / component for Encounter.hospitalization.admitSource"
-    )))?;
+    let code = query(msg, PV1_4_1);
 
-    let display = match code {
-        "E" => Ok("Einweisung durch einen Arzt"),
-        "Z" => Ok("Einweisung durch einen Zahnarzt"),
-        "N" => Ok("Notfall"),
-        "R" => Ok("Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"),
-        "V" => {
-            Ok("Verlegung mit Behandlungsdauer im verlegenden Krankenhaus länger als 24 Stunden")
+    if let Some(pv2_3_1) = query(msg, PV2_3_1)
+        && check_is_numeric_ascii(pv2_3_1, PV2_3_1)?
+        && pv2_3_1.eq("06")
+    {
+        Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("G".to_string())
+                .display("Geburt".to_string())
+                .build()?,
+        ))
+    } else {
+        match (code, query(msg, PV1_36_1)) {
+            // A->'Unfall/Notarztwagen', E-> 'Notfall ohne Einweisung'
+            (Some("A"), _) | (Some("E"), _) => Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                    .code("N".to_string())
+                    .display("Notfall".to_string())
+                    .build()?,
+            )),
+            _ => Ok(None),
         }
-        "A" => Ok("Verlegung mit Behandlungsdauer im verlegenden Krankenhaus bis zu 24 Stunden"),
-        "G" => Ok("Geburt"),
-        "B" => Ok("Begleitperson oder mitaufgenommene Pflegekraft"),
-        other => Err(MappingError::Other(anyhow!(
-            "Unknown code {} in PV1-4.1 for Encounter.hospitalization.admitSource",
-            other
-        ))),
-    }?;
-
-    Ok(Some(
-        Coding::builder()
-            .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
-            .code(code.to_string())
-            .display(display.to_string())
-            .build()?,
-    ))
+    }
 }
 
 fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError> {
@@ -998,7 +1009,7 @@ fn map_diagnose_local_codes(
                 result.push(kontakt_diagnose_procedures("department-main-diagnosis"));
             }
             match condition_type_local.as_str() {
-                "FA" => {
+                "FA" | "FA Au" => {
                     result.push(diagnose_role_coding("AD"));
                 }
                 "FB" | "FA Be" => {
@@ -1151,9 +1162,9 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
                 .unwrap(),
         ];
 
-        let actual = map_entlassgrund(&msg).unwrap();
+        let actual = map_entlassgrund(&msg).unwrap().unwrap();
 
-        assert!(actual.len() == 1);
+        assert_eq!(actual.len(), 1);
 
         assert_eq!(actual.first().unwrap().extension, expected);
     }
@@ -1420,7 +1431,9 @@ ZBE|30674176^ORBIS|202208221309||INSERT
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        let result = map(&msg, &get_test_config(), &get_dummy_resources());
+        let config = &get_test_config();
+        let resources = &get_dummy_resources();
+        let result = map(&msg, config, resources);
 
         result
             .map_err(|e| panic!("failed with error: {}", e.to_string()))
@@ -2070,4 +2083,49 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             HTTPVerb::Put
         );
     }
+    #[test]
+    fn map_admit_source_empty_test() {
+        let hl7 = read_test_resource("a03_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+        let res = map_admit_source(&msg);
+        if let Ok(None) = res {
+            assert!(true)
+        } else {
+            panic!("unexpected result: {:?}", res)
+        }
+    }
+
+    #[test]
+    fn map_admit_source_birth_test() {
+        let hl7 = read_test_resource("a08_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+        let res = map_admit_source(&msg);
+        if let Ok(Some(coding)) = res {
+            assert_eq!(coding.code.as_ref().unwrap(), "G");
+            assert_eq!(
+                coding.system.as_ref().unwrap(),
+                "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass"
+            );
+        } else {
+            panic!("unexpected result: {:?}", res)
+        }
+    }
+
+    #[test]
+    fn map_admit_source_emergency_test() {
+        let hl7 = read_test_resource("a04_amb_notfall.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+        let res = map_admit_source(&msg);
+        if let Ok(Some(coding)) = res {
+            assert_eq!(coding.code.as_ref().unwrap(), "N");
+            assert_eq!(
+                coding.system.as_ref().unwrap(),
+                "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass"
+            );
+        } else {
+            panic!("unexpected result: {:?}", res)
+        }
+    }
+    #[test]
+    fn map_hospitalization_emergency_test() {}
 }
