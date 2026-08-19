@@ -1009,7 +1009,7 @@ fn map_diagnose_local_codes(
                 result.push(kontakt_diagnose_procedures("department-main-diagnosis"));
             }
             match condition_type_local.as_str() {
-                "FA" => {
+                "FA" | "FA Au" => {
                     result.push(diagnose_role_coding("AD"));
                 }
                 "FB" | "FA Be" => {
