@@ -52,13 +52,13 @@ impl From<&EncounterType> for Coding {
                 .display("Einrichtungskontakt".to_string())
                 .build()
                 .expect("Kontaktebene coding"),
-            EncounterType::Fachabteilungskontakt => Coding::builder()
+            Fachabteilungskontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("abteilungskontakt".to_string())
                 .display("Abteilungskontakt".to_string())
                 .build()
                 .expect("Kontaktebene coding"),
-            EncounterType::Versorgungsstellenkontakt => Coding::builder()
+            Versorgungsstellenkontakt => Coding::builder()
                 .system("http://fhir.de/CodeSystem/Kontaktebene".to_string())
                 .code("versorgungsstellenkontakt".to_string())
                 .display("Versorgungsstellenkontakt".to_string())
@@ -134,25 +134,13 @@ pub(super) fn map(
             }
 
             result.push(bundle_entry(
-                base_encounter(
-                    msg,
-                    config,
-                    resources,
-                    &EncounterType::Fachabteilungskontakt,
-                )?
-                .build()?,
+                base_encounter(msg, config, resources, &Fachabteilungskontakt)?.build()?,
                 EntryRequestType::Delete,
                 config,
             )?);
 
             result.push(bundle_entry(
-                base_encounter(
-                    msg,
-                    config,
-                    resources,
-                    &EncounterType::Versorgungsstellenkontakt,
-                )?
-                .build()?,
+                base_encounter(msg, config, resources, &Versorgungsstellenkontakt)?.build()?,
                 EntryRequestType::Delete,
                 config,
             )?);
@@ -1057,9 +1045,9 @@ mod tests {
     use std::default::Default;
 
     #[rstest]
-    #[case(EncounterType::Einrichtungskontakt, ("einrichtungskontakt","admit_id"))]
-    #[case(EncounterType::Fachabteilungskontakt, ("abteilungskontakt","zbe_id"))]
-    #[case(EncounterType::Versorgungsstellenkontakt, ("versorgungsstellenkontakt","zbe_id"))]
+    #[case(Einrichtungskontakt, ("einrichtungskontakt","admit_id"))]
+    #[case(Fachabteilungskontakt, ("abteilungskontakt","zbe_id"))]
+    #[case(Versorgungsstellenkontakt, ("versorgungsstellenkontakt","zbe_id"))]
     fn test_map_level_identifier(#[case] level: EncounterType, #[case] expected: (&str, &str)) {
         let msg = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|202208200651||ADT^A04^ADT_A04|65298857|P|2.5||640340718|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
@@ -1436,7 +1424,7 @@ ZBE|30674176^ORBIS|202208221309||INSERT
         let result = map(&msg, config, resources);
 
         result
-            .map_err(|e| panic!("failed with error: {}", e.to_string()))
+            .map_err(|e| panic!("failed with error: {}", e))
             .unwrap()
             .iter()
             .for_each(|entry| {
@@ -1556,7 +1544,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
     }
 
     fn get_enc_type_coding(actual: &Encounter, index: usize) -> Coding {
-        let type_coding = actual
+        actual
             .r#type
             .get(index)
             .unwrap()
@@ -1567,8 +1555,7 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             .unwrap()
             .as_ref()
             .unwrap()
-            .clone();
-        type_coding
+            .clone()
     }
 
     #[test]
@@ -1788,7 +1775,7 @@ EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
 PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||20251102|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE|||201103240800|Y
 PV1|1|V|^^^KJM^KLINIKUM^|R^^HL7~01^Normalfall^11||||^^^^^^^^^L^^^^^^^^^^^^^^^^^^^^^^^^^^^BSNR||N||||||N|||88888888||K|||||||||||||||01|||1000|9||||202511022120|202511022120||||||A
 PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000||||||||||N||I||||||||||||Y"#;
-        let msg = Message::parse_with_lenient_newlines(&hl7, true).unwrap();
+        let msg = Message::parse_with_lenient_newlines(hl7, true).unwrap();
         let res = map_encounter_class(&msg).unwrap();
         assert_eq!(res.code.as_ref().unwrap(), "AMB");
     }
@@ -1844,7 +1831,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
 
         assert!(abteilung.period.as_ref().is_some_and(|s| s.start.is_some()));
         assert!(abteilung.period.as_ref().is_some_and(|s| s.end.is_some()));
-        assert_eq!(abteilung.status, EncounterStatus::Finished);
+        assert_eq!(abteilung.status, Finished);
 
         let versorgungsstelle =
             map_versorgungsstellenkontakt(&msg, &get_test_config(), &get_dummy_resources())
@@ -1857,7 +1844,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
                 .as_ref()
                 .is_some_and(|s| s.start.is_some())
         );
-        assert_eq!(versorgungsstelle.status, EncounterStatus::Finished);
+        assert_eq!(versorgungsstelle.status, Finished);
         assert!(
             versorgungsstelle
                 .period

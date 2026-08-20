@@ -45,22 +45,22 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
         | MessageType::A07
         | MessageType::A08
         => {
-            let patient = map_patient(msg, &config)?;
+            let patient = map_patient(msg, config)?;
             // update-as-create
-            Ok(vec![bundle_entry(patient, UpdateAsCreate, &config)?])
+            Ok(vec![bundle_entry(patient, UpdateAsCreate, config)?])
         }
         MessageType::A02 | MessageType::A03 | MessageType::A31 => {
-            let patient = map_patient(msg, &config)?;
+            let patient = map_patient(msg, config)?;
             // conditional-create
-            Ok(vec![bundle_entry(patient, ConditionalCreate, &config)?])
+            Ok(vec![bundle_entry(patient, ConditionalCreate, config)?])
         }
         MessageType::A34 | MessageType::A40 => {
             // create fhir-patch
-            let (identifier, patch) = create_patient_merge(msg, &config)?;
+            let (identifier, patch) = create_patient_merge(msg, config)?;
             Ok(vec![patch_bundle_entry(
                 identifier,
                 &ResourceType::Patient,
-                &patch, &config
+                &patch, config
             )?])
         }
         MessageType::A11
@@ -82,9 +82,9 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
             Ok(vec![])
         }
         MessageType::A29 => {
-            let patient = map_patient(msg, &config)?;
+            let patient = map_patient(msg, config)?;
             // delete
-            Ok(vec![bundle_entry(patient, Delete, &config)?])
+            Ok(vec![bundle_entry(patient, Delete, config)?])
         }
         other => Err(MappingError::from(anyhow!("Invalid message type: {other}"))),
     }

@@ -247,7 +247,6 @@ impl Processor {
                     error!("Failed to map payload with [key={key}]: {e}");
 
                     return match e {
-                        // TODO error metrics
                         MappingError::MissingResourceError {
                             resource: _,
                             value: _,
