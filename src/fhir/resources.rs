@@ -11,19 +11,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[derive(Clone)]
-pub(crate) struct Location {
-    desc: String,
-    /// Fachabteilungskürzel
-    fachabteilungs_kuerzel: String,
-    /// Abteilungsbezeichnung
-    abteilungs_bezeichnung: String,
-    /// Fachabteilungsschlüssel
-    fachabteilungs_schluessel: String,
-}
-
 /// Fachabteilung
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,7 +26,6 @@ pub(crate) struct Department {
 #[serde(rename_all = "camelCase")]
 #[derive(Clone)]
 pub(crate) struct Ward {
-    pub(crate) display: String,
     #[serde(default)]
     pub(crate) is_icu: bool,
     pub(crate) valid_period: Vec<ValidPeriod>,
@@ -347,7 +333,7 @@ mod tests {
                 "check mode strict should produce an error! but got: {:?}",
                 result
             ),
-            Err(MappingError::MissingResourceError {
+            Err(MissingResourceError {
                 resource: _,
                 value: v,
             }) => {

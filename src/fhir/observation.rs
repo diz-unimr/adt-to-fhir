@@ -17,14 +17,12 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity, Reference};
 use hl7_parser::Message;
 use std::ops::Div;
-use std::sync::LazyLock;
 
 const LOINC_PATIENT_DISPOSITION: &str = "67162-8";
 const LOINC_BODY_WEIGHT: &str = "29463-7";
 const LOINC_BODY_HEIGHT: &str = "8302-2";
 const LOINC_HEAD_CIRCUMFERENCE: &str = "9843-4";
 const SNOMED_BODYSITE_HEAD: &str = "69536005";
-const SNOMED_VERSION: &str = "http://snomed.info/sct/900000000000207008/version/20241101";
 const SNOMED_SYSTEM: &str = "http://snomed.info/sct";
 const LOINC_SYSTEM: &str = "http://loinc.org";
 const VITAL_SIGNS_CATEGORY_SYSTEM: &str =
@@ -33,7 +31,7 @@ const VITAL_SIGNS_CATEGORY_CODE: &str = "vital-signs";
 const SURVEY_CATEGORY_CODE: &str = "survey";
 const UCUM_SYSTEM: &str = "http://unitsofmeasure.org";
 
-const CODING_PATIENT_DISPOSITION: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
+fn patient_disposition() -> Vec<Option<Coding>> {
     vec![
         Coding::builder()
             .code(LOINC_PATIENT_DISPOSITION.to_string())
@@ -42,9 +40,9 @@ const CODING_PATIENT_DISPOSITION: LazyLock<Vec<Option<Coding>>> = LazyLock::new(
             .build()
             .ok(),
     ]
-});
+}
 
-const CODING_HEAD_CIRCUMFERENCE: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
+fn head_circumference() -> Vec<Option<Coding>> {
     vec![
         Coding::builder()
             .code(LOINC_HEAD_CIRCUMFERENCE.to_string())
@@ -61,9 +59,9 @@ const CODING_HEAD_CIRCUMFERENCE: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|
             .build()
             .ok(),
     ]
-});
+}
 
-const CODING_BODY_WEIGHT: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
+fn body_weight() -> Vec<Option<Coding>> {
     vec![
         Coding::builder()
             .code(LOINC_BODY_WEIGHT.to_string())
@@ -87,9 +85,9 @@ const CODING_BODY_WEIGHT: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
             .build()
             .ok(),
     ]
-});
+}
 
-const CODING_BODY_HEIGHT: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
+fn body_height() -> Vec<Option<Coding>> {
     vec![
         Coding::builder()
             .code(LOINC_BODY_HEIGHT.to_string())
@@ -112,10 +110,11 @@ const CODING_BODY_HEIGHT: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
             .build()
             .ok(),
     ]
-});
-const IS_ALIVE_CODING: LazyLock<Vec<Option<Coding>>> = LazyLock::new(|| {
+}
+
+fn is_alive() -> Vec<Option<Coding>> {
     vec![Coding::builder().code("L".to_string()).system("https://www.medizininformatik-initiative.de/fhir/core/modul-person/CodeSystem/Vitalstatus".to_string()).build().ok()]
-});
+}
 
 fn get_basic_observation_builder(msg: &Message) -> Result<ObservationBuilder, MappingError> {
     Ok(Observation::builder()
@@ -207,13 +206,11 @@ fn map_vital_status(
                     )
                     .code(
                         CodeableConcept::builder()
-                            .coding(CODING_PATIENT_DISPOSITION.clone())
+                            .coding(patient_disposition())
                             .build()?,
                     )
                     .value(ObservationValue::CodeableConcept(
-                        CodeableConcept::builder()
-                            .coding(IS_ALIVE_CODING.clone())
-                            .build()?,
+                        CodeableConcept::builder().coding(is_alive()).build()?,
                     ))
                     .subject(subject_ref(msg, &config.person.system)?)
                     .encounter(encounter_reference(msg, config)?)
@@ -250,11 +247,7 @@ fn map_body_length(
                 config.observation.profile_height.to_string(),
                 config,
             )?
-            .code(
-                CodeableConcept::builder()
-                    .coding(CODING_BODY_HEIGHT.clone())
-                    .build()?,
-            )
+            .code(CodeableConcept::builder().coding(body_height()).build()?)
             .build()?,
         ));
     }
@@ -287,11 +280,7 @@ fn map_body_weight(
                 config.observation.profile_weight.to_string(),
                 config,
             )?
-            .code(
-                CodeableConcept::builder()
-                    .coding(CODING_BODY_WEIGHT.clone())
-                    .build()?,
-            )
+            .code(CodeableConcept::builder().coding(body_weight()).build()?)
             .build()?,
         ));
     }
@@ -328,7 +317,7 @@ fn map_head_circumference(
             )?)
             .code(
                 CodeableConcept::builder()
-                    .coding(CODING_HEAD_CIRCUMFERENCE.clone())
+                    .coding(head_circumference())
                     .build()?,
             )
             .build()?,
@@ -373,9 +362,8 @@ fn get_birth_obs_builder(
 #[cfg(test)]
 mod tests {
     use crate::fhir::observation::{
-        CODING_BODY_HEIGHT, CODING_BODY_WEIGHT, CODING_HEAD_CIRCUMFERENCE,
-        CODING_PATIENT_DISPOSITION, LOINC_BODY_HEIGHT, LOINC_BODY_WEIGHT, LOINC_HEAD_CIRCUMFERENCE,
-        LOINC_PATIENT_DISPOSITION, map,
+        LOINC_BODY_HEIGHT, LOINC_BODY_WEIGHT, LOINC_HEAD_CIRCUMFERENCE, LOINC_PATIENT_DISPOSITION,
+        map,
     };
     use crate::test_utils::tests::{get_test_config, read_test_resource};
     use fhir_model::r4b::resources::{Observation, ObservationValue, Resource};
@@ -490,26 +478,5 @@ mod tests {
             expected,
             value
         );
-    }
-    #[test]
-    fn constant_initialized_some_values() {
-        assert!(CODING_BODY_HEIGHT.clone().iter().all(|v| v.is_some()));
-        assert_eq!(CODING_BODY_HEIGHT.clone().len(), 3);
-        assert!(CODING_BODY_WEIGHT.clone().iter().all(|v| v.is_some()));
-        assert_eq!(CODING_BODY_WEIGHT.clone().len(), 2);
-        assert!(
-            CODING_HEAD_CIRCUMFERENCE
-                .clone()
-                .iter()
-                .all(|v| v.is_some())
-        );
-        assert_eq!(CODING_HEAD_CIRCUMFERENCE.clone().len(), 2);
-        assert!(
-            CODING_PATIENT_DISPOSITION
-                .clone()
-                .iter()
-                .all(|v| v.is_some())
-        );
-        assert_eq!(CODING_PATIENT_DISPOSITION.clone().len(), 1);
     }
 }
