@@ -7,12 +7,8 @@ pub(crate) mod tests {
     use crate::fhir::resources::{Department, ResourceMap, ValidPeriod, Ward};
     use chrono::NaiveDate;
     use fhir_model::WrongResourceType;
-    use fhir_model::r4b::codes::IssueSeverity;
-    use fhir_model::r4b::resources::{
-        Bundle, BundleEntry, OperationOutcome, OperationOutcomeIssue, Resource,
-    };
+    use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
     use fhir_model::r4b::types::Meta;
-    use serde_json::Value;
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
@@ -97,7 +93,6 @@ pub(crate) mod tests {
                 (
                     "ANA".to_string(),
                     Ward {
-                        display: "Aneasthesie u. Intensivtherapie".to_string(),
                         is_icu: true,
                         valid_period: Vec::from([
                             ValidPeriod {
@@ -114,7 +109,6 @@ pub(crate) mod tests {
                 (
                     "IDIST1I".to_string(),
                     Ward {
-                        display: "IDIST1I".to_string(),
                         is_icu: true,
                         valid_period: Vec::from([ValidPeriod {
                             valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
@@ -126,7 +120,6 @@ pub(crate) mod tests {
                 (
                     "IDIST121".to_string(),
                     Ward {
-                        display: "Iterdisziplinaere Station 121".to_string(),
                         is_icu: false,
                         valid_period: Vec::from([ValidPeriod {
                             valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
@@ -178,59 +171,5 @@ pub(crate) mod tests {
 
         fs::read_to_string(file_path.display().to_string())
             .unwrap_or_else(|_| panic!("Test resource not found: {}", file_path.display()))
-    }
-
-    pub(crate) fn send_to_validate(
-        request_url: &str,
-        serialized_resource: String,
-    ) -> OperationOutcome {
-        let client = reqwest::blocking::Client::new();
-        let response = client
-            .post(request_url)
-            .body(serialized_resource)
-            .send()
-            .unwrap();
-
-        response.json().unwrap()
-    }
-
-    pub(crate) fn validate_with_server(
-        test_file: &str,
-        raw: &Value,
-        show_level: &IssueSeverity,
-    ) -> bool {
-        let outcome = send_to_validate("http://localhost:8080/validateResource", raw.to_string());
-        outcome.issue.iter().all(|i| {
-            if let Some(outcome) = i {
-                match outcome.severity {
-                    IssueSeverity::Error | IssueSeverity::Fatal => {
-                        print_outcome_details(outcome, test_file);
-                        false
-                    }
-                    IssueSeverity::Information => true,
-                    IssueSeverity::Warning => {
-                        if IssueSeverity::Warning.eq(show_level) {
-                            print_outcome_details(outcome, test_file);
-                        }
-                        true
-                    }
-                }
-            } else {
-                false
-            }
-        })
-    }
-
-    fn print_outcome_details(issue: &OperationOutcomeIssue, test_file: &str) {
-        let details = issue.details.as_ref().unwrap();
-
-        println!(
-            "{}: Resource {} is invalid code: '{}' at: '{}",
-            issue.severity,
-            test_file,
-            issue.code,
-            issue.expression.clone().first().unwrap().as_ref().unwrap()
-        );
-        println!("Details: {:#?}", details.text.as_ref().unwrap());
     }
 }

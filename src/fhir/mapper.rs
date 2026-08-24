@@ -16,9 +16,7 @@ use fhir_model::r4b::resources::{
     Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Parameters, Resource,
     ResourceType,
 };
-use fhir_model::r4b::types::{
-    CodeableConcept, Coding, Extension, ExtensionValue, FieldExtension, Identifier, Meta, Reference,
-};
+use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
 
 use fhir_model::time::{Month, OffsetDateTime};
 use fhir_model::{BuilderError, Instant};
@@ -771,7 +769,6 @@ EVN|A02|201111280915|201111280915||TEST
 PID|1|111111|111111||Musterfrau^Marta|Mustergeburtsname|20090515|F|||Mustergasse 10^^Musterort^^33333^DE||012345/1234^^PH|||S|||||||Marburg|N||DE|Kindergartenkind
 PV1|1|I|IDIST041^041-10^^KCH^^123444|R||IDIST041^041-13^1^KCH^^123444|||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||21600000||K||||||||||||||||||1300||||||||||||A
 ZBE|44444444^ORBIS|202601280923||INSERT"#;
-        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
         let mapper = FhirMapper::new(get_test_config()).unwrap();
         let result = mapper.map(input);
         assert!(result.is_ok());

@@ -23,10 +23,6 @@ pub(crate) const MSH_10: &str = "MSH.10";
 ///
 /// __note:__ always present (preferred before PID.3)
 pub(crate) const PID_2: &str = "PID.2";
-/// patient identifier list
-///
-/// __note:__ always present
-pub(crate) const PID_3_1: &str = "PID.3.1";
 /// encounter identifier (medical case id)
 ///
 pub(crate) const PID_4: &str = "PID.4";
