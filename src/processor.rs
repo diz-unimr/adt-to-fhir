@@ -153,9 +153,9 @@ impl Processor {
                     return
                 }
                 stream = consumer.stream().map_err(ProcessingError::from)
-                .try_for_each(|m| {
+                .try_for_each(|m| async {
                     let start = Instant::now();
-                    let result= self.process_message(m, id, consumer.clone());
+                    let result= self.process_message(m, id, consumer.clone()).await;
                     let duration = start.elapsed().as_nanos();
 
                     // record latency
