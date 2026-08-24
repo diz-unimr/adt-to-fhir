@@ -1,11 +1,12 @@
+use crate::hl7::parser::{PID_2, PID_16_1, query};
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
 use anyhow::anyhow;
-
-use crate::hl7::parser::{PID_2, query};
+use fhir_core::mapping::patient::map_marital_status;
 
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError};
 use fhir_core::model::person_dto::{
-    AddressDto, AddressDtoBuilder, PersonDto, PersonDtoBuilder, PersonDtoBuilderError,
+    AddressDto, AddressDtoBuilder, MaritalStatusDto, PersonDto, PersonDtoBuilder,
+    PersonDtoBuilderError,
 };
 use hl7_parser::Message;
 
@@ -17,6 +18,9 @@ pub fn map_hl7_to_dto(msg: &Message) -> Result<PersonDto, Hl7MappingError> {
     )?);
 
     patient_builder.address(address_from_hl7(msg));
+    if let Some(marital_status) = query(msg, PID_16_1) {
+        patient_builder.marital_status(MaritalStatusDto::from_hl7(marital_status));
+    }
 
     match patient_builder.build() {
         Ok(p) => Ok(p),

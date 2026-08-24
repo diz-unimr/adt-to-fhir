@@ -1,12 +1,13 @@
 use crate::error::MappingError;
 use crate::fhir::mapper::{
-    EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, get_meta,
-    is_inpatient_location, is_ward_valid_icu, parse_fab, resource_ref,
+    EntryRequestType, build_usual_identifier, bundle_entry, get_meta, is_inpatient_location,
+    is_ward_valid_icu, parse_fab,
 };
 
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
+use fhir_core::mapping::misc::{get_cc_with_one_code, resource_ref};
 use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
 use hl7_parser::Message;
 use log::{Level, log};

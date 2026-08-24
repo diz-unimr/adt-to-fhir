@@ -18,6 +18,8 @@ use processor_hl7v2::hl7::parser::{
 
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
+use fhir_core::mapping::misc::{identifier_search, resource_ref};
+use fhir_core::mapping::patient::upsert_reference;
 use fhir_core::model::fab_mapping::is_valid_date;
 use fhir_model::time::{Month, OffsetDateTime};
 use fhir_model::{BuilderError, Instant};
@@ -192,25 +194,6 @@ pub(crate) fn patch_bundle_entry(
         .map_err(|e| e.into())
 }
 
-pub(crate) fn upsert_reference(
-    resource_type: &ResourceType,
-    identifier: &Identifier,
-) -> Result<String, MappingError> {
-    Ok(format!(
-        "{resource_type}?{}",
-        identifier_search(
-            identifier
-                .system
-                .as_deref()
-                .ok_or(anyhow!("identifier.system missing"))?,
-            identifier
-                .value
-                .as_deref()
-                .ok_or(anyhow!("identifier.value missing"))?
-        )
-    ))
-}
-
 pub(crate) fn conditional_reference(identifier: &Identifier) -> Result<String, MappingError> {
     Ok(identifier_search(
         identifier
@@ -222,32 +205,6 @@ pub(crate) fn conditional_reference(identifier: &Identifier) -> Result<String, M
             .as_deref()
             .ok_or(anyhow!("identifier.value missing"))?,
     ))
-}
-
-fn identifier_search(system: &str, value: &str) -> String {
-    format!("identifier={system}|{value}")
-}
-
-pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, ParsingError> {
-    let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
-    let dt_with_tz = Berlin
-        .from_local_datetime(&dt)
-        .earliest()
-        .ok_or(InvalidDate)?;
-
-    Ok(DateTime::DateTime(Instant(
-        OffsetDateTime::from_unix_timestamp(dt_with_tz.timestamp())?,
-    )))
-}
-
-pub(crate) fn resource_ref(
-    res_type: &ResourceType,
-    id: &str,
-    system: &str,
-) -> Result<Reference, MappingError> {
-    Ok(Reference::builder()
-        .reference(format!("{res_type}?{}", identifier_search(system, id)))
-        .build()?)
 }
 
 pub(crate) fn parse_date(input: &str) -> Result<Date, ParsingError> {
@@ -275,17 +232,6 @@ pub(crate) fn build_usual_identifier(
 
 pub fn is_inpatient_location(msg: &Message) -> Result<bool, MappingError> {
     Ok(query(msg, PV1_2) == Some("I") && query(msg, PV1_3_5).map(|v| v == "KLINIKUM").is_some())
-}
-
-pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConcept, BuilderError> {
-    CodeableConcept::builder()
-        .coding(vec![Some(
-            Coding::builder()
-                .code(code.to_string())
-                .system(system.to_string())
-                .build()?,
-        )])
-        .build()
 }
 
 pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
@@ -333,7 +279,7 @@ pub(crate) fn get_meta(config: &Fhir) -> Result<Meta, MappingError> {
 pub(crate) fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
     let pid = query(msg, PID_2).ok_or(anyhow!("missing pid value in PID.2"))?;
 
-    resource_ref(&ResourceType::Patient, pid, sid)
+    resource_ref(&ResourceType::Patient, pid, sid).map_err(MappingError::BuilderError)
 }
 
 pub(crate) fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> {
@@ -394,6 +340,7 @@ mod tests {
     use adt_config::test_utils::tests::{
         filter_resources, get_dummy_resources, get_test_config, has_profile, read_test_resource,
     };
+    use fhir_core::mapping::misc::parse_datetime;
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::resources::{

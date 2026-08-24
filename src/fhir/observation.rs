@@ -1,11 +1,11 @@
 use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::mapper::{
-    EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, map_visit_number,
-    parse_datetime, resource_ref, subject_ref,
+    EntryRequestType, build_usual_identifier, bundle_entry, map_visit_number, subject_ref,
 };
 use crate::fhir::patient::map_deceased;
 use adt_config::config::Fhir;
 use anyhow::anyhow;
+use fhir_core::mapping::misc::{get_cc_with_one_code, parse_datetime, resource_ref};
 use fhir_model::r4b::codes::ObservationStatus;
 use fhir_model::r4b::resources::{
     BundleEntry, Observation, ObservationBuilder, ObservationEffective, ObservationValue,
@@ -174,6 +174,7 @@ fn encounter_reference(msg: &Message, config: &Fhir) -> Result<Reference, Mappin
         visit_number,
         &config.fall.einrichtungskontakt.system,
     )
+    .map_err(MappingError::BuilderError)
 }
 fn map_vital_status(
     msg: &Message,

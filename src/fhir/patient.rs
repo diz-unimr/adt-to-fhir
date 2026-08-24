@@ -2,13 +2,15 @@ use crate::error::MappingError;
 use crate::error::MessageAccessError;
 use crate::error::MessageAccessError::MissingMessageValue;
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
-use crate::fhir::mapper::{
-    bundle_entry, get_cc_with_one_code, parse_date, parse_datetime, patch_bundle_entry,
-    upsert_reference,
-};
+use crate::fhir::mapper::{bundle_entry, parse_date, patch_bundle_entry};
 use adt_config::config::Fhir;
 
 use anyhow::anyhow;
+use fhir_core::fhir_error::ContentError;
+use fhir_core::mapping::misc::parse_datetime;
+use fhir_core::mapping::patient::{
+    create_patient_identifier_pid, create_patient_merge, map_marital_status,
+};
 use fhir_core::model::person_dto::PersonDto;
 use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
@@ -56,7 +58,7 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
             Ok(vec![bundle_entry(patient, ConditionalCreate, config)?])
         }
         MessageType::A34 | MessageType::A40 => {
-            // create fhir-patch
+            // create mapping-patch
              let (parameters,target) = create_patient_merge_hl7(msg, config)?;
             Ok(vec![patch_bundle_entry(
                 parameters,
@@ -126,130 +128,6 @@ fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
     Ok(res)
 }
 
-fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, MappingError> {
-    let mut res = vec![];
-
-    for elem in dto.address.clone() {
-        let mut addr = Address::builder().r#type(AddressType::Both).build()?;
-
-        if let Some(addr_elem) = elem {
-            // line
-
-            addr.line = addr_elem.street_and_number.clone();
-
-            // city
-            if let Some(city) = addr_elem.city {
-                addr.city = Some(city.to_string());
-            }
-            // postal code
-            if let Some(postal_code) = addr_elem.zip_code {
-                addr.postal_code = Some(postal_code.to_string());
-            }
-            // country
-            if let Some(country) = addr_elem.country {
-                addr.country = Some(country.to_string());
-            }
-
-            if !addr.line.is_empty() && addr.line.iter().all(|l| l.is_some()) && addr.city.is_some()
-            {
-                // street must have at least 1 line and city must also have a value
-                res.push(Some(addr));
-            }
-        }
-    }
-
-    Ok(res)
-}
-fn create_patient_merge_dto(
-    patient_dto: &PersonDto,
-    config: &Fhir,
-) -> Result<(Option<(Parameters, Identifier)>), MappingError> {
-    match (patient_dto.pid.clone(), patient_dto.replaced_by_pid.clone()) {
-        (replaced_patient_id, Some(new_pid)) => Ok(Some(create_patient_merge(
-            replaced_patient_id,
-            new_pid,
-            config,
-        )?)),
-        (_, _) => Ok(None),
-    }
-}
-fn create_patient_merge(
-    replaced_patient_id: String,
-    new_pid: String,
-    config: &Fhir,
-) -> Result<(Parameters, Identifier), MappingError> {
-    {
-        let params = Parameters::builder()
-            .parameter(vec![Some(
-                ParametersParameter::builder()
-                    .name("operation".to_string())
-                    .part(vec![
-                        Some(
-                            ParametersParameter::builder()
-                                .name("type".to_string())
-                                .value(ParametersParameterValue::Code("add".to_string()))
-                                .build()?,
-                        ),
-                        Some(
-                            ParametersParameter::builder()
-                                .name("path".to_string())
-                                .value(ParametersParameterValue::String(
-                                    ResourceType::Patient.to_string(),
-                                ))
-                                .build()?,
-                        ),
-                        Some(
-                            ParametersParameter::builder()
-                                .name("name".to_string())
-                                .value(ParametersParameterValue::String("link".to_string()))
-                                .build()?,
-                        ),
-                        Some(
-                            ParametersParameter::builder()
-                                .name("value".to_string())
-                                .part(vec![
-                                    Some(
-                                        ParametersParameter::builder()
-                                            .name("other".to_string())
-                                            .value(ParametersParameterValue::Reference(
-                                                Reference::builder()
-                                                    .reference(upsert_reference(
-                                                        &ResourceType::Patient,
-                                                        &create_patient_identifier_pid(
-                                                            new_pid.to_string(),
-                                                            config,
-                                                        )?,
-                                                    )?)
-                                                    .r#type(ResourceType::Patient.to_string())
-                                                    .build()?,
-                                            ))
-                                            .build()?,
-                                    ),
-                                    Some(
-                                        ParametersParameter::builder()
-                                            .name("type".to_string())
-                                            .value(ParametersParameterValue::Code(
-                                                "replaced-by".to_string(),
-                                            ))
-                                            .build()?,
-                                    ),
-                                ])
-                                .build()?,
-                        ),
-                    ])
-                    .build()?,
-            )])
-            .build()?;
-
-        Ok((
-            params,
-            Identifier::builder()
-                .system(config.person.system.to_string())
-                .value(replaced_patient_id.to_string())
-                .build()?,
-        ))
-    }
-}
 fn create_patient_merge_hl7(
     msg: &Message,
     config: &Fhir,
@@ -263,8 +141,11 @@ fn create_patient_merge_hl7(
             .ok_or(MessageAccessError::MissingMessageSegment(
                 "MRG.1".to_string(),
             ))?;
-
-    create_patient_merge(new_patient_id, replaced_patient_id, config)
+    Ok(create_patient_merge(
+        new_patient_id,
+        replaced_patient_id,
+        config,
+    )?)
 }
 
 fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier, MappingError> {
@@ -272,31 +153,7 @@ fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier,
         .map(String::from)
         .ok_or(MissingMessageValue("PID.2".to_string()))?;
 
-    create_patient_identifier_pid(pid, config)
-}
-
-fn create_patient_identifier_pid(pid: String, config: &Fhir) -> Result<Identifier, MappingError> {
-    Identifier::builder()
-        .r#use(IdentifierUse::Usual)
-        .system(config.person.system.to_owned())
-        .value(pid)
-        .r#type(get_cc_with_one_code(
-            "MR".to_string(),
-            "http://terminology.hl7.org/CodeSystem/v2-0203".to_string(),
-        )?)
-        .assigner(
-            Reference::builder()
-                .display("UKGM - Universitätsklinikum Marburg".to_string())
-                .identifier(
-                    Identifier::builder()
-                        .value(config.facility_id.to_string())
-                        .system("http://fhir.de/sid/arge-ik/iknr".to_string())
-                        .build()?,
-                )
-                .build()?,
-        )
-        .build()
-        .map_err(MappingError::from)
+    create_patient_identifier_pid(pid, config).map_err(MappingError::from)
 }
 
 /// Erzeugt Patienten-Identifier
@@ -369,7 +226,9 @@ fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
         patient.gender = Some(map_gender(g));
     }
     // marital_status
-    patient.marital_status = map_marital_status(msg)?;
+    if let Some(marital_status) = query(msg, PID_16_1) {
+        patient.marital_status = map_marital_status(marital_status)?
+    }
     // deceased flag
     patient.deceased = map_deceased(msg)?;
 
@@ -454,73 +313,6 @@ fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, Map
             }
         }
     }
-}
-
-fn map_marital_status(msg: &Message) -> Result<Option<CodeableConcept>, MappingError> {
-    // marital status
-    query(msg, PID_16_1)
-        .map(|status| {
-            match status {
-                "A" | "E" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("L".to_string())
-                    .display("Legally Separated".to_string())
-                    .build(),
-                "D" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("D".to_string())
-                    .display("Divorced".to_string())
-                    .build(),
-                "M" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("M".to_string())
-                    .display("Married".to_string())
-                    .build(),
-                "S" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("S".to_string())
-                    .display("Never Married".to_string())
-                    .build(),
-                "W" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("W".to_string())
-                    .display("Widowed".to_string())
-                    .build(),
-                "C" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("C".to_string())
-                    .display("Common Law".to_string())
-                    .build(),
-                "G" | "P" | "R" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("T".to_string())
-                    .display("Domestic partner".to_string())
-                    .build(),
-                "N" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("A".to_string())
-                    .display("Annulled".to_string())
-                    .build(),
-                "I" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("I".to_string())
-                    .display("Interlocutory".to_string())
-                    .build(),
-                "B" => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus".to_string())
-                    .code("U".to_string())
-                    .display("Unmarried".to_string())
-                    .build(),
-                _a => Coding::builder()
-                    .system("http://terminology.hl7.org/CodeSystem/v3-NullFlavor".to_string())
-                    .code("UNK".to_string())
-                    .display("Unknown".to_string())
-                    .build(),
-            }
-            .and_then(|c| CodeableConcept::builder().coding(vec![Some(c)]).build())
-            .map_err(MappingError::from)
-        })
-        .transpose()
 }
 
 fn map_gender(gender: &str) -> AdministrativeGender {

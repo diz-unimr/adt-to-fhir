@@ -1,4 +1,5 @@
 use chrono::ParseError;
+use fhir_core::fhir_error::ContentError;
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::{BuilderError, DateFormatError, time};
 
@@ -16,6 +17,8 @@ pub(crate) enum ProcessingError {
 
 #[derive(Debug, Error)]
 pub(crate) enum MappingError {
+    #[error(transparent)]
+    ContentError(#[from] ContentError),
     #[error(transparent)]
     MessageError(#[from] MessageAccessError),
     #[error(transparent)]
@@ -45,6 +48,7 @@ impl MappingError {
             MappingError::Other(_) => "Other",
             MappingError::Hl7ParsingError(_) => "Hl7ParsingError",
             MappingError::Hl7MessageTypeError(_) => "Hl7MessageTypeError",
+            MappingError::ContentError(_) => "ContentError",
         }
     }
 }
