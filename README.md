@@ -16,7 +16,7 @@ auto-commiting.
 
 ## Mapping
 
-> [!WARNING]  
+> [!WARNING]
 > TODO
 > see wiki pages for now.
 
@@ -27,7 +27,7 @@ Application properties are read from a properties file ([app.yaml](./app.yaml)) 
 | Name                                          | Default                                                                                                                        | Description                                                                                                               |
 |-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
 | `app.log_level`                               | info                                                                                                                           | Log level (error,warn,info,debug,trace)                                                                                   |
-| `app.telemetry_endpoint`                      | http://localhost:4317                                                                                                          |                                                                                                                           | 
+| `app.telemetry_endpoint`                      | http://localhost:4317                                                                                                          |                                                                                                                           |
 | `kafka.brokers`                               | localhost:9092                                                                                                                 | Kafka brokers                                                                                                             |
 | `kafka.security_protocol`                     | plaintext                                                                                                                      | Kafka communication protocol                                                                                              |
 | `kafka.ssl.ca_location`                       | /app/cert/kafka_ca.pem                                                                                                         | Kafka CA certificate location                                                                                             |
@@ -38,7 +38,7 @@ Application properties are read from a properties file ([app.yaml](./app.yaml)) 
 | `kafka.input_topic`                           | adt-hl7                                                                                                                        | Kafka topic to consume                                                                                                    |
 | `kafka.output_topic`                          | adt-fhir                                                                                                                       | Kafka output topic                                                                                                        |
 | `kafka.offset_reset`                          | earliest                                                                                                                       | Kafka consumer reset (`earliest` or `latest`)                                                                             |
-| `fhir.meta_source`                            | "#orbis_adt"                                                                                                                   | Value of `resource.meta.source`                                                                                           |  
+| `fhir.meta_source`                            | "#orbis_adt"                                                                                                                   | Value of `resource.meta.source`                                                                                           |
 | `fhir.bundle_identifier_system`               | `https://fhir.diz.uni-marburg.de/sid/bundle-id`                                                                                | `Bundle` identifier system                                                                                                |
 | `fhir.check_mode`                             | strict                                                                                                                         | Führt eine fehlender Mapping Eintrag zu einem Verarbeitungs-Stop. Zulässige Werte sind: _strict_, _lenienet_              |
 | `fhir.person.profile`                         | `https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Patient\|2026.0.0`                     | `Patient` FHIR profile                                                                                                    |
@@ -65,15 +65,14 @@ Application properties are read from a properties file ([app.yaml](./app.yaml)) 
 
 #### InfoByAbteilungskuerzel.json
 
-We do not want false mapping result to 'unknown' by
-default. Therefore, we expect every department to have a valid entry. If
-department has no valid department identification code you may map `3700` value.
-Missing entries will result in mapping error and processing will stop, if `fhir.check_mode` is set to `strict`,
-while `lenient` configuration will fall back to `3700`.
+We do not want false mapping result to 'unknown' by default. Therefore, we expect every department to have a valid
+entry. If department has no valid department identification code you may map `3700` value. Missing entries will result
+in mapping error and processing will stop, if `fhir.check_mode` is set to `strict`, while `lenient` configuration will
+fall back to `3700`.
 
 Please not, department name `abteilungsBezeichnung` at this mapping is a __lokal name__, official medical department
-name will be mapped via department id from `Fachabteilungsschluessel-erweitert`(see section below).
-The lokal name will be used to create department organization resources.
+name will be mapped via department id from `Fachabteilungsschluessel-erweitert`(see section below). The lokal name will
+be used to create department organization resources.
 
 Content format is like th following example, _department short name_ must be unique.
 
@@ -91,9 +90,8 @@ Content format is like th following example, _department short name_ must be uni
 This mapping file is used to define which wards are used as _intensive care units_ and in which time periods they are
 assigned this status.
 
-Content format is like th following example, _ward short name_ used at _HL7v2_ field `PV1-3.1`must be unique.
-Properties _validTo_ (if empty no expiration date is assumed) and _isIcu_ (if empty _false_ is assumed) are optional
-values.
+Content format is like th following example, _ward short name_ used at _HL7v2_ field `PV1-3.1`must be unique. Properties
+_validTo_ (if empty no expiration date is assumed) and _isIcu_ (if empty _false_ is assumed) are optional values.
 
 ```json
 {
@@ -115,9 +113,9 @@ values.
 
 #### Department id code system
 
-In Germany most medical departments can be assigned a general department id _Fachabteilungsschlüssel_, the whole list
-is available via http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert and must be mapped as volume into
-your docker container. We support JSON format.
+In Germany most medical departments can be assigned a general department id _Fachabteilungsschlüssel_, the whole list is
+available via http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert and must be mapped as volume into your
+docker container. We support JSON format.
 
 This entries will be used to map encounter of second level (*Abteilungskontakt*) at property
 `encounter.serviceType.coding`.

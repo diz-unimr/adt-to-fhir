@@ -156,7 +156,7 @@ impl Processor {
                 .try_for_each(|m| async {
                     let start = Instant::now();
                     let result= self.process_message(m, id, consumer.clone()).await;
-                    let duration = start.elapsed().as_nanos();
+                    let duration = start.elapsed().as_micros();
 
                     // record latency
                     process_latency().record(
