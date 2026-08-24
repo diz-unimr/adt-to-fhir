@@ -5,7 +5,6 @@
 [![docker](https://github.com/diz-unimr/adt-to-fhir/actions/workflows/release.yaml/badge.svg)](https://github.com/diz-unimr/adt-to-fhir/actions/workflows/release.yaml)
 [![codecov](https://codecov.io/gh/diz-unimr/adt-to-fhir/graph/badge.svg?token=urFEEfhEJB)](https://codecov.io/gh/diz-unimr/adt-to-fhir)
 
-
 > HL7 ADT to FHIR 🔥 Kafka processor
 
 ## Offset handling
@@ -27,7 +26,7 @@ Application properties are read from a properties file ([app.yaml](./app.yaml)) 
 | Name                                          | Default                                                                                                                        | Description                                                                                                               |
 |-----------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
 | `app.log_level`                               | info                                                                                                                           | Log level (error,warn,info,debug,trace)                                                                                   |
-| `app.telemetry_endpoint`                      | http://localhost:4317                                                                                                          |                                                                                                                           |
+| `app.telemetry_endpoint`                      | <http://localhost:4317>                                                                                                        |                                                                                                                           |
 | `kafka.brokers`                               | localhost:9092                                                                                                                 | Kafka brokers                                                                                                             |
 | `kafka.security_protocol`                     | plaintext                                                                                                                      | Kafka communication protocol                                                                                              |
 | `kafka.ssl.ca_location`                       | /app/cert/kafka_ca.pem                                                                                                         | Kafka CA certificate location                                                                                             |
@@ -45,11 +44,11 @@ Application properties are read from a properties file ([app.yaml](./app.yaml)) 
 | `fhir.person.system`                          | `https://fhir.diz.uni-marburg.de/sid/patient-id`                                                                               | `Patient` identifier system                                                                                               |
 | `fhir.person.other_insurance_system`          | `https://fhir.diz.uni-marburg.de/sid/patient-other-insurance-id`                                                               | `Patient` identifier system for legazy insurance numbers which defer from current regulations and FHIR profile definition |
 | `fhir.fall.profile`                           | `https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung\|2026.0.0` | `Encounter` FHIR profile                                                                                                  |
-| `fhir.fall.system`                            | `https://fhir.diz.uni-marburg.de/sid/encounter-id`                                                                             | `Encounter` identifier system                                                                                             | 
+| `fhir.fall.system`                            | `https://fhir.diz.uni-marburg.de/sid/encounter-id`                                                                             | `Encounter` identifier system                                                                                             |
 | `fhir.fall.einrichtungskontakt.system`        | `https://fhir.diz.uni-marburg.de/sid/encounter-admit-id`                                                                       | `Encounter` (_Einrichtungskontakt_) identifier system                                                                     |
 | `fhir.fall.abteilungskontakt.system`          | `https://fhir.diz.uni-marburg.de/sid/encounter-department-id`                                                                  | `Encounter` (_Abteilungskontakt_) identifier system                                                                       |
 | `fhir.fall.versorgungsstellenkontakt.system`  | `https://fhir.diz.uni-marburg.de/sid/encounter-caresite-id`                                                                    | `Encounter` (_Versorgungsstellenkontakt_) identifier system                                                               |
-| `fhir.location.system_ward`                   | `https://fhir.diz.uni-marburg.de/sid/location-caresite-id`                                                                     | `Location` (_Station_) identifier system                                                                                  |   
+| `fhir.location.system_ward`                   | `https://fhir.diz.uni-marburg.de/sid/location-caresite-id`                                                                     | `Location` (_Station_) identifier system                                                                                  |
 | `fhir.location.system_room`                   | `https://fhir.diz.uni-marburg.de/sid/location-room-id`                                                                         | `Location` (_Zimmer Kennung_) identifier system                                                                           |
 | `fhir.location.system_bed`                    | `https://fhir.diz.uni-marburg.de/sid/location-bed-id`                                                                          | `Location` (_Bett Kennung_) identifier system                                                                             |
 | `fhir.condition.system`                       | `https://fhir.diz.uni-marburg.de/sid/condition-id`                                                                             | `Condition` (_Diagnose_) identifier system                                                                                |
@@ -114,10 +113,10 @@ _validTo_ (if empty no expiration date is assumed) and _isIcu_ (if empty _false_
 #### Department id code system
 
 In Germany most medical departments can be assigned a general department id _Fachabteilungsschlüssel_, the whole list is
-available via http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert and must be mapped as volume into your
-docker container. We support JSON format.
+available via <http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert> and must be mapped as volume into
+your docker container. We support JSON format.
 
-This entries will be used to map encounter of second level (*Abteilungskontakt*) at property
+This entries will be used to map encounter of second level (_Abteilungskontakt_) at property
 `encounter.serviceType.coding`.
 
 ### Environment variables
