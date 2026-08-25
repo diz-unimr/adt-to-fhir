@@ -22,7 +22,7 @@ services:
       KAFKA_MESSAGE_MAX_BYTES: 5242880
       KAFKA_REPLICA_FETCH_MAX_BYTES: 5242880
       KAFKA_COMPRESSION_TYPE: gzip
-      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_NUM_PARTITIONS: 1
     healthcheck:
       test: /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --list
       interval: 1s
@@ -51,12 +51,12 @@ services:
     entrypoint: "/bin/sh -c"
     command: >
       "while true; do
-        kcat -b kafka:19092 -K: -t adt-hl7 -P -l -D# /data/adt-data.hl7
+        i=1; for file in /data/*.hl7; do 
+          echo \"test$$i:$(cat $$file)\" | kcat -b kafka:19092 -K: -t adt-hl7 -P -D'\x00'; i=$$((i+1)); done;
         sleep 10;
       done"
-    #command: "-b kafka:19092 -K: -t adt-hl7 -P -l -D# /data/adt-data.hl7"
     volumes:
-      - ./adt-example.hl7:/data/adt-data.hl7:ro
+      - ../resources/test:/data:ro
     depends_on:
       kafka:
         condition: service_healthy
