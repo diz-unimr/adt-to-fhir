@@ -153,10 +153,10 @@ impl Processor {
                     return
                 }
                 stream = consumer.stream().map_err(ProcessingError::from)
-                .try_for_each(|m| {
+                .try_for_each(|m| async {
                     let start = Instant::now();
-                    let result= self.process_message(m, id, consumer.clone());
-                    let duration = start.elapsed().as_nanos();
+                    let result= self.process_message(m, id, consumer.clone()).await;
+                    let duration = start.elapsed().as_millis();
 
                     // record latency
                     process_latency().record(
@@ -247,7 +247,6 @@ impl Processor {
                     error!("Failed to map payload with [key={key}]: {e}");
 
                     return match e {
-                        // TODO error metrics
                         MappingError::MissingResourceError {
                             resource: _,
                             value: _,

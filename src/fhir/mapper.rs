@@ -333,6 +333,17 @@ pub(crate) fn is_ward_valid_icu(msg: &Message, resources: &ResourceMap) -> bool 
                     })
         })
 }
+/// FieldExtension with unsupported data absent reason entry
+pub(crate) fn coding_data_absent_reason_unsupported() -> Result<CodeableConcept, MappingError> {
+    Ok(CodeableConcept::builder()
+        .coding(vec![Some(
+            Coding::builder()
+                .code("unsupported".to_string())
+                .system("http://terminology.hl7.org/CodeSystem/data-absent-reason".to_string())
+                .build()?,
+        )])
+        .build()?)
+}
 
 #[cfg(test)]
 mod tests {
@@ -708,7 +719,6 @@ EVN|A02|201111280915|201111280915||TEST
 PID|1|111111|111111||Musterfrau^Marta|Mustergeburtsname|20090515|F|||Mustergasse 10^^Musterort^^33333^DE||012345/1234^^PH|||S|||||||Marburg|N||DE|Kindergartenkind
 PV1|1|I|IDIST041^041-10^^KCH^^123444|R||IDIST041^041-13^1^KCH^^123444|||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||21600000||K||||||||||||||||||1300||||||||||||A
 ZBE|44444444^ORBIS|202601280923||INSERT"#;
-        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
         let mapper = FhirMapper::new(get_test_config()).unwrap();
         let result = mapper.map(input);
         assert!(result.is_ok());
@@ -977,6 +987,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             "a03_test.hl7",
             "a04_test.hl7",
             "a04_test2.hl7",
+            "a04_amb_notfall.hl7",
             "a05_ns_test.hl7",
             "a08_test.hl7",
             "a06_teilsstationaer_test.hl7",
@@ -996,12 +1007,12 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
                     let raw: Value = serde_json::from_str(&bundle).unwrap();
 
                     // for local testing uncomment
-                    /*
-                                        assert!(
-                                            validate_with_server(test_file, &raw, &IssueSeverity::Error),
-                                            "FHIR validation failed!"
-                                        );
-                    */
+                    //
+                    //                    assert!(
+                    //                        validate_with_server(test_file, &raw, &IssueSeverity::Error),
+                    //                        "FHIR validation failed!"
+                    //                    );
+
                     let b: Bundle = serde_json::from_value(raw).unwrap();
                     b.entry.iter().for_each(|entry| {
                         let resource = entry.clone().unwrap().resource.unwrap();

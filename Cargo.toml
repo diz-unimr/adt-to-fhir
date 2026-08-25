@@ -13,17 +13,17 @@ futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 fhir-model = { version = "0.12", default-features = false, features = ["builders", "r4b"] }
-hl7-parser = "0.3.0"
+hl7-parser = "0.3"
 anyhow = "1.0"
 thiserror = "2.0"
 chrono = { version = "0.4", features = ["serde"] }
-chrono-tz = "0.10.4"
+chrono-tz = "0.10"
 regex = "1.12"
 tokio-util = "0.7"
-opentelemetry = "0.32.0"
-opentelemetry_sdk = "0.32.1"
-opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic"] }
-itertools = "0.15.0"
+opentelemetry = "0.32"
+opentelemetry_sdk = "0.32"
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
+itertools = "0.15"
 uuid = { version = "1", features = ["v5"] }
 fhir-core = { path = "fhir-core" }
 processor-hl7v2 = { path = "processor-hl7v2" }
@@ -32,7 +32,6 @@ config = "0.15"
 #processor-csv = { path = "processor-csv" }
 
 [dev-dependencies]
-rstest = "0.26"
 mock-collector = "0.2"
 adt-config = { path = "adt-config", features = ["test-utils"] }
 insta = { version = "1", features = ["json", "redactions"] }

@@ -58,12 +58,12 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
             Ok(vec![bundle_entry(patient, ConditionalCreate, config)?])
         }
         MessageType::A34 | MessageType::A40 => {
-            // create mapping-patch
-             let (parameters,target) = create_patient_merge_hl7(msg, config)?;
+            // create fhir-patch
+             let (parameters, patch) = create_patient_merge_hl7(msg, config)?;
             Ok(vec![patch_bundle_entry(
                 parameters,
                 &ResourceType::Patient,
-                &target, config
+                &patch, config
             )?])
         }
         MessageType::A11
