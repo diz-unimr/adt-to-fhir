@@ -6,7 +6,6 @@ pub mod tests {
     };
     use crate::resources::{Department, ResourceMap, ValidPeriod, Ward};
     use chrono::NaiveDate;
-    use config::Value;
     use fhir_model::WrongResourceType;
     use fhir_model::r4b::resources::{Bundle, BundleEntry, Resource};
     use fhir_model::r4b::types::Meta;
@@ -94,6 +93,7 @@ pub mod tests {
                 (
                     "ANA".to_string(),
                     Ward {
+                        display: "ANA".to_string(),
                         is_icu: true,
                         valid_period: Vec::from([
                             ValidPeriod {
@@ -110,6 +110,7 @@ pub mod tests {
                 (
                     "IDIST1I".to_string(),
                     Ward {
+                        display: "IDIST1I".to_string(),
                         is_icu: true,
                         valid_period: Vec::from([ValidPeriod {
                             valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),
@@ -121,6 +122,7 @@ pub mod tests {
                 (
                     "IDIST121".to_string(),
                     Ward {
+                        display: "IDIST121".to_string(),
                         is_icu: false,
                         valid_period: Vec::from([ValidPeriod {
                             valid_from: NaiveDate::from_ymd_opt(1984, 2, 1).unwrap(),

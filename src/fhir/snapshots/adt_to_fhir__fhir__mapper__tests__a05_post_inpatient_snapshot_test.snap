@@ -197,17 +197,6 @@ expression: b
           "start": "2026-04-27T11:01:00Z",
           "end": "2026-05-10T08:02:00Z"
         },
-        "hospitalization": {
-          "admitSource": {
-            "coding": [
-              {
-                "system": "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass",
-                "code": "R",
-                "display": "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
-              }
-            ]
-          }
-        },
         "serviceProvider": {
           "reference": "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|260620431"
         }
@@ -299,6 +288,64 @@ expression: b
       "request": {
         "method": "PUT",
         "url": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/departement-id|88888888"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:272df1e7-ca2f-5099-b6ad-48e29d10be87",
+      "resource": {
+        "resourceType": "Observation",
+        "meta": {
+          "source": "test",
+          "profile": [
+            "https://www.medizininformatik-initiative.de/fhir/core/modul-person/StructureDefinition/Vitalstatus|2026.0.0"
+          ]
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/observation-id",
+            "value": "67162-8_1212121_87654321"
+          }
+        ],
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "survey"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "67162-8",
+              "display": "Patient Disposition"
+            }
+          ]
+        },
+        "subject": {
+          "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1212121"
+        },
+        "encounter": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|87654321"
+        },
+        "effectiveDateTime": "2026-08-28T06:34:00Z",
+        "valueCodeableConcept": {
+          "coding": [
+            {
+              "system": "https://www.medizininformatik-initiative.de/fhir/core/modul-person/CodeSystem/Vitalstatus",
+              "code": "L"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation?identifier=https://fhir.diz.uni-marburg.de/sid/observation-id|67162-8_1212121_87654321"
       }
     },
     {

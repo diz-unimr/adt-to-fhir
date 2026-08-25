@@ -42,3 +42,14 @@ pub fn get_cc_with_one_code(code: String, system: String) -> Result<CodeableConc
         )])
         .build()
 }
+/// FieldExtension with unsupported data absent reason entry
+pub fn coding_data_absent_reason_unsupported() -> Result<CodeableConcept, BuilderError> {
+    Ok(CodeableConcept::builder()
+        .coding(vec![Some(
+            Coding::builder()
+                .code("unsupported".to_string())
+                .system("http://terminology.hl7.org/CodeSystem/data-absent-reason".to_string())
+                .build()?,
+        )])
+        .build()?)
+}

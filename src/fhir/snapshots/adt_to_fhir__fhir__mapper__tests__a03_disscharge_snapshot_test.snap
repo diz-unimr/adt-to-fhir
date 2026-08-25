@@ -248,9 +248,8 @@ expression: b
           "admitSource": {
             "coding": [
               {
-                "system": "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass",
-                "code": "R",
-                "display": "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
+                "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                "code": "unsupported"
               }
             ]
           },

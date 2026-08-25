@@ -29,6 +29,7 @@ fhir-core = { path = "fhir-core" }
 processor-hl7v2 = { path = "processor-hl7v2" }
 adt-config = { path = "adt-config" }
 config = "0.15"
+rstest = "0.26.1"
 #processor-csv = { path = "processor-csv" }
 
 [dev-dependencies]

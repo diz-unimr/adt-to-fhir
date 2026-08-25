@@ -189,17 +189,6 @@ expression: b
           "start": "2026-04-27T11:01:00Z",
           "end": "2026-05-17T06:00:00Z"
         },
-        "hospitalization": {
-          "admitSource": {
-            "coding": [
-              {
-                "system": "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass",
-                "code": "R",
-                "display": "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
-              }
-            ]
-          }
-        },
         "serviceProvider": {
           "reference": "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|260620431"
         }

@@ -5,10 +5,7 @@ use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported, get_cc_with_one_code,
-    is_begleitperson, is_inpatient_location, is_ward_valid_icu, map_visit_number, parse_datetime,
-    parse_fab, resource_ref, subject_ref,
-    EntryRequestType, bundle_entry, is_begleitperson, is_ward_valid_icu,
+    EntryRequestType, bundle_entry, is_begleitperson, is_inpatient_location, is_ward_valid_icu,
     map_visit_number, parse_fab, subject_ref,
 };
 use adt_config::config::Fhir;
@@ -17,12 +14,12 @@ use crate::fhir::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
 use EncounterType::Einrichtungskontakt;
-use adt_config::config_error::ConfigError;
-use adt_config::config_error::ConfigError::MissingResourceError;
 use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
 use fhir_core::fhir_error::FhirMappingError;
-use fhir_core::mapping::misc::{get_cc_with_one_code, parse_datetime, resource_ref};
+use fhir_core::mapping::misc::{
+    coding_data_absent_reason_unsupported, get_cc_with_one_code, parse_datetime, resource_ref,
+};
 use fhir_core::model::fab_mapping::map_fab_schluessel;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterLocationStatus, EncounterStatus, IdentifierUse};
