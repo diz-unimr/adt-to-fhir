@@ -523,8 +523,8 @@ expression: b
             "coding": [
               {
                 "system": "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass",
-                "code": "R",
-                "display": "Aufnahme nach vorausgehender Behandlung in einer Rehabilitationseinrichtung"
+                "code": "G",
+                "display": "Geburt"
               }
             ]
           },
