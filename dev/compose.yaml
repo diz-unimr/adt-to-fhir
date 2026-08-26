@@ -51,7 +51,7 @@ services:
     entrypoint: "/bin/sh -c"
     command: >
       "while true; do
-        i=1; for file in /data/*.hl7; do 
+        i=1; for file in /data/*.hl7; do
           echo \"test$$i:$(cat $$file)\" | kcat -b kafka:19092 -K: -t adt-hl7 -P -D'\x00'; i=$$((i+1)); done;
         sleep 10;
       done"
