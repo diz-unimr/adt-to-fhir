@@ -1,20 +1,160 @@
 use crate::fhir_error::ContentError;
 use crate::fhir_error::ContentError::MissingValueError;
-use crate::model::person_dto::PersonDto;
+use crate::model::person_dto::{Insurance, PersonDto};
 use adt_config::config::Fhir;
+use anyhow::anyhow;
 use chrono::TimeZone;
 use chrono::{Datelike, NaiveDateTime};
 use chrono_tz::Europe::Berlin;
+use std::sync::LazyLock;
 
-use crate::mapping::misc::{get_cc_with_one_code, identifier_search};
+use crate::mapping::misc::{field_extension, get_cc_with_one_code, identifier_search, parse_date};
+use crate::model::meta::ModelDto;
 use fhir_model::DateFormatError::InvalidDate;
-use fhir_model::r4b::codes::{AddressType, IdentifierUse};
+use fhir_model::r4b::codes::{AddressType, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
-    Parameters, ParametersParameter, ParametersParameterValue, ResourceType,
+    Parameters, ParametersParameter, ParametersParameterValue, Patient, PatientBuilder,
+    PatientDeceased, PatientMultipleBirth, ResourceType,
 };
-use fhir_model::r4b::types::{Address, CodeableConcept, Coding, Identifier, Reference};
+use fhir_model::r4b::types::{
+    Address, CodeableConcept, Coding, ExtensionValue, HumanName, Identifier, Meta, Period,
+    Reference,
+};
 use fhir_model::time::OffsetDateTime;
-use fhir_model::{BuilderError, DateTime, Instant};
+use fhir_model::{BuilderError, Date, DateTime, Instant};
+
+use log::{Level, log, warn};
+use regex::Regex;
+
+fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError> {
+    // patient resource
+    let mut patient = Patient::builder()
+        .meta(
+            Meta::builder()
+                .profile(vec![Some(config.person.profile.to_owned())])
+                .source(config.meta_source.to_string())
+                .build()?,
+        )
+        .identifier(create_patient_identifiers(pat_data, config)?)
+        .address(map_addresses_dto(pat_data)?)
+        .name(map_name(pat_data)?)
+        .gender(pat_data.gender.into())
+        .build()?;
+
+    // birth_date
+    patient.birth_date = pat_data.date_of_birth;
+
+    // marital_status
+    if let Some(marital_status) = pat_data.marital_status {
+        patient.marital_status = Some(map_marital_status(marital_status.to_v3_code())?);
+    }
+
+    // deceased flag
+    patient.deceased = map_deceased(pat_data)?;
+
+    patient.multiple_birth = map_multiple_birth(pat_data)?;
+
+    Ok(patient)
+}
+
+fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderError> {
+    let mut names = vec![];
+
+    if let name_entries = person.names {
+        for Some(name_entry) in name_entries {
+            let name_use = match name_entry.is_maiden {
+                Some(false) => Some(NameUse::Official),
+                Some(true) => Some(NameUse::Maiden),
+                _ => None,
+            };
+            let mut name_build = HumanName::builder().build()?;
+            if Some(name_use) {
+                name_build.r#use = name_use;
+            }
+            name_build.given = name_entry.given_name;
+
+            name_build.family = name_entry.family;
+
+            // prefix
+            if let Some(prefix) = name_entry.name_prefix {
+                name_build.prefix = vec![Some(prefix.to_string())];
+                name_build.prefix_ext = vec![Some(field_extension(
+                    "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
+                    ExtensionValue::Code("AC".into()),
+                )?)];
+            }
+
+            // namenszusatz
+            if let Some(namenszusatz) = name_entry.name_extension {
+                name_build.family_ext = Some(field_extension(
+                    "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
+                    ExtensionValue::String(namenszusatz.to_string()),
+                )?);
+            }
+
+            // vorsatzwort
+            if let Some(vorsatzwort) = name_entry.name_affix {
+                name_build.family_ext = Some(field_extension(
+                    "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
+                    ExtensionValue::String(vorsatzwort.to_string()),
+                )?);
+            }
+
+            names.push(Some(name_build))
+        }
+    }
+
+    Ok(names)
+}
+
+fn map_multiple_birth(pat_data: &PersonDto) -> Result<Option<PatientMultipleBirth>, ContentError> {
+    let multi_birth_flag = pat_data.is_multiple_birth;
+    let multi_birth_number = pat_data.multiple_birth_order;
+    let msg_id = pat_data.id();
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum MultiBirthFlags {
+        Yes,
+        No,
+        None,
+        Unsupported(String),
+    }
+
+    match (multi_birth_flag, multi_birth_number) {
+        // nur Mehrlingsgeburt-Kennung vorhanden
+        (multi_birth_flag, None) => match multi_birth_flag {
+            Some(true) => Ok(Some(PatientMultipleBirth::Boolean(true))),
+            Some(false) => Ok(Some(PatientMultipleBirth::Boolean(false))),
+            None => Ok(None),
+            MultiBirthFlags::Unsupported(some_value) => {
+                warn!(
+                    "MSG-ID {:?}: Unsupported multi-birth flag value '{:?}'!",
+                    msg_id, some_value
+                );
+                Ok(None)
+            }
+        },
+
+        (_multi_birth_flag, Some(multi_birth_number)) => match multi_birth_number.parse::<i32>() {
+            Ok(number) => Ok(Some(PatientMultipleBirth::Integer(number))),
+            Err(e) => Err(ContentError::ParsingError(e)),
+        },
+    }
+}
+
+fn map_deceased(data: &PersonDto) -> Result<Option<PatientDeceased>, ContentError> {
+    // patient vital status
+    let death_time = data.time_of_death;
+    let death_confirm = data.is_deceased_indicator;
+
+    match (death_time, death_confirm) {
+        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(
+            crate::mapping::misc::parse_datetime(death_time.to_string().as_str())?,
+        ))),
+        (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm))),
+        _ => Ok(None),
+    }
+}
 
 fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, BuilderError> {
     let mut res = vec![];
@@ -67,7 +207,7 @@ pub fn create_patient_merge(
     replaced_patient_id: String,
     new_pid: String,
     config: &Fhir,
-) -> Result<(Parameters, Identifier), crate::fhir_error::ContentError> {
+) -> Result<(Parameters, Identifier), ContentError> {
     {
         let params = Parameters::builder()
             .parameter(vec![Some(
@@ -184,7 +324,7 @@ pub fn upsert_reference(
     ))
 }
 
-pub fn map_marital_status(value: &str) -> Result<Option<CodeableConcept>, BuilderError> {
+pub fn map_marital_status(value: &str) -> Result<CodeableConcept, BuilderError> {
     // marital status
     let marital_coding = match value {
         "A" | "E" => Coding::builder()
@@ -244,14 +384,12 @@ pub fn map_marital_status(value: &str) -> Result<Option<CodeableConcept>, Builde
             .build(),
     }?;
 
-    Ok(Some(
-        CodeableConcept::builder()
-            .coding(vec![Some(marital_coding)])
-            .build()?,
-    ))
+    Ok(CodeableConcept::builder()
+        .coding(vec![Some(marital_coding)])
+        .build()?)
 }
 
-pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, ContentError> {
+pub fn parse_datetime(input: &str) -> Result<DateTime, ContentError> {
     let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
     let dt_with_tz = Berlin
         .from_local_datetime(&dt)
@@ -262,5 +400,141 @@ pub(crate) fn parse_datetime(input: &str) -> Result<DateTime, ContentError> {
         OffsetDateTime::from_unix_timestamp(dt_with_tz.timestamp())?,
     )))
 }
+
+/// Erzeugt Patienten-Identifier
+///
+/// * Ein PID-Identifier ist min. notwendig
+/// * Zusätzlich werden weitere Identifier aus Gesundheitskassendaten *(IN1-Segmente)* erzeugt
+///   werden, falls dies vorhanden sind.
+///
+/// _Hinweis:_ Es gibt HL7 Nachrichten, die in denen IN1 Segmente fehlen.
+///
+fn create_patient_identifiers(
+    dto: &PersonDto,
+    config: &Fhir,
+) -> Result<Vec<Option<Identifier>>, BuilderError> {
+    // mandatory PID identifier
+    let mut identifiers = vec![Some(create_patient_identifier_pid(dto.pid, config)?)];
+
+    // create optional identifiers from insurance data
+    let insurance_ids: Vec<Option<Identifier>> = dto
+        .insurance
+        .iter()
+        .map(|Some(s)| map_versicherungsdaten(dto.meta.id.clone(), s, config))
+        .collect::<Result<Vec<Option<Identifier>>, BuilderError>>()?;
+
+    let ids: Vec<_> = insurance_ids.into_iter().flatten().collect();
+
+    // first pick is insurance number of 10 literals without expiration date
+    // second pick is first number without expiration date
+    const GKV10_SYSTEM: &str = "http://fhir.de/sid/gkv/kvid-10";
+    let selected = ids
+        .iter()
+        .find(|v| {
+            v.system.as_deref() == Some(GKV10_SYSTEM)
+                && v.period.as_ref().and_then(|p| p.end.as_ref()).is_none()
+        })
+        .or_else(|| {
+            ids.iter()
+                .find(|v| v.period.as_ref().and_then(|p| p.end.as_ref()).is_none())
+        })
+        .cloned();
+
+    if let Some(id) = selected {
+        identifiers.push(Some(id));
+    }
+
+    Ok(identifiers)
+}
+
+fn map_versicherungsdaten(
+    msg_id: String,
+    insurance: &Insurance,
+    config: &Fhir,
+) -> Result<Option<Identifier>, BuilderError> {
+    // Versicherungsnummer
+    let mut result = Identifier::builder()
+        .value(insurance.insurance_number.to_string())
+        .r#use(IdentifierUse::Official)
+        .build()?;
+
+    if insurance.assigner_id.is_empty() {
+        log!(
+            Level::Warn,
+            "Message-Id {}: For insurance '{}' no insurance company id found - \
+            cannot add assigner",
+            msg_id,
+            insurance.insurance_number
+        );
+        return Ok(None);
+    } else {
+        // set assigner
+        let reference = Reference::builder()
+            .identifier(
+                Identifier::builder()
+                    .system("http://fhir.de/sid/arge-ik/iknr".to_string())
+                    .value(insurance.assigner_id.to_string())
+                    .r#use(IdentifierUse::Official)
+                    .r#type(
+                        CodeableConcept::builder()
+                            .coding(vec![
+                                Coding::builder()
+                                    .code("XX".to_string())
+                                    .system(
+                                        "http://terminology.hl7.org/CodeSystem/v2-0203".to_string(),
+                                    )
+                                    .build()
+                                    .ok(),
+                            ])
+                            .build()?,
+                    )
+                    .build()?,
+            )
+            .build()?;
+        result.assigner = Some(reference);
+    }
+
+    if is_valid_gkv10(insurance.insurance_number.as_str()) {
+        // GKV
+        result.system = Some("http://fhir.de/sid/gkv/kvid-10".to_string());
+        result.r#type = Some(
+            CodeableConcept::builder()
+                .coding(vec![Some(
+                    Coding::builder()
+                        .code("KVZ10".to_string())
+                        .system("http://fhir.de/CodeSystem/identifier-type-de-basis".to_string())
+                        .build()?,
+                )])
+                .build()?,
+        );
+    } else {
+        // OTHER INSURANCE NUMBER! vor 2012 waren 9 - 12 Stellen ohne führenden Buchstaben valide.
+        result.system = Some(config.person.other_insurance_system.to_string());
+    }
+
+    result.period = get_identifier_period(insurance)?;
+
+    Ok(Some(result))
+}
+
+fn get_identifier_period(insurance: &Insurance) -> Result<Option<Period>, BuilderError> {
+    match (insurance.valid_from, insurance.valid_to) {
+        (Some(start), Some(end)) => Ok(Some(
+            Period::builder()
+                .start(start.into())
+                .end(end.into())
+                .build()?,
+        )),
+        (Some(start), None) => Ok(Some(Period::builder().start(start.into()).build()?)),
+        (None, Some(end)) => Ok(Some(Period::builder().end(end.into()).build()?)),
+        (None, None) => Ok(None),
+    }
+}
+
+pub fn is_valid_gkv10(insurance_number: &str) -> bool {
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
+    RE.is_match(insurance_number)
+}
+
 #[cfg(test)]
 mod tests {}

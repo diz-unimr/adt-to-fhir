@@ -1,6 +1,9 @@
 use crate::hl7::parser::MessageType::*;
-use crate::hl7_error::Hl7MessageTypeError::MissingMessageType;
-use crate::hl7_error::{Hl7MessageTypeError, Hl7ParsingError};
+use crate::hl7_error::Hl7MessageAccessError::{
+    MissingMessageSegment, MissingMessageValue, UnsupportedContentError,
+};
+
+use crate::hl7_error::{Hl7MessageAccessError, Hl7ParsingError};
 use anyhow::anyhow;
 use hl7_parser::Message;
 use hl7_parser::message::{Repeat, Segment};
@@ -8,6 +11,9 @@ use hl7_parser::query::LocationQueryResult;
 use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
+
+/// message type
+pub const ENV_1: &str = "ENV-1";
 
 /// old patient identifier value
 ///
@@ -184,9 +190,9 @@ impl Display for MessageType {
 }
 
 impl FromStr for MessageType {
-    type Err = Hl7MessageTypeError;
+    type Err = crate::hl7_error::Hl7MessageAccessError;
 
-    fn from_str(s: &str) -> Result<Self, Hl7MessageTypeError> {
+    fn from_str(s: &str) -> Result<Self, crate::hl7_error::Hl7MessageAccessError> {
         match s {
             "A01" => Ok(A01),
             "A02" => Ok(A02),
@@ -212,17 +218,17 @@ impl FromStr for MessageType {
             "A45" => Ok(A45),
             "A47" => Ok(A47),
             "A50" => Ok(A50),
-            _ => Err(Hl7MessageTypeError::UnknownMessageType(s.to_string())),
+            _ => Err(UnsupportedContentError(s.to_string(), ENV_1.to_string())),
         }
     }
 }
 
-pub fn message_type(msg: &Message) -> Result<MessageType, Hl7MessageTypeError> {
+pub fn message_type(msg: &Message) -> Result<MessageType, Hl7MessageAccessError> {
     MessageType::from_str(
         msg.segment("EVN")
-            .ok_or(MissingMessageType("missing EVN segment".to_string()))?
+            .ok_or(MissingMessageSegment("missing EVN segment".to_string()))?
             .field(1)
-            .ok_or(MissingMessageType(
+            .ok_or(MissingMessageValue(
                 "missing message type segment".to_string(),
             ))?
             .raw_value(),
@@ -303,10 +309,10 @@ pub fn segment_value<'a>(
         .and_then(|r| repeat_component(r, component_number))
 }
 
-pub fn get_message_key<'a>(msg: &'a Message<'_>) -> Result<&'a str, Hl7ParsingError> {
-    query(msg, MSH_10).ok_or(Hl7ParsingError::Other(anyhow!(
-        "failed to parse message key"
-    )))
+pub fn get_message_key<'a>(msg: &'a Message<'_>) -> Result<&'a str, Hl7MessageAccessError> {
+    query(msg, MSH_10).ok_or(Hl7MessageAccessError::MissingMessageValue(
+        "failed to read message key".to_string(),
+    ))
 }
 
 pub fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, Hl7ParsingError> {

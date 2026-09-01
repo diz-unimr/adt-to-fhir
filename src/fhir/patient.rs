@@ -1,6 +1,6 @@
 use crate::error::MappingError;
 use crate::error::MessageAccessError;
-use crate::error::MessageAccessError::MissingMessageValue;
+use crate::error::MessageAccessError::{MissingMessageValue, ParseError};
 use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
 use crate::fhir::mapper::{bundle_entry, parse_date, patch_bundle_entry};
 use adt_config::config::Fhir;
@@ -11,6 +11,7 @@ use fhir_core::mapping::misc::parse_datetime;
 use fhir_core::mapping::patient::{
     create_patient_identifier_pid, create_patient_merge, map_marital_status,
 };
+use fhir_core::model::meta::{MappingOp, Operation};
 use fhir_core::model::person_dto::PersonDto;
 use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
@@ -30,6 +31,9 @@ use log::{Level, log, warn};
 use processor_hl7v2::hl7::parser::{
     MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29, PID_30,
     get_message_key, message_type, query, segment_value,
+};
+use processor_hl7v2::hl7_error::{
+    Hl7MappingError, Hl7MessageAccessError, Hl7ParsingError, Hl7ProcessingError,
 };
 use processor_hl7v2::hl7_to_patient_dto::{field_repeats, repeat_component, repeat_subcomponents};
 use regex::Regex;
@@ -59,7 +63,7 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
         }
         MessageType::A34 | MessageType::A40 => {
             // create fhir-patch
-             let (parameters, patch) = create_patient_merge_hl7(msg, config)?;
+            let (parameters, patch) = create_patient_merge_hl7(msg, config)?;
             Ok(vec![patch_bundle_entry(
                 parameters,
                 &ResourceType::Patient,
@@ -93,41 +97,6 @@ pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, Mapp
     }
 }
 
-fn map_addresses(msg: &Message) -> Result<Vec<Option<Address>>, MappingError> {
-    let mut res = vec![];
-
-    if let Some(addr_repeats) = field_repeats(msg, "PID.11") {
-        for addr_elem in addr_repeats {
-            let mut addr = Address::builder().r#type(AddressType::Both).build()?;
-
-            // line
-            if let Some(lines) = repeat_subcomponents(addr_elem, 1) {
-                addr.line = lines.into_iter().map(|l| Some(l.to_string())).collect();
-            }
-            // city
-            if let Some(city) = repeat_component(addr_elem, 3) {
-                addr.city = Some(city.to_string());
-            }
-            // postal code
-            if let Some(postal_code) = repeat_component(addr_elem, 5) {
-                addr.postal_code = Some(postal_code.to_string());
-            }
-            // country
-            if let Some(country) = repeat_component(addr_elem, 6) {
-                addr.country = Some(country.to_string());
-            }
-
-            if !addr.line.is_empty() && addr.line.iter().all(|l| l.is_some()) && addr.city.is_some()
-            {
-                // street must have at least 1 line and city must also have a value
-                res.push(Some(addr));
-            }
-        }
-    }
-
-    Ok(res)
-}
-
 fn create_patient_merge_hl7(
     msg: &Message,
     config: &Fhir,
@@ -146,95 +115,6 @@ fn create_patient_merge_hl7(
         replaced_patient_id,
         config,
     )?)
-}
-
-fn create_patient_identifier(msg: &Message, config: &Fhir) -> Result<Identifier, MappingError> {
-    let pid = query(msg, PID_2)
-        .map(String::from)
-        .ok_or(MissingMessageValue("PID.2".to_string()))?;
-
-    create_patient_identifier_pid(pid, config).map_err(MappingError::from)
-}
-
-/// Erzeugt Patienten-Identifier
-///
-/// * Ein PID-Identifier ist min. notwendig
-/// * Zusätzlich werden weitere Identifier aus Gesundheitskassendaten *(IN1-Segmente)* erzeugt
-///   werden, falls dies vorhanden sind.
-///
-/// _Hinweis:_ Es gibt HL7 Nachrichten, die in denen IN1 Segmente fehlen.
-///
-fn create_patient_identifiers(
-    msg: &Message,
-    config: &Fhir,
-) -> Result<Vec<Option<Identifier>>, MappingError> {
-    // mandatory PID identifier
-    let mut identifiers = vec![Some(create_patient_identifier(msg, config)?)];
-
-    // create optional identifiers from insurance data
-    let insurance_ids: Vec<Option<Identifier>> = msg
-        .segments
-        .iter()
-        .filter(|s| s.name == "IN1")
-        .map(|s| map_versicherungsdaten(s, config))
-        .collect::<Result<Vec<Option<Identifier>>, MappingError>>()?;
-
-    let ids: Vec<_> = insurance_ids.into_iter().flatten().collect();
-
-    // first pick is insurance number of 10 literals without expiration date
-    // second pick is first number without expiration date
-    const GKV10_SYSTEM: &str = "http://fhir.de/sid/gkv/kvid-10";
-    let selected = ids
-        .iter()
-        .find(|v| {
-            v.system.as_deref() == Some(GKV10_SYSTEM)
-                && v.period.as_ref().and_then(|p| p.end.as_ref()).is_none()
-        })
-        .or_else(|| {
-            ids.iter()
-                .find(|v| v.period.as_ref().and_then(|p| p.end.as_ref()).is_none())
-        })
-        .cloned();
-
-    if let Some(id) = selected {
-        identifiers.push(Some(id));
-    }
-
-    Ok(identifiers)
-}
-
-fn map_patient(msg: &Message, config: &Fhir) -> Result<Patient, MappingError> {
-    // patient resource
-    let mut patient = Patient::builder()
-        .meta(
-            Meta::builder()
-                .profile(vec![Some(config.person.profile.to_owned())])
-                .source(config.meta_source.to_string())
-                .build()?,
-        )
-        .identifier(create_patient_identifiers(msg, config)?)
-        .address(map_addresses(msg)?)
-        .name(map_name(msg)?)
-        .build()?;
-
-    // birth_date
-    if let Some(b) = query(msg, PID_7) {
-        patient.birth_date = Some(parse_date(b)?)
-    }
-    // gender
-    if let Some(g) = query(msg, PID_8) {
-        patient.gender = Some(map_gender(g));
-    }
-    // marital_status
-    if let Some(marital_status) = query(msg, PID_16_1) {
-        patient.marital_status = map_marital_status(marital_status)?
-    }
-    // deceased flag
-    patient.deceased = map_deceased(msg)?;
-
-    patient.multiple_birth = map_multiple_birth(msg)?;
-
-    Ok(patient)
 }
 
 pub fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
@@ -322,64 +202,6 @@ fn map_gender(gender: &str) -> AdministrativeGender {
         "U" => AdministrativeGender::Other,
         _ => AdministrativeGender::Unknown,
     }
-}
-
-fn map_name(v2_msg: &Message) -> Result<Vec<Option<HumanName>>, MappingError> {
-    let mut names = vec![];
-
-    if let Some(name_fields) = field_repeats(v2_msg, PID_5) {
-        for name_field in name_fields {
-            let name_use = repeat_component(name_field, 7).and_then(|u| match u {
-                "L" => Some(NameUse::Official),
-                "M" | "B" => Some(NameUse::Maiden),
-                _ => None,
-            });
-
-            let mut name = HumanName::builder()
-                .given(
-                    repeat_component(name_field, 2)
-                        .map(|e| vec![Some(e.to_string())])
-                        .unwrap_or_default(),
-                )
-                .build()?;
-
-            name.r#use = name_use;
-            name.family = repeat_component(name_field, 1).map(String::from);
-
-            // prefix
-            if let Some(prefix) = repeat_component(name_field, 6) {
-                name.prefix = vec![Some(prefix.to_string())];
-                name.prefix_ext = vec![Some(field_extension(
-                    "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
-                    ExtensionValue::Code("AC".into()),
-                )?)];
-            }
-
-            // namenszusatz
-            if let Some(namenszusatz) = repeat_component(name_field, 4) {
-                name.family_ext = Some(field_extension(
-                    "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
-                    ExtensionValue::String(namenszusatz.to_string()),
-                )?);
-            }
-
-            // vorsatzwort
-            if let Some(vorsatzwort) = repeat_component(name_field, 5) {
-                name.family_ext = Some(field_extension(
-                    "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
-                    ExtensionValue::String(vorsatzwort.to_string()),
-                )?);
-            }
-            names.push(Some(name));
-        }
-    }
-
-    Ok(names)
-}
-
-fn is_valid_gkv10(insurance_number: &str) -> bool {
-    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Z][0-9]{9}$").unwrap());
-    RE.is_match(insurance_number)
 }
 
 fn map_versicherungsdaten(
@@ -480,13 +302,6 @@ fn get_identifier_period(in1: &Segment) -> Result<Option<Period>, MappingError> 
         return Ok(Some(period));
     }
     Ok(None)
-}
-fn field_extension(url: String, ext_value: ExtensionValue) -> Result<FieldExtension, BuilderError> {
-    FieldExtension::builder()
-        .extension(vec![
-            Extension::builder().url(url).value(ext_value).build()?,
-        ])
-        .build()
 }
 
 #[cfg(test)]

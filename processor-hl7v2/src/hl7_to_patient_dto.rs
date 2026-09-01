@@ -1,23 +1,31 @@
-use crate::hl7::parser::{PID_2, PID_16_1, query};
+use crate::hl7::parser::{
+    ENV_1, MessageType, PID_2, PID_5, PID_16_1, get_message_key, message_type, query,
+};
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
+use crate::hl7_error::Hl7MessageAccessError::UnsupportedContentError;
+use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7ProcessingError};
 use anyhow::anyhow;
+use fhir_core::mapping::misc::field_extension;
 use fhir_core::mapping::patient::map_marital_status;
-
-use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError};
+use fhir_core::model::meta::{MappingOp, Operation};
 use fhir_core::model::person_dto::{
     AddressDto, AddressDtoBuilder, MaritalStatusDto, PersonDto, PersonDtoBuilder,
-    PersonDtoBuilderError,
+    PersonDtoBuilderError, PersonName, PersonNameBuilder,
 };
+use fhir_model::BuilderError;
+use fhir_model::r4b::codes::NameUse;
+use fhir_model::r4b::types::{ExtensionValue, HumanName};
 use hl7_parser::Message;
 
 pub fn map_hl7_to_dto(msg: &Message) -> Result<PersonDto, Hl7MappingError> {
-    let mut patient_builder = PersonDtoBuilder::default();
+    let mut patient_builder = PersonDtoBuilder::default()
+        .names(build_names)
+        .meta(map_patient_operation)
+        .pid(query(msg, PID_2).map(String::from).ok_or(
+            Hl7MessageAccessError::MissingMessageValue("PID.2".to_string()),
+        )?)
+        .address(address_from_hl7);
 
-    patient_builder.pid(query(msg, PID_2).map(String::from).ok_or(
-        Hl7MessageAccessError::MissingMessageValue("PID.2".to_string()),
-    )?);
-
-    patient_builder.address(address_from_hl7(msg));
     if let Some(marital_status) = query(msg, PID_16_1) {
         patient_builder.marital_status(MaritalStatusDto::from_hl7(marital_status));
     }
@@ -44,6 +52,36 @@ pub fn map_hl7_to_dto(msg: &Message) -> Result<PersonDto, Hl7MappingError> {
             }
         },
     }
+}
+
+fn build_names(v2_msg: &Message) -> Result<Vec<Option<PersonName>>, BuilderError> {
+    let mut names = vec![];
+
+    if let Some(name_fields) = field_repeats(v2_msg, PID_5) {
+        for name_field in name_fields {
+            let mut name = PersonNameBuilder::default()
+                .family(
+                    repeat_component(name_field, 2)
+                        .map(|e| vec![Some(e.to_string())])
+                        .unwrap_or_default(),
+                )
+                .family(repeat_component(name_field, 1).map(String::from))
+                .name_prefix(repeat_component(name_field, 6))
+                .name_extension(repeat_component(name_field, 4))
+                .name_affix(repeat_component(name_field, 5))
+                .build()?;
+
+            name.is_maiden = repeat_component(name_field, 7).and_then(|u| match u {
+                "L" => Some(false),
+                "M" | "B" => Some(true),
+                _ => None,
+            });
+
+            names.push(Some(name));
+        }
+    }
+
+    Ok(names)
 }
 
 fn address_from_hl7(msg: &Message) -> Vec<Option<AddressDto>> {
@@ -79,6 +117,51 @@ fn address_from_hl7(msg: &Message) -> Vec<Option<AddressDto>> {
         }
     }
     res
+}
+
+pub(super) fn map_patient_operation(msg: &Message) -> Result<MappingOp, Hl7MappingError> {
+    let msg_type = message_type(msg)?;
+    let id = get_message_key(msg)?.to_string();
+
+    match msg_type {
+        MessageType::A01
+        | MessageType::A04
+        | MessageType::A05
+        | MessageType::A06
+        | MessageType::A07
+        | MessageType::A08
+        => {
+            Ok(MappingOp { id, operation: Operation::UpdateAsCreate })
+        }
+        MessageType::A02 | MessageType::A03 | MessageType::A31 => {
+            Ok(MappingOp { id, operation: Operation::CreateIfNotExists })
+        }
+        MessageType::A34 | MessageType::A40 => {
+            Ok(MappingOp { id, operation: Operation::Patch })
+        }
+        // patient stays unchanged
+        MessageType::A11
+        | MessageType::A12
+        // At A13 no changes expected - we could update patient here,
+        // but an update follows shortly after this message with another message,
+        // therefore we can safely skip this on.
+        | MessageType::A13
+        | MessageType::A14
+        | MessageType::A21
+        | MessageType::A22
+        | MessageType::A27
+        | MessageType::A28
+        | MessageType::A38 => {
+            // ignore
+
+            // A11 & A27 should not create any patient resource
+            Ok(MappingOp{id ,operation: Operation::Skip})
+        }
+        MessageType::A29 => {
+            Ok(MappingOp{id ,operation: Operation::Delete})
+        }
+        other => Err(Hl7MappingError::from(UnsupportedContentError(other.to_string(), ENV_1.to_string()))),
+    }
 }
 
 #[cfg(test)]

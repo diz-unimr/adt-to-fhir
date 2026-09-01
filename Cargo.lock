@@ -768,6 +768,7 @@ dependencies = [
  "derive_builder",
  "fhir-model",
  "log",
+ "regex",
  "serde_json",
  "thiserror",
 ]

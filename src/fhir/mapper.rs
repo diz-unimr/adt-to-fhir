@@ -104,7 +104,7 @@ impl FhirMapper {
     }
 }
 
-pub(crate) enum EntryRequestType {
+pub enum EntryRequestType {
     UpdateAsCreate,
     ConditionalCreate,
     Delete,
@@ -207,7 +207,7 @@ pub(crate) fn conditional_reference(identifier: &Identifier) -> Result<String, M
     ))
 }
 
-pub(crate) fn parse_date(input: &str) -> Result<Date, ParsingError> {
+pub fn parse_date(input: &str) -> Result<Date, ParsingError> {
     let dt = NaiveDate::parse_and_remainder(input, "%Y%m%d")?.0;
     let date = time::Date::from_calendar_date(
         dt.year(),
@@ -354,9 +354,10 @@ mod tests {
     use fhir_core::mapping::misc::parse_datetime;
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
+    use fhir_model::r4b::codes::ResourceType::Observation;
     use fhir_model::r4b::resources::{
-        Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
-        ResourceType,
+        Bundle, BundleEntry, BundleEntryRequest, Encounter, ObservationBuilder,
+        ObservationReferenceRangeBuilder, Parameters, Patient, Resource, ResourceType,
     };
     use fhir_model::time;
     use fhir_model::time::format_description::well_known::iso8601::FormattedComponents::DateTimeOffset;

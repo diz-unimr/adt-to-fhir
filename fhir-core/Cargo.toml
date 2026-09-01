@@ -12,8 +12,8 @@ serde_json = "1.0"
 chrono-tz = "0.10.4"
 chrono = { version = "0.4", features = ["serde"] }
 derive_builder = "0.20"
-
 adt-config = { path = "../adt-config" }
+regex = "1.13.1"
 
 [dev-dependencies]
 rstest = "0.26.1"

@@ -1,11 +1,13 @@
-use crate::fhir_error::ContentError;
-use chrono::{NaiveDateTime, TimeZone};
+use crate::fhir_error::{ContentError, ParsingError};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::resources::ResourceType;
-use fhir_model::r4b::types::{CodeableConcept, Coding, Reference};
-use fhir_model::time::OffsetDateTime;
-use fhir_model::{BuilderError, DateTime, Instant};
+use fhir_model::r4b::types::{
+    CodeableConcept, Coding, Extension, ExtensionValue, FieldExtension, Reference,
+};
+use fhir_model::time::{Month, OffsetDateTime};
+use fhir_model::{BuilderError, Date, DateTime, Instant, time};
 
 pub fn parse_datetime(input: &str) -> Result<DateTime, ContentError> {
     let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
@@ -52,4 +54,26 @@ pub fn coding_data_absent_reason_unsupported() -> Result<CodeableConcept, Builde
                 .build()?,
         )])
         .build()?)
+}
+
+pub fn field_extension(
+    url: String,
+    ext_value: ExtensionValue,
+) -> Result<FieldExtension, BuilderError> {
+    FieldExtension::builder()
+        .extension(vec![
+            Extension::builder().url(url).value(ext_value).build()?,
+        ])
+        .build()
+}
+
+pub fn parse_date(input: &str) -> Result<Date, ParsingError> {
+    let dt = NaiveDate::parse_and_remainder(input, "%Y%m%d")?.0;
+
+    let date = time::Date::from_calendar_date(
+        dt.year(),
+        Month::try_from(dt.month() as u8)?,
+        dt.day() as u8,
+    )?;
+    Ok(Date::Date(date))
 }

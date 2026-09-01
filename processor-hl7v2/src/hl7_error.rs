@@ -84,25 +84,15 @@ impl Hl7ParsingError {
     }
 }
 #[derive(Debug, Error)]
-pub(crate) enum Hl7MessageAccessError {
+pub enum Hl7MessageAccessError {
     #[error("Missing message segment {0}")]
     MissingMessageSegment(String),
     #[error("Missing message field value at {0}")]
     MissingMessageValue(String),
-    #[error(transparent)]
-    MessageTypeError(#[from] Hl7MessageTypeError),
     #[error("Message content '{0}' at {1} is unsupported")]
     UnsupportedContentError(String, String),
     #[error(transparent)]
     ParseError(#[from] hl7_parser::parser::ParseError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
-}
-
-#[derive(Debug, Error)]
-pub enum Hl7MessageTypeError {
-    #[error("Unknown message type: {0}")]
-    UnknownMessageType(String),
-    #[error("Missing message type: {0}")]
-    MissingMessageType(String),
 }

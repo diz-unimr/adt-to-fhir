@@ -1,6 +1,6 @@
-use crate::model::meta::{Meta, Operation};
-use chrono::NaiveDate;
+use crate::model::meta::{MappingOp, Operation};
 use derive_builder::Builder;
+use fhir_model::{Date, DateTime};
 
 impl crate::model::meta::ModelDto for PersonDto {
     fn id(&self) -> String {
@@ -17,30 +17,20 @@ impl crate::model::meta::ModelDto for PersonDto {
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
 pub struct PersonDto {
-    pub meta: Meta,
+    pub meta: MappingOp,
     pub pid: String,
-    #[builder(default)]
-    pub last_name: Option<String>,
-    #[builder(default)]
-    pub name_prefix: Option<String>,
-    #[builder(default)]
-    pub name_suffix: Option<String>,
-    #[builder(default)]
-    pub maiden_name: Option<String>,
-    #[builder(default)]
-    pub first_names: Option<String>,
-    #[builder(default)]
-    pub title: Option<String>,
+
     pub gender: GenderDto,
     #[builder(default)]
-    pub date_of_birth: Option<NaiveDate>,
+    pub date_of_birth: Option<Date>,
     #[builder(default)]
     pub marital_status: Option<MaritalStatusDto>,
     #[builder(default)]
     pub nationality: Option<String>,
     #[builder(default)]
     pub is_multiple_birth: Option<bool>,
-
+    #[builder(default)]
+    pub names: Vec<Option<PersonName>>,
     #[builder(default)]
     pub multiple_birth_order: Option<u32>,
     #[builder(default)]
@@ -50,11 +40,49 @@ pub struct PersonDto {
     #[builder(default)]
     pub occupation: Option<String>,
     #[builder(default)]
-    pub time_of_death: Option<NaiveDate>,
+    pub time_of_death: Option<DateTime>,
     #[builder(default)]
     pub replaced_by_pid: Option<String>,
     #[builder(default)]
     pub address: Vec<Option<AddressDto>>,
+    pub insurance: Vec<Option<Insurance>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(setter(into))]
+pub struct Insurance {
+    #[builder(default)]
+    pub insurance_number: String,
+    #[builder(default)]
+    pub assigner_id: String,
+    #[builder(default)]
+    pub valid_from: Option<Date>,
+    #[builder(default)]
+    pub valid_to: Option<Date>,
+}
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(setter(into))]
+pub struct PersonName {
+    /// Family name (often called 'Surname')
+    #[builder(default)]
+    pub family: Option<String>,
+
+    /// official (false) or maiden (true)
+    #[builder(default)]
+    pub is_maiden: Option<bool>,
+
+    /// Given names (not always 'first'). Includes middle names
+    #[builder(default)]
+    pub given_name: Vec<Option<String>>,
+    /// Parts that come before the name
+    #[builder(default)]
+    pub name_prefix: Option<String>,
+    /// namenszusatz
+    #[builder(default)]
+    pub name_extension: Option<String>,
+    /// Parts that come after the name (vorsatzwort)
+    #[builder(default)]
+    pub name_affix: Option<String>,
 }
 
 /// Gender as enum for type-safe processing
@@ -212,7 +240,8 @@ pub struct AddressDto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::meta::MetaBuilder;
+    use crate::model::meta::MappingOpBuilder;
+
     #[test]
     fn test_gender_conversion() {
         assert_eq!(GenderDto::from_hl7("M"), Some(GenderDto::Male));
@@ -340,7 +369,7 @@ mod tests {
     fn get_minimal_person() -> PersonDto {
         PersonDtoBuilder::default()
             .meta(
-                MetaBuilder::default()
+                MappingOpBuilder::default()
                     .id(42u64)
                     .operation(Operation::UpdateAsCreate)
                     .build()
