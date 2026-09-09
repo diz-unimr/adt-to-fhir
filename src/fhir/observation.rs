@@ -1,11 +1,12 @@
 use crate::error::{MappingError, MessageAccessError, ParsingError};
-use crate::fhir::mapper::{
-    EntryRequestType, build_usual_identifier, bundle_entry, map_visit_number, subject_ref,
-};
+use crate::fhir::mapper::{map_visit_number, subject_ref};
 use crate::fhir::patient::map_deceased;
 use adt_config::config::Fhir;
 use anyhow::anyhow;
-use fhir_core::mapping::misc::{get_cc_with_one_code, parse_datetime, resource_ref};
+use fhir_core::mapping::misc::{
+    EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, parse_datetime,
+    resource_ref,
+};
 use fhir_model::r4b::codes::ObservationStatus;
 use fhir_model::r4b::resources::{
     BundleEntry, Observation, ObservationBuilder, ObservationEffective, ObservationValue,
@@ -119,11 +120,12 @@ fn is_alive() -> Vec<Option<Coding>> {
 fn get_basic_observation_builder(msg: &Message) -> Result<ObservationBuilder, MappingError> {
     Ok(Observation::builder()
         .status(ObservationStatus::Final)
-        .effective(ObservationEffective::DateTime(parse_datetime(
-            query(msg, ZBE_2).ok_or(MessageAccessError::Other(anyhow!(
+        .effective(ObservationEffective::DateTime(
+            parse_datetime(query(msg, ZBE_2).ok_or(MessageAccessError::Other(anyhow!(
                 "ZBE.2 dateTime value missing!"
-            )))?,
-        )?)))
+            )))?)
+            .map_err(|e| MappingError::Other(anyhow!(e)))?,
+        )))
 }
 
 pub(crate) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, MappingError> {

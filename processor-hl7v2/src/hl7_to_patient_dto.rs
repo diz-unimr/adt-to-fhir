@@ -1,33 +1,54 @@
 use crate::hl7::parser::{
-    ENV_1, MessageType, PID_2, PID_5, PID_16_1, get_message_key, message_type, query,
+    ENV_1, MRG_1, MessageType, PID_2, PID_5, PID_16_1, PID_29, PID_30, get_message_key,
+    message_type, parse_datetime, query,
 };
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
-use crate::hl7_error::Hl7MessageAccessError::UnsupportedContentError;
-use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7ProcessingError};
+use crate::hl7_error::Hl7MessageAccessError::{
+    MissingMessageSegment, MissingMessageValue, UnsupportedContentError,
+};
+use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError};
+use adt_config::config::Fhir;
 use anyhow::anyhow;
-use fhir_core::mapping::misc::field_extension;
-use fhir_core::mapping::patient::map_marital_status;
-use fhir_core::model::meta::{MappingOp, Operation};
+use derive_builder::UninitializedFieldError;
+use fhir_core::mapping::patient::create_patient_merge;
+use fhir_core::model::meta::Operation::Patch;
+use fhir_core::model::meta::{MappingOp, MappingOpBuilder, Operation};
 use fhir_core::model::person_dto::{
     AddressDto, AddressDtoBuilder, MaritalStatusDto, PersonDto, PersonDtoBuilder,
-    PersonDtoBuilderError, PersonName, PersonNameBuilder,
+    PersonDtoBuilderError, PersonName, PersonNameBuilder, PersonNameBuilderError,
 };
 use fhir_model::BuilderError;
-use fhir_model::r4b::codes::NameUse;
-use fhir_model::r4b::types::{ExtensionValue, HumanName};
+use fhir_model::r4b::resources::Parameters;
+use fhir_model::r4b::types::Identifier;
 use hl7_parser::Message;
 
-pub fn map_hl7_to_dto(msg: &Message) -> Result<PersonDto, Hl7MappingError> {
-    let mut patient_builder = PersonDtoBuilder::default()
-        .names(build_names)
-        .meta(map_patient_operation)
+pub fn hl7_to_patient_dto(
+    msg: &Message,
+    mapping_op: MappingOp,
+) -> Result<PersonDto, Hl7MappingError> {
+    let mut binding = PersonDtoBuilder::default();
+    let mut patient_builder = binding
+        .names(build_names(msg)?)
+        .meta(mapping_op)
         .pid(query(msg, PID_2).map(String::from).ok_or(
             Hl7MessageAccessError::MissingMessageValue("PID.2".to_string()),
         )?)
-        .address(address_from_hl7);
+        .address(address_from_hl7(msg));
 
     if let Some(marital_status) = query(msg, PID_16_1) {
         patient_builder.marital_status(MaritalStatusDto::from_hl7(marital_status));
+    }
+
+    if let is_dead = query(msg, PID_30) {
+        match is_dead {
+            Some("J") => {
+                patient_builder.is_deceased_indicator(true);
+            }
+            _ => {}
+        }
+    }
+    if let Some(death_time) = query(msg, PID_29) {
+        patient_builder.time_of_death(Some(parse_datetime(death_time)?));
     }
 
     match patient_builder.build() {
@@ -35,7 +56,6 @@ pub fn map_hl7_to_dto(msg: &Message) -> Result<PersonDto, Hl7MappingError> {
         Err(e) => match e {
             PersonDtoBuilderError::UninitializedField(error_text) => {
                 Err(Hl7MappingError::BuilderUninitializedFieldError {
-                    builder_name: "PersonDtoBuilder".to_string(),
                     details: error_text.to_string(),
                 })
             }
@@ -54,30 +74,28 @@ pub fn map_hl7_to_dto(msg: &Message) -> Result<PersonDto, Hl7MappingError> {
     }
 }
 
-fn build_names(v2_msg: &Message) -> Result<Vec<Option<PersonName>>, BuilderError> {
+fn build_names(v2_msg: &Message) -> Result<Vec<Option<PersonName>>, PersonNameBuilderError> {
     let mut names = vec![];
 
     if let Some(name_fields) = field_repeats(v2_msg, PID_5) {
         for name_field in name_fields {
-            let mut name = PersonNameBuilder::default()
-                .family(
-                    repeat_component(name_field, 2)
-                        .map(|e| vec![Some(e.to_string())])
-                        .unwrap_or_default(),
-                )
-                .family(repeat_component(name_field, 1).map(String::from))
-                .name_prefix(repeat_component(name_field, 6))
-                .name_extension(repeat_component(name_field, 4))
-                .name_affix(repeat_component(name_field, 5))
-                .build()?;
+            let family_name = repeat_component(name_field, 2).map(|e| e.to_string());
+            let given_name = repeat_component(name_field, 1).map(|ff| ff.to_string());
+            let mut builder = PersonNameBuilder::default();
+            let mut name = builder
+                .family(family_name)
+                .given_name(vec![given_name])
+                .name_prefix(repeat_component(name_field, 6).map(|e| e.to_string()))
+                .name_extension(repeat_component(name_field, 4).map(|e| e.to_string()))
+                .name_affix(repeat_component(name_field, 5).map(|e| e.to_string()));
 
-            name.is_maiden = repeat_component(name_field, 7).and_then(|u| match u {
+            name.is_maiden(repeat_component(name_field, 7).and_then(|u| match u {
                 "L" => Some(false),
                 "M" | "B" => Some(true),
                 _ => None,
-            });
+            }));
 
-            names.push(Some(name));
+            names.push(Some(name.build()?));
         }
     }
 
@@ -119,7 +137,7 @@ fn address_from_hl7(msg: &Message) -> Vec<Option<AddressDto>> {
     res
 }
 
-pub(super) fn map_patient_operation(msg: &Message) -> Result<MappingOp, Hl7MappingError> {
+pub(super) fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
     let msg_type = message_type(msg)?;
     let id = get_message_key(msg)?.to_string();
 
@@ -131,13 +149,13 @@ pub(super) fn map_patient_operation(msg: &Message) -> Result<MappingOp, Hl7Mappi
         | MessageType::A07
         | MessageType::A08
         => {
-            Ok(MappingOp { id, operation: Operation::UpdateAsCreate })
+            Ok(Some(hl7_to_patient_dto(msg,MappingOp { id, operation: Operation::UpdateAsCreate })?))
         }
         MessageType::A02 | MessageType::A03 | MessageType::A31 => {
-            Ok(MappingOp { id, operation: Operation::CreateIfNotExists })
+            Ok(Some(hl7_to_patient_dto(msg,MappingOp { id, operation: Operation::CreateIfNotExists })?))
         }
         MessageType::A34 | MessageType::A40 => {
-            Ok(MappingOp { id, operation: Operation::Patch })
+            Ok(Some(create_patient_merge_hl7(msg, MappingOp { id, operation: Patch })?))
         }
         // patient stays unchanged
         MessageType::A11
@@ -155,13 +173,32 @@ pub(super) fn map_patient_operation(msg: &Message) -> Result<MappingOp, Hl7Mappi
             // ignore
 
             // A11 & A27 should not create any patient resource
-            Ok(MappingOp{id ,operation: Operation::Skip})
+            Ok(None)
         }
         MessageType::A29 => {
-            Ok(MappingOp{id ,operation: Operation::Delete})
+
+            // todo:  in case of mapping error fallback to a minimal delete request without resource!
+            Ok(Some(hl7_to_patient_dto(msg,MappingOp{id ,operation: Operation::Delete})?))
         }
         other => Err(Hl7MappingError::from(UnsupportedContentError(other.to_string(), ENV_1.to_string()))),
     }
+}
+
+fn create_patient_merge_hl7(
+    msg: &Message,
+    mapping_op: MappingOp,
+) -> Result<PersonDto, Hl7MappingError> {
+    let replaced_patient_id = query(msg, PID_2)
+        .map(String::from)
+        .ok_or(MissingMessageValue("PID.2".to_string()))?;
+    let new_patient_id = query(msg, MRG_1)
+        .map(String::from)
+        .ok_or(MissingMessageSegment("MRG.1".to_string()))?;
+    Ok(PersonDtoBuilder::default()
+        .replaced_by_pid(new_patient_id)
+        .pid(replaced_patient_id)
+        .meta(mapping_op)
+        .build()?)
 }
 
 #[cfg(test)]

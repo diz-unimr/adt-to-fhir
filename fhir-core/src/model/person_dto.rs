@@ -45,6 +45,7 @@ pub struct PersonDto {
     pub replaced_by_pid: Option<String>,
     #[builder(default)]
     pub address: Vec<Option<AddressDto>>,
+    #[builder(default)]
     pub insurance: Vec<Option<Insurance>>,
 }
 
@@ -56,9 +57,9 @@ pub struct Insurance {
     #[builder(default)]
     pub assigner_id: String,
     #[builder(default)]
-    pub valid_from: Option<Date>,
+    pub valid_from: Option<DateTime>,
     #[builder(default)]
-    pub valid_to: Option<Date>,
+    pub valid_to: Option<DateTime>,
 }
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
@@ -370,7 +371,7 @@ mod tests {
         PersonDtoBuilder::default()
             .meta(
                 MappingOpBuilder::default()
-                    .id(42u64)
+                    .id("42")
                     .operation(Operation::UpdateAsCreate)
                     .build()
                     .unwrap(),

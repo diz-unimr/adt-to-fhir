@@ -11,19 +11,7 @@ pub enum FhirMappingError {
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
-#[derive(Debug, Error)]
-pub enum ContentError {
-    #[error("Mapping failed due value at {property} is missing or empty.")]
-    MissingValueError { property: String },
-    #[error(transparent)]
-    BuilderError(#[from] BuilderError),
-    #[error(transparent)]
-    ParsingError(#[from] ParsingError),
-    #[error(transparent)]
-    DateFormatError(#[from] DateFormatError),
-    #[error(transparent)]
-    ComponentRange(#[from] ComponentRange),
-}
+
 impl From<BuilderError> for FhirMappingError {
     fn from(err: BuilderError) -> Self {
         ContentError::from(err).into()
@@ -39,6 +27,26 @@ impl FhirMappingError {
             FhirMappingError::Other(_) => "Other",
         }
     }
+}
+
+impl From<ParseError> for ContentError {
+    fn from(err: ParseError) -> Self {
+        ContentError::from(err).into()
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ContentError {
+    #[error("Mapping failed due value at {property} is missing or empty.")]
+    MissingValueError { property: String },
+    #[error(transparent)]
+    BuilderError(#[from] BuilderError),
+    #[error(transparent)]
+    ParsingError(#[from] ParsingError),
+    #[error(transparent)]
+    DateFormatError(#[from] DateFormatError),
+    #[error(transparent)]
+    ComponentRange(#[from] ComponentRange),
 }
 
 #[derive(Debug, Error)]

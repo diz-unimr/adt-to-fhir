@@ -18,8 +18,8 @@ use processor_hl7v2::hl7::parser::{
 
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
+use fhir_core::mapping::misc::upsert_reference;
 use fhir_core::mapping::misc::{identifier_search, resource_ref};
-use fhir_core::mapping::patient::upsert_reference;
 use fhir_core::model::fab_mapping::is_valid_date;
 use fhir_model::time::{Month, OffsetDateTime};
 use fhir_model::{BuilderError, Instant};
@@ -74,6 +74,9 @@ impl FhirMapper {
 
         Ok(Some(result))
     }
+    pub fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
+        Ok(query(msg, PV1_2).is_some_and(|f| f == "H"))
+    }
 
     fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>, MappingError> {
         if is_begleitperson(v2_msg)? {
@@ -102,132 +105,6 @@ impl FhirMapper {
 
         Ok(res)
     }
-}
-
-pub enum EntryRequestType {
-    UpdateAsCreate,
-    ConditionalCreate,
-    Delete,
-}
-pub(crate) fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
-    Ok(query(msg, PV1_2).is_some_and(|f| f == "H"))
-}
-pub(crate) fn bundle_entry<T: IdentifiableResource + Clone>(
-    resource: T,
-    request_type: EntryRequestType,
-    config: &Fhir,
-) -> Result<BundleEntry, MappingError>
-where
-    Resource: From<T>,
-{
-    // resource
-    let r = Resource::from(resource.clone());
-
-    // identifier
-    let identifier = resource
-        .identifier()
-        .iter()
-        .flatten()
-        .find(|&id| id.r#use.is_some_and(|u| u == IdentifierUse::Usual))
-        .ok_or(anyhow!("missing identifier with use: 'usual'"))?;
-
-    // resource type
-    let resource_type = r.resource_type();
-
-    let request = bundle_entry_request(resource_type, identifier, request_type)?;
-
-    let identifiers: Vec<Identifier> = resource.identifier().iter().flatten().cloned().collect();
-
-    let full_url = full_url_from_identifiers(&identifiers, config);
-
-    BundleEntry::builder()
-        .resource(r)
-        .request(request)
-        .full_url(full_url)
-        .build()
-        .map_err(|e| e.into())
-}
-
-fn bundle_entry_request(
-    resource_type: ResourceType,
-    identifier: &Identifier,
-    request_type: EntryRequestType,
-) -> Result<BundleEntryRequest, MappingError> {
-    Ok(match request_type {
-        EntryRequestType::UpdateAsCreate => BundleEntryRequest::builder()
-            .method(HTTPVerb::Put)
-            .url(upsert_reference(&resource_type, identifier)?)
-            .build()?,
-
-        EntryRequestType::ConditionalCreate => BundleEntryRequest::builder()
-            .method(HTTPVerb::Post)
-            .url(resource_type.to_string())
-            .if_none_exist(conditional_reference(identifier)?)
-            .build()?,
-
-        EntryRequestType::Delete => BundleEntryRequest::builder()
-            .method(HTTPVerb::Delete)
-            .url(upsert_reference(&resource_type, identifier)?)
-            .build()?,
-    })
-}
-
-pub(crate) fn patch_bundle_entry(
-    resource: Parameters,
-    resource_type: &ResourceType,
-    identifier: &Identifier,
-    config: &Fhir,
-) -> Result<BundleEntry, MappingError> {
-    let request = BundleEntryRequest::builder()
-        .method(Patch)
-        .url(upsert_reference(resource_type, identifier)?)
-        .build()?;
-
-    BundleEntry::builder()
-        .resource(resource.into())
-        .request(request)
-        .full_url(full_url_from_identifiers(
-            slice::from_ref(identifier),
-            config,
-        ))
-        .build()
-        .map_err(|e| e.into())
-}
-
-pub(crate) fn conditional_reference(identifier: &Identifier) -> Result<String, MappingError> {
-    Ok(identifier_search(
-        identifier
-            .system
-            .as_deref()
-            .ok_or(anyhow!("identifier.system missing"))?,
-        identifier
-            .value
-            .as_deref()
-            .ok_or(anyhow!("identifier.value missing"))?,
-    ))
-}
-
-pub fn parse_date(input: &str) -> Result<Date, ParsingError> {
-    let dt = NaiveDate::parse_and_remainder(input, "%Y%m%d")?.0;
-    let date = time::Date::from_calendar_date(
-        dt.year(),
-        Month::try_from(dt.month() as u8)?,
-        dt.day() as u8,
-    )?;
-    Ok(Date::Date(date))
-}
-
-pub(crate) fn build_usual_identifier(
-    value_components: Vec<&str>,
-    system: String,
-) -> Result<Identifier, BuilderError> {
-    let identifier_value = value_components.join("_");
-
-    Identifier::builder()
-        .r#use(IdentifierUse::Usual)
-        .system(system)
-        .value(identifier_value)
-        .build()
 }
 
 pub fn is_inpatient_location(msg: &Message) -> Result<bool, MappingError> {
@@ -289,33 +166,6 @@ pub(crate) fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::
     }
 }
 
-/// Erzeugt eine deterministische fullUrl aus den Identifier-Values einer Ressource.
-/// Mehrere Identifier werden sortiert und konkateniert, damit die Reihenfolge
-/// keinen Einfluss auf das Ergebnis hat.
-pub fn full_url_from_identifiers(identifiers: &[Identifier], config: &Fhir) -> String {
-    let namespace = Uuid::new_v5(&Uuid::NAMESPACE_DNS, config.facility_id.as_ref());
-
-    let mut values: Vec<String> = identifiers
-        .iter()
-        .filter_map(|id| {
-            // system + value kombinieren, damit gleiche value in unterschiedlichen
-            // Systemen nicht kollidieren
-            match (&id.system, &id.value) {
-                (Some(system), Some(value)) => Some(format!("{}|{}", system, value)),
-                (None, Some(value)) => Some(value.clone()),
-                _ => None,
-            }
-        })
-        .collect();
-
-    // Sortieren für Determinismus, unabhängig von der Reihenfolge im Bundle
-    values.sort();
-    let input = values.join(";");
-
-    let uuid = Uuid::new_v5(&namespace, input.as_bytes());
-    format!("urn:uuid:{}", uuid)
-}
-
 pub(crate) fn is_ward_valid_icu(msg: &Message, resources: &ResourceMap) -> bool {
     query(msg, PV1_3_1)
         .and_then(|ward_id| resources.ward_map.get(ward_id))
@@ -351,7 +201,7 @@ mod tests {
     use adt_config::test_utils::tests::{
         filter_resources, get_dummy_resources, get_test_config, has_profile, read_test_resource,
     };
-    use fhir_core::mapping::misc::parse_datetime;
+    use fhir_core::mapping::misc::{full_url_from_identifiers, parse_datetime, patch_bundle_entry};
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::Patch;
     use fhir_model::r4b::codes::ResourceType::Observation;

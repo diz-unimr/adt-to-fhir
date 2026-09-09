@@ -5,8 +5,7 @@ use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
 use crate::fhir::mapper::{
-    EntryRequestType, bundle_entry, is_begleitperson, is_inpatient_location, is_ward_valid_icu,
-    map_visit_number, parse_fab, subject_ref,
+    is_inpatient_location, is_ward_valid_icu, map_visit_number, parse_fab, subject_ref,
 };
 use adt_config::config::Fhir;
 
@@ -38,7 +37,6 @@ use processor_hl7v2::hl7::parser::{
     PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
     get_message_key, message_type, query,
 };
-use processor_hl7v2::hl7_error::Hl7MappingError;
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 

@@ -1,6 +1,6 @@
 use crate::fhir_error::ContentError;
 use crate::fhir_error::ContentError::MissingValueError;
-use crate::model::person_dto::{Insurance, PersonDto};
+use crate::model::person_dto::{GenderDto, Insurance, MaritalStatusDto, PersonDto};
 use adt_config::config::Fhir;
 use anyhow::anyhow;
 use chrono::TimeZone;
@@ -8,10 +8,12 @@ use chrono::{Datelike, NaiveDateTime};
 use chrono_tz::Europe::Berlin;
 use std::sync::LazyLock;
 
-use crate::mapping::misc::{field_extension, get_cc_with_one_code, identifier_search, parse_date};
+use crate::mapping::misc::{
+    field_extension, get_cc_with_one_code, identifier_search, parse_date, upsert_reference,
+};
 use crate::model::meta::ModelDto;
 use fhir_model::DateFormatError::InvalidDate;
-use fhir_model::r4b::codes::{AddressType, IdentifierUse, NameUse};
+use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
     Parameters, ParametersParameter, ParametersParameterValue, Patient, PatientBuilder,
     PatientDeceased, PatientMultipleBirth, ResourceType,
@@ -26,7 +28,7 @@ use fhir_model::{BuilderError, Date, DateTime, Instant};
 use log::{Level, log, warn};
 use regex::Regex;
 
-fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError> {
+pub fn map(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError> {
     // patient resource
     let mut patient = Patient::builder()
         .meta(
@@ -38,45 +40,54 @@ fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentEr
         .identifier(create_patient_identifiers(pat_data, config)?)
         .address(map_addresses_dto(pat_data)?)
         .name(map_name(pat_data)?)
-        .gender(pat_data.gender.into())
+        .gender(map_gender(&pat_data.gender))
         .build()?;
 
     // birth_date
-    patient.birth_date = pat_data.date_of_birth;
+    patient.birth_date = pat_data.date_of_birth.clone();
 
     // marital_status
-    if let Some(marital_status) = pat_data.marital_status {
+    if let Some(ref marital_status) = pat_data.marital_status {
         patient.marital_status = Some(map_marital_status(marital_status.to_v3_code())?);
     }
 
     // deceased flag
-    patient.deceased = map_deceased(pat_data)?;
+    patient.deceased = map_deceased(&pat_data)?;
 
-    patient.multiple_birth = map_multiple_birth(pat_data)?;
+    patient.multiple_birth = map_multiple_birth(&pat_data)?;
 
     Ok(patient)
+}
+
+fn map_gender(input: &GenderDto) -> AdministrativeGender {
+    match input {
+        GenderDto::Male => AdministrativeGender::Male,
+        GenderDto::Female => AdministrativeGender::Female,
+        GenderDto::Diverse => AdministrativeGender::Other,
+        GenderDto::Unknown => AdministrativeGender::Unknown,
+    }
 }
 
 fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderError> {
     let mut names = vec![];
 
-    if let name_entries = person.names {
-        for Some(name_entry) in name_entries {
+    for entry in &person.names {
+        if let Some(name_entry) = entry {
             let name_use = match name_entry.is_maiden {
                 Some(false) => Some(NameUse::Official),
                 Some(true) => Some(NameUse::Maiden),
                 _ => None,
             };
             let mut name_build = HumanName::builder().build()?;
-            if Some(name_use) {
+            if Some(name_use).is_some() {
                 name_build.r#use = name_use;
             }
-            name_build.given = name_entry.given_name;
+            name_build.given = name_entry.given_name.clone();
 
-            name_build.family = name_entry.family;
+            name_build.family = name_entry.family.clone();
 
             // prefix
-            if let Some(prefix) = name_entry.name_prefix {
+            if let Some(prefix) = name_entry.name_prefix.clone() {
                 name_build.prefix = vec![Some(prefix.to_string())];
                 name_build.prefix_ext = vec![Some(field_extension(
                     "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
@@ -85,7 +96,7 @@ fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderError> 
             }
 
             // namenszusatz
-            if let Some(namenszusatz) = name_entry.name_extension {
+            if let Some(namenszusatz) = name_entry.name_extension.clone() {
                 name_build.family_ext = Some(field_extension(
                     "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
                     ExtensionValue::String(namenszusatz.to_string()),
@@ -93,7 +104,7 @@ fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderError> 
             }
 
             // vorsatzwort
-            if let Some(vorsatzwort) = name_entry.name_affix {
+            if let Some(vorsatzwort) = name_entry.name_affix.clone() {
                 name_build.family_ext = Some(field_extension(
                     "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
                     ExtensionValue::String(vorsatzwort.to_string()),
@@ -103,7 +114,6 @@ fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderError> 
             names.push(Some(name_build))
         }
     }
-
     Ok(names)
 }
 
@@ -126,31 +136,22 @@ fn map_multiple_birth(pat_data: &PersonDto) -> Result<Option<PatientMultipleBirt
             Some(true) => Ok(Some(PatientMultipleBirth::Boolean(true))),
             Some(false) => Ok(Some(PatientMultipleBirth::Boolean(false))),
             None => Ok(None),
-            MultiBirthFlags::Unsupported(some_value) => {
-                warn!(
-                    "MSG-ID {:?}: Unsupported multi-birth flag value '{:?}'!",
-                    msg_id, some_value
-                );
-                Ok(None)
-            }
         },
 
-        (_multi_birth_flag, Some(multi_birth_number)) => match multi_birth_number.parse::<i32>() {
-            Ok(number) => Ok(Some(PatientMultipleBirth::Integer(number))),
-            Err(e) => Err(ContentError::ParsingError(e)),
-        },
+        (_multi_birth_flag, Some(multi_birth_number)) => Ok(Some(PatientMultipleBirth::Integer(
+            multi_birth_number as i32,
+        ))),
     }
 }
 
 fn map_deceased(data: &PersonDto) -> Result<Option<PatientDeceased>, ContentError> {
     // patient vital status
-    let death_time = data.time_of_death;
-    let death_confirm = data.is_deceased_indicator;
+    let death_time = data.time_of_death.clone();
+    let death_confirm = data.is_deceased_indicator.clone();
 
     match (death_time, death_confirm) {
-        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(
-            crate::mapping::misc::parse_datetime(death_time.to_string().as_str())?,
-        ))),
+        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(death_time))),
+
         (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm))),
         _ => Ok(None),
     }
@@ -307,23 +308,6 @@ pub fn create_patient_identifier_pid(
         .build()
 }
 
-pub fn upsert_reference(
-    resource_type: &ResourceType,
-    identifier: &Identifier,
-) -> Result<String, crate::fhir_error::ContentError> {
-    Ok(format!(
-        "{resource_type}?{}",
-        identifier_search(
-            identifier.system.as_deref().ok_or(MissingValueError {
-                property: "identifier.system missing".to_string()
-            })?,
-            identifier.value.as_deref().ok_or(MissingValueError {
-                property: "identifier.value missing".to_string()
-            })?
-        )
-    ))
-}
-
 pub fn map_marital_status(value: &str) -> Result<CodeableConcept, BuilderError> {
     // marital status
     let marital_coding = match value {
@@ -414,13 +398,22 @@ fn create_patient_identifiers(
     config: &Fhir,
 ) -> Result<Vec<Option<Identifier>>, BuilderError> {
     // mandatory PID identifier
-    let mut identifiers = vec![Some(create_patient_identifier_pid(dto.pid, config)?)];
+    let mut identifiers = vec![Some(create_patient_identifier_pid(
+        dto.pid.clone(),
+        config,
+    )?)];
 
     // create optional identifiers from insurance data
     let insurance_ids: Vec<Option<Identifier>> = dto
         .insurance
         .iter()
-        .map(|Some(s)| map_versicherungsdaten(dto.meta.id.clone(), s, config))
+        .map(|s| {
+            if let Some(versicherung) = s {
+                map_versicherungsdaten(dto.meta.id.clone(), versicherung, config)
+            } else {
+                Ok(None)
+            }
+        })
         .collect::<Result<Vec<Option<Identifier>>, BuilderError>>()?;
 
     let ids: Vec<_> = insurance_ids.into_iter().flatten().collect();
@@ -518,15 +511,10 @@ fn map_versicherungsdaten(
 }
 
 fn get_identifier_period(insurance: &Insurance) -> Result<Option<Period>, BuilderError> {
-    match (insurance.valid_from, insurance.valid_to) {
-        (Some(start), Some(end)) => Ok(Some(
-            Period::builder()
-                .start(start.into())
-                .end(end.into())
-                .build()?,
-        )),
-        (Some(start), None) => Ok(Some(Period::builder().start(start.into()).build()?)),
-        (None, Some(end)) => Ok(Some(Period::builder().end(end.into()).build()?)),
+    match (insurance.valid_from.clone(), insurance.valid_to.clone()) {
+        (Some(start), Some(end)) => Ok(Some(Period::builder().start(start).end(end).build()?)),
+        (Some(start), None) => Ok(Some(Period::builder().start(start).build()?)),
+        (None, Some(end)) => Ok(Some(Period::builder().end(end).build()?)),
         (None, None) => Ok(None),
     }
 }

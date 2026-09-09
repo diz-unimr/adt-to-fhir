@@ -2,9 +2,11 @@ use crate::error::MappingError;
 use adt_config::config::Fhir;
 use fhir_model::r4b::codes::IdentifierUse;
 
-use crate::fhir::mapper::{EntryRequestType, bundle_entry, get_meta, parse_fab};
+use crate::fhir::mapper::{get_meta, parse_fab};
 use adt_config::resources::ResourceMap;
-use fhir_core::mapping::misc::{get_cc_with_one_code, resource_ref};
+use fhir_core::mapping::misc::{
+    EntryRequestType, bundle_entry, get_cc_with_one_code, resource_ref,
+};
 use fhir_model::r4b::resources::{BundleEntry, Organization, ResourceType};
 use fhir_model::r4b::types::Identifier;
 use hl7_parser::Message;

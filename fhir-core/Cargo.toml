@@ -14,6 +14,7 @@ chrono = { version = "0.4", features = ["serde"] }
 derive_builder = "0.20"
 adt-config = { path = "../adt-config" }
 regex = "1.13.1"
+uuid = { version = "1.26.0", features = ["v5"] }
 
 [dev-dependencies]
 rstest = "0.26.1"

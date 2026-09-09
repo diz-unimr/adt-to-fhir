@@ -1,15 +1,16 @@
 use crate::error::MappingError;
 use crate::error::MessageAccessError;
 use crate::error::MessageAccessError::{MissingMessageValue, ParseError};
-use crate::fhir::mapper::EntryRequestType::{ConditionalCreate, Delete, UpdateAsCreate};
-use crate::fhir::mapper::{bundle_entry, parse_date, patch_bundle_entry};
+
 use adt_config::config::Fhir;
 
 use anyhow::anyhow;
 use fhir_core::fhir_error::ContentError;
-use fhir_core::mapping::misc::parse_datetime;
+use fhir_core::mapping::misc::{
+    EntryRequestType, bundle_entry, parse_date, parse_datetime, patch_bundle_entry,
+};
 use fhir_core::mapping::patient::{
-    create_patient_identifier_pid, create_patient_merge, map_marital_status,
+    create_patient_identifier_pid, create_patient_merge, is_valid_gkv10, map_marital_status,
 };
 use fhir_core::model::meta::{MappingOp, Operation};
 use fhir_core::model::person_dto::PersonDto;
@@ -32,177 +33,14 @@ use processor_hl7v2::hl7::parser::{
     MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29, PID_30,
     get_message_key, message_type, query, segment_value,
 };
-use processor_hl7v2::hl7_error::{
-    Hl7MappingError, Hl7MessageAccessError, Hl7ParsingError, Hl7ProcessingError,
-};
+use processor_hl7v2::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7ParsingError};
 use processor_hl7v2::hl7_to_patient_dto::{field_repeats, repeat_component, repeat_subcomponents};
-use regex::Regex;
+
 use std::fmt::Debug;
-use std::sync::LazyLock;
+
+use fhir_core::mapping::misc::EntryRequestType::{ConditionalCreate, UpdateAsCreate};
+use fhir_model::r4b::codes::HTTPVerb::Delete;
 use std::vec;
-
-pub(super) fn map(msg: &Message, config: &Fhir) -> Result<Vec<BundleEntry>, MappingError> {
-    let msg_type = message_type(msg)?;
-
-    match msg_type {
-        MessageType::A01
-        | MessageType::A04
-        | MessageType::A05
-        | MessageType::A06
-        | MessageType::A07
-        | MessageType::A08
-        => {
-            let patient = map_patient(msg, config)?;
-            // update-as-create
-            Ok(vec![bundle_entry(patient, UpdateAsCreate, config)?])
-        }
-        MessageType::A02 | MessageType::A03 | MessageType::A31 => {
-            let patient = map_patient(msg, config)?;
-            // conditional-create
-            Ok(vec![bundle_entry(patient, ConditionalCreate, config)?])
-        }
-        MessageType::A34 | MessageType::A40 => {
-            // create fhir-patch
-            let (parameters, patch) = create_patient_merge_hl7(msg, config)?;
-            Ok(vec![patch_bundle_entry(
-                parameters,
-                &ResourceType::Patient,
-                &patch, config
-            )?])
-        }
-        MessageType::A11
-        // patient stays unchanged
-        | MessageType::A12
-        // At A13 no changes expected - we could update patient here,
-        // but an update follows shortly after this message with another message,
-        // therefore we can safely skip this on.
-        | MessageType::A13
-        | MessageType::A14
-        | MessageType::A21
-        | MessageType::A22
-        | MessageType::A27
-        | MessageType::A28
-        | MessageType::A38 => {
-            // ignore
-
-            // A11 & A27 should not create any patient resource
-            Ok(vec![])
-        }
-        MessageType::A29 => {
-            let patient = map_patient(msg, config)?;
-            // delete
-            Ok(vec![bundle_entry(patient, Delete, config)?])
-        }
-        other => Err(MappingError::from(anyhow!("Invalid message type: {other}"))),
-    }
-}
-
-fn create_patient_merge_hl7(
-    msg: &Message,
-    config: &Fhir,
-) -> Result<(Parameters, Identifier), MappingError> {
-    let replaced_patient_id = query(msg, PID_2)
-        .map(String::from)
-        .ok_or(MissingMessageValue("PID.2".to_string()))?;
-    let new_patient_id =
-        query(msg, MRG_1)
-            .map(String::from)
-            .ok_or(MessageAccessError::MissingMessageSegment(
-                "MRG.1".to_string(),
-            ))?;
-    Ok(create_patient_merge(
-        new_patient_id,
-        replaced_patient_id,
-        config,
-    )?)
-}
-
-pub fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>, MappingError> {
-    // patient vital status
-    let death_time = query(msg, PID_29);
-    let death_confirm = query(msg, PID_30);
-
-    match (death_time, death_confirm) {
-        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(death_time)?))),
-        (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm == "Y"))),
-        _ => Ok(None),
-    }
-}
-
-fn map_multiple_birth(msg: &Message) -> Result<Option<PatientMultipleBirth>, MappingError> {
-    let is_multi_birth = query(msg, PID_24);
-    let multi_birth_number = query(msg, PID_25);
-    let msg_id = get_message_key(msg)?;
-
-    #[derive(Debug, PartialEq, Eq)]
-    enum MultiBirthFlags {
-        Yes,
-        No,
-        None,
-        Unsupported(String),
-    }
-
-    let multi_birth_flag: MultiBirthFlags = match is_multi_birth {
-        Some(is_multi_birth) => match is_multi_birth {
-            "J" => MultiBirthFlags::Yes,
-            "N" => MultiBirthFlags::No,
-            _ => MultiBirthFlags::Unsupported(is_multi_birth.to_string()),
-        },
-        None => MultiBirthFlags::None,
-    };
-
-    match (multi_birth_flag, multi_birth_number) {
-        // nur Mehrlingsgeburt-Kennung vorhanden
-        (multi_birth_flag, None) => match multi_birth_flag {
-            MultiBirthFlags::Yes => Ok(Some(PatientMultipleBirth::Boolean(true))),
-            MultiBirthFlags::No => Ok(Some(PatientMultipleBirth::Boolean(false))),
-            MultiBirthFlags::None => Ok(None),
-            MultiBirthFlags::Unsupported(some_value) => {
-                warn!(
-                    "MSG-ID {:?}: Unsupported multi-birth flag value '{:?}'!",
-                    msg_id, some_value
-                );
-                Ok(None)
-            }
-        },
-
-        (multi_birth_flag, Some(multi_birth_number)) => {
-            match multi_birth_flag {
-                MultiBirthFlags::No => {
-                    // most birth data have flag No and birth number 1
-                }
-                MultiBirthFlags::Yes => (),
-                MultiBirthFlags::Unsupported(some_value) => {
-                    warn!(
-                        "MSH-ID {:?}: Multi-birth flag is '{:?}' but birth number is present!",
-                        msg_id, some_value
-                    )
-                }
-                MultiBirthFlags::None => warn!(
-                    "MSH-ID {:?}: Multi-birth flag is empty but birth number is present!",
-                    msg_id
-                ),
-            }
-
-            match multi_birth_number.parse::<i32>() {
-                Ok(number) => Ok(Some(PatientMultipleBirth::Integer(number))),
-                Err(e) => Err(MappingError::Other(anyhow!(
-                    "Invalid multi-birth number: {}",
-                    e
-                ))),
-            }
-        }
-    }
-}
-
-fn map_gender(gender: &str) -> AdministrativeGender {
-    match gender {
-        "F" => AdministrativeGender::Female,
-        "M" => AdministrativeGender::Male,
-        "U" => AdministrativeGender::Other,
-        _ => AdministrativeGender::Unknown,
-    }
-}
 
 fn map_versicherungsdaten(
     in1: &Segment,

@@ -5,6 +5,11 @@ use crate::hl7_error::Hl7MessageAccessError::{
 
 use crate::hl7_error::{Hl7MessageAccessError, Hl7ParsingError};
 use anyhow::anyhow;
+use chrono::{NaiveDateTime, TimeZone};
+use chrono_tz::Europe::Berlin;
+use fhir_model::DateFormatError::InvalidDate;
+use fhir_model::time::OffsetDateTime;
+use fhir_model::{DateTime, Instant};
 use hl7_parser::Message;
 use hl7_parser::message::{Repeat, Segment};
 use hl7_parser::query::LocationQueryResult;
@@ -16,7 +21,6 @@ use std::str::FromStr;
 pub const ENV_1: &str = "ENV-1";
 
 /// old patient identifier value
-///
 /// __note:__ only used at correction of patient data (e.g. merge operation)
 pub const MRG_1: &str = "MRG.1";
 
@@ -26,21 +30,23 @@ pub const MRG_1: &str = "MRG.1";
 pub const MSH_10: &str = "MSH.10";
 
 /// patient identifier
-///
 /// __note:__ always present (preferred before PID.3)
 pub const PID_2: &str = "PID.2";
+
 /// encounter identifier (medical case id)
-///
 pub const PID_4: &str = "PID.4";
+
 /// patient name
-///
 /// PID.5.7 (L) legal name, (M) maiden name
 /// __note:__ repeats and components inside
 pub const PID_5: &str = "PID.5";
+
 /// patient birthdate
 pub const PID_7: &str = "PID.7";
+
 /// patient gender
 pub const PID_8: &str = "PID.8";
+
 /// marital status
 pub const PID_16_1: &str = "PID.16.1";
 
@@ -48,88 +54,102 @@ pub const PID_16_1: &str = "PID.16.1";
 ///
 /// __note:__ only at birth context set
 pub const PID_21_1: &str = "PID.21.1";
+
 /// multiple birth indicator
 pub const PID_24: &str = "PID.24";
+
 /// Birth order
 pub const PID_25: &str = "PID.25";
+
 /// patient death datetime
 pub const PID_29: &str = "PID.29";
 /// patient death confirmation flag
+
 pub const PID_30: &str = "PID.30";
 
 /// patient class
-///
 /// inpatient(I), ambulatory(O), emergency (E)...
 pub const PV1_2: &str = "PV1.2";
+
 /// ward short name
-///
 /// __note:__ may be empty
 pub const PV1_3_1: &str = "PV1.3.1";
+
 /// patient location room
 pub const PV1_3_2: &str = "PV1.3.2";
+
 /// patient location bed number
 pub const PV1_3_3: &str = "PV1.3.3";
+
 /// department short name
-///
 /// __note:__ in rare cases empty (ambulatory bed status and ward visit)
 pub const PV1_3_4: &str = "PV1.3.4";
+
 /// based on message type this may be 'department' or 'private clinic department' or 'generic location'
-///
 /// __note:__ usually set
 pub const PV1_3_5: &str = "PV1.3.5";
+
 /// admission source
 pub const PV1_4_1: &str = "PV1.4.1";
+
 /// admission reason
-///
 /// digit 3 & 4
 pub const PV1_4__2_1: &str = "PV1.4[2].1";
+
 /// encounter number (medical case id)
-///
 /// __note:__ usually set, may be missing first messages at encounter planning
 pub const PV1_19_1: &str = "PV1.19.1";
 /// discharge reason
+
 pub const PV1_36_1: &str = "PV1.36.1";
+
 /// clinical department code (german §301 Fachabteilungsschlüssel)
-///
 /// __note:__ often set
 pub const PV1_39_1: &str = "PV1.39.1";
+
 /// discharge disposition
 pub const PV1_40_1: &str = "PV1.40.1";
+
 /// encounter beginn date time
 pub const PV1_44: &str = "PV1.44";
+
 /// encounter end date time
 pub const PV1_45: &str = "PV1.45";
 
 /// admission reason
-///
 /// digit 1 & 2
 pub const PV2_3_1: &str = "PV2.3.1";
 
 /// patient movement identifier
-///
 /// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
 pub const ZBE_1_1: &str = "ZBE.1.1";
+
 /// beginning of patient movement (timestamp)
-///
 /// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
 pub const ZBE_2: &str = "ZBE.2.1";
+
 /// end of patient movement (timestamp)
-///
 /// __note:__ mandatory present at most message types. Missing at message types: A28-A34, A40-A47
 pub const ZBE_3: &str = "ZBE.3.1";
 
 /// birth weight
-///
 /// __note:__ segment only at birth context present
 pub const ZNG_7: &str = "ZNG.7";
+
 /// head circumference at birth
-///
 /// __note:__ segment only at birth context present
 pub const ZNG_11: &str = "ZNG.11";
+
 /// body length at birth
-///
 /// __note:__ segment only at birth context present
 pub const ZNG_6: &str = "ZNG.6";
+
+/// insurance begin date
+/// __note:__ multiple IN1 segments may be present
+pub const IN1_12: &str = "IN1.12";
+/// insurance end date
+/// __note:__ multiple IN1 segments may be present
+pub const IN1_13: &str = "IN1.13";
 
 #[derive(PartialEq, Debug)]
 pub enum MessageType {
@@ -237,8 +257,9 @@ pub fn message_type(msg: &Message) -> Result<MessageType, Hl7MessageAccessError>
 /// Query message value by location.
 ///
 /// # Examples
-/// ```
-/// let value = query(msg, "PID.1");
+/// ```no_run
+/// let msg = todo!();
+/// let value = processor_hl7v2::hl7::parser::query(msg, "PID.1");
 /// ```
 /// [`None`] is returned if segments are empty or missing.
 pub fn query<'a>(msg: &'a Message<'_>, location: &str) -> Option<&'a str> {
@@ -310,7 +331,7 @@ pub fn segment_value<'a>(
 }
 
 pub fn get_message_key<'a>(msg: &'a Message<'_>) -> Result<&'a str, Hl7MessageAccessError> {
-    query(msg, MSH_10).ok_or(Hl7MessageAccessError::MissingMessageValue(
+    query(msg, MSH_10).ok_or(MissingMessageValue(
         "failed to read message key".to_string(),
     ))
 }
@@ -325,6 +346,18 @@ pub fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, Hl7Pars
             input
         )))
     }
+}
+
+pub fn parse_datetime(input: &str) -> Result<DateTime, Hl7ParsingError> {
+    let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
+    let dt_with_tz = Berlin
+        .from_local_datetime(&dt)
+        .earliest()
+        .ok_or(InvalidDate)?;
+
+    Ok(DateTime::DateTime(Instant(
+        OffsetDateTime::from_unix_timestamp(dt_with_tz.timestamp())?,
+    )))
 }
 
 #[cfg(test)]
@@ -433,10 +466,7 @@ EVN|A01|202111221030|202111221029||
 "#;
         let msg = Message::parse_with_lenient_newlines(input, true).expect("parse hl7 failed");
 
-        assert!(matches!(
-            get_message_key(&msg),
-            Err(Hl7ParsingError::Other(_))
-        ));
+        assert!(matches!(get_message_key(&msg), Err(MissingMessageValue(_))));
     }
     #[test]
     fn check_is_numeric_ascii_test() {

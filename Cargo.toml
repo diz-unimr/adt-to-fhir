@@ -3,6 +3,9 @@ name = "adt-to-fhir"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = ["fhir-core", "processor-hl7v2", "adt-config", "processor-csv"]
+
 [dependencies]
 rdkafka = { version = "0.38", features = ["ssl", "cmake-build"] }
 tokio = { version = "1.50", features = ["full"] }
@@ -24,7 +27,7 @@ opentelemetry = "0.32"
 opentelemetry_sdk = "0.32"
 opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
 itertools = "0.15"
-uuid = { version = "1", features = ["v5"] }
+uuid = { version = "1", features = ["v4"] }
 fhir-core = { path = "fhir-core" }
 processor-hl7v2 = { path = "processor-hl7v2" }
 adt-config = { path = "adt-config" }

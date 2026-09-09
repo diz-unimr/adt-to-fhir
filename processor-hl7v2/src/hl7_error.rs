@@ -1,50 +1,78 @@
 use chrono::ParseError;
+use derive_builder::UninitializedFieldError;
+use fhir_core::model::person_dto::{PersonDtoBuilderError, PersonNameBuilderError};
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::{BuilderError, DateFormatError, time};
-use rdkafka::error::KafkaError;
 use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum Hl7ProcessingError {
-    #[error("kafka error: {0}")]
-    Kafka(#[from] KafkaError),
-    #[error(transparent)]
-    Mapping(#[from] Hl7MappingError),
-}
 
 #[derive(Debug, Error)]
 pub enum Hl7MappingError {
     #[error(transparent)]
     MessageError(#[from] Hl7MessageAccessError),
-    #[error(transparent)]
-    BuilderError(#[from] BuilderError),
     #[error("failed to lookup resource {resource} with value {value}")]
     MissingResourceError { resource: String, value: String },
-    #[error(transparent)]
-    Hl7ParseError(#[from] hl7_parser::parser::ParseError),
-    #[error("builder of {builder_name} misses mandatory field value for {details}")]
-    BuilderUninitializedFieldError {
+    #[error("builder {builder_name} failed with: {builder_error}")]
+    BuilderError {
         builder_name: String,
-        details: String,
+        builder_error: String,
     },
+    #[error(transparent)]
+    Hl7MessageParseError(#[from] hl7_parser::parser::ParseError),
+    #[error("builder misses mandatory field value for {details}")]
+    BuilderUninitializedFieldError { details: String },
     #[error("builder validation failed at structure {resource} with message {details}")]
     InputValidationError { resource: String, details: String },
+    #[error(transparent)]
+    Hl7ParsingError(#[from] Hl7ParsingError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
+impl From<UninitializedFieldError> for Hl7MappingError {
+    fn from(err: UninitializedFieldError) -> Self {
+        Hl7MappingError::BuilderUninitializedFieldError {
+            details: err.field_name().to_string(),
+        }
+    }
+}
+impl From<PersonDtoBuilderError> for Hl7MappingError {
+    fn from(err: PersonDtoBuilderError) -> Self {
+        Hl7MappingError::BuilderError {
+            builder_name: "PersonDtoBuilder".to_string(),
+            builder_error: err.to_string(),
+        }
+    }
+}
+
+impl From<PersonNameBuilderError> for Hl7MappingError {
+    fn from(err: PersonNameBuilderError) -> Self {
+        Hl7MappingError::BuilderError {
+            builder_name: "PersonNameBuilderError".to_string(),
+            builder_error: err.to_string(),
+        }
+    }
+}
+
+impl From<BuilderError> for Hl7MappingError {
+    fn from(err: BuilderError) -> Self {
+        Hl7MappingError::BuilderUninitializedFieldError {
+            details: err.0.field_name().to_string(),
+        }
+    }
+}
 impl Hl7MappingError {
     pub(crate) fn name(&self) -> &str {
         match self {
             Hl7MappingError::MessageError(_) => "MessageError",
-            Hl7MappingError::BuilderError(_) => "BuilderError",
             Hl7MappingError::MissingResourceError { .. } => "MissingResourceError",
-            Hl7MappingError::Hl7ParseError(_) => "Hl7ParseError",
+            Hl7MappingError::Hl7MessageParseError(_) => "Hl7ParseError",
             Hl7MappingError::Other(_) => "Other",
             Hl7MappingError::BuilderUninitializedFieldError { .. } => {
                 "BuilderUninitializedFieldError"
             }
             Hl7MappingError::InputValidationError { .. } => "InputValidationError",
+            Hl7MappingError::Hl7ParsingError(_) => "Hl7ParsingError",
+            Hl7MappingError::BuilderError { .. } => "BuilderError",
         }
     }
 }
