@@ -1,6 +1,8 @@
 use chrono::ParseError;
 use derive_builder::UninitializedFieldError;
-use fhir_core::model::person_dto::{PersonDtoBuilderError, PersonNameBuilderError};
+use fhir_core::model::person_dto::{
+    InsuranceBuilderError, PersonDtoBuilderError, PersonNameBuilderError,
+};
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::{BuilderError, DateFormatError, time};
 use thiserror::Error;
@@ -48,6 +50,15 @@ impl From<PersonNameBuilderError> for Hl7MappingError {
     fn from(err: PersonNameBuilderError) -> Self {
         Hl7MappingError::BuilderError {
             builder_name: "PersonNameBuilderError".to_string(),
+            builder_error: err.to_string(),
+        }
+    }
+}
+
+impl From<InsuranceBuilderError> for Hl7MappingError {
+    fn from(err: InsuranceBuilderError) -> Self {
+        Hl7MappingError::BuilderError {
+            builder_name: "InsuranceBuilderError".to_string(),
             builder_error: err.to_string(),
         }
     }

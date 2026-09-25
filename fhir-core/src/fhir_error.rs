@@ -9,7 +9,7 @@ pub enum FhirMappingError {
     #[error(transparent)]
     MissingContentError(#[from] ContentError),
     #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    ProcessingFailed(#[from] anyhow::Error),
 }
 
 impl From<BuilderError> for FhirMappingError {
@@ -24,14 +24,14 @@ impl FhirMappingError {
 
             FhirMappingError::MissingResourceError { .. } => "MissingResourceError",
 
-            FhirMappingError::Other(_) => "Other",
+            FhirMappingError::ProcessingFailed(_) => "ProcessingFailed",
         }
     }
 }
 
 impl From<ParseError> for ContentError {
     fn from(err: ParseError) -> Self {
-        ContentError::from(err).into()
+        ParsingError::from(err).into()
     }
 }
 
@@ -50,7 +50,7 @@ pub enum ContentError {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum ParsingError {
+pub enum ParsingError {
     #[error(transparent)]
     DateFormatError(#[from] DateFormatError),
     #[error(transparent)]

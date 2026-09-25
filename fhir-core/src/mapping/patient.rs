@@ -1,5 +1,5 @@
-use crate::fhir_error::ContentError;
 use crate::fhir_error::ContentError::MissingValueError;
+use crate::fhir_error::{ContentError, FhirMappingError};
 use crate::model::person_dto::{GenderDto, Insurance, MaritalStatusDto, PersonDto};
 use adt_config::config::Fhir;
 use anyhow::anyhow;
@@ -9,26 +9,94 @@ use chrono_tz::Europe::Berlin;
 use std::sync::LazyLock;
 
 use crate::mapping::misc::{
-    field_extension, get_cc_with_one_code, identifier_search, parse_date, upsert_reference,
+    EntryRequestType, bundle_entry, field_extension, get_cc_with_one_code,
+    get_period_from_date_time, parse_date, parse_date_as_date_time, patch_bundle_entry,
+    upsert_reference,
 };
-use crate::model::meta::ModelDto;
+use crate::model::meta::{ModelDto, Operation};
+
 use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
 use fhir_model::r4b::resources::{
-    Parameters, ParametersParameter, ParametersParameterValue, Patient, PatientBuilder,
-    PatientDeceased, PatientMultipleBirth, ResourceType,
+    BundleEntry, Parameters, ParametersParameter, ParametersParameterValue, Patient,
+    PatientBuilder, PatientDeceased, PatientMultipleBirth, ResourceType,
 };
 use fhir_model::r4b::types::{
     Address, CodeableConcept, Coding, ExtensionValue, HumanName, Identifier, Meta, Period,
     Reference,
 };
 use fhir_model::time::OffsetDateTime;
-use fhir_model::{BuilderError, Date, DateTime, Instant};
-
-use log::{Level, log, warn};
+use fhir_model::{BuilderError, DateTime, Instant};
+use log::{Level, log};
 use regex::Regex;
 
-pub fn map(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError> {
+pub fn map(data: &PersonDto, config: &Fhir) -> Result<Option<BundleEntry>, FhirMappingError> {
+    match &data.meta.operation {
+        Operation::UpdateAsCreate | Operation::CreateIfNotExists | Operation::Delete => {
+            let pat = map_patient(data, config);
+            match &data.meta.operation {
+                Operation::UpdateAsCreate => Ok(Some(bundle_entry(
+                    pat?,
+                    EntryRequestType::UpdateAsCreate,
+                    config,
+                )?)),
+                Operation::CreateIfNotExists => Ok(Some(bundle_entry(
+                    pat?,
+                    EntryRequestType::ConditionalCreate,
+                    config,
+                )?)),
+                Operation::Delete => match pat {
+                    Ok(pat) => {
+                        // return full mapped patient with delete request
+                        Ok(Some(bundle_entry(pat, EntryRequestType::Delete, config)?))
+                    }
+                    Err(content_error) => {
+                        // in case of mapping error, try map minimal necessary information to create delete request
+                        if let Ok(pat_ident) = create_patient_identifiers(data, config) {
+                            let min_data_pat =
+                                PatientBuilder::default().identifier(pat_ident).build()?;
+                            Ok(Some(bundle_entry(
+                                min_data_pat,
+                                EntryRequestType::Delete,
+                                config,
+                            )?))
+                        } else {
+                            Err(FhirMappingError::MissingContentError(MissingValueError {
+                                property: "expected to create a DELETE patient request! \
+                                even identifier creation failed - please check message content!"
+                                    .to_string(),
+                            }))
+                        }
+                    }
+                },
+                _ => Err(FhirMappingError::ProcessingFailed(anyhow!(
+                    "map patient - unexpected operation at processing operation type- bugfix needed!"
+                ))),
+            }
+        }
+
+        Operation::Patch => {
+            if let Some((content, target_to_be_patched)) = create_patient_merge_dto(data, config)? {
+                let patch = patch_bundle_entry(
+                    content,
+                    &ResourceType::Patient,
+                    &target_to_be_patched,
+                    config,
+                )?;
+                Ok(Some(patch))
+            } else {
+                // no data to patch
+                Err(FhirMappingError::MissingContentError(
+                    MissingValueError {
+                        property:
+                        "patient merge - data missing but tried to create patient merge - check messsage!".to_string()}
+                ))
+            }
+        }
+        Operation::Skip => Ok(None),
+    }
+}
+pub fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError> {
     // patient resource
     let mut patient = Patient::builder()
         .meta(
@@ -52,68 +120,65 @@ pub fn map(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError>
     }
 
     // deceased flag
-    patient.deceased = map_deceased(&pat_data)?;
+    patient.deceased = map_deceased(pat_data)?;
 
-    patient.multiple_birth = map_multiple_birth(&pat_data)?;
+    patient.multiple_birth = map_multiple_birth(pat_data)?;
 
     Ok(patient)
 }
 
-fn map_gender(input: &GenderDto) -> AdministrativeGender {
+fn map_gender(input: &Option<GenderDto>) -> AdministrativeGender {
     match input {
-        GenderDto::Male => AdministrativeGender::Male,
-        GenderDto::Female => AdministrativeGender::Female,
-        GenderDto::Diverse => AdministrativeGender::Other,
-        GenderDto::Unknown => AdministrativeGender::Unknown,
+        Some(GenderDto::Male) => AdministrativeGender::Male,
+        Some(GenderDto::Female) => AdministrativeGender::Female,
+        Some(GenderDto::Diverse) => AdministrativeGender::Other,
+        None | Some(GenderDto::Unknown) => AdministrativeGender::Unknown,
     }
 }
 
-fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderError> {
-    let mut names = vec![];
+pub fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderError> {
+    let mut names = Vec::new();
 
-    for entry in &person.names {
-        if let Some(name_entry) = entry {
-            let name_use = match name_entry.is_maiden {
-                Some(false) => Some(NameUse::Official),
-                Some(true) => Some(NameUse::Maiden),
-                _ => None,
-            };
-            let mut name_build = HumanName::builder().build()?;
-            if Some(name_use).is_some() {
-                name_build.r#use = name_use;
-            }
-            name_build.given = name_entry.given_name.clone();
+    for name_entry in person.names.iter().flatten() {
+        let name_use = match name_entry.is_maiden {
+            Some(false) => Some(NameUse::Official),
+            Some(true) => Some(NameUse::Maiden),
+            _ => None,
+        };
 
-            name_build.family = name_entry.family.clone();
+        let mut name_build = HumanName::builder().build()?;
+        name_build.r#use = name_use;
+        name_build.given = name_entry.given_name.clone();
+        name_build.family = name_entry.family.clone();
 
-            // prefix
-            if let Some(prefix) = name_entry.name_prefix.clone() {
-                name_build.prefix = vec![Some(prefix.to_string())];
-                name_build.prefix_ext = vec![Some(field_extension(
-                    "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
-                    ExtensionValue::Code("AC".into()),
-                )?)];
-            }
-
-            // namenszusatz
-            if let Some(namenszusatz) = name_entry.name_extension.clone() {
-                name_build.family_ext = Some(field_extension(
-                    "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
-                    ExtensionValue::String(namenszusatz.to_string()),
-                )?);
-            }
-
-            // vorsatzwort
-            if let Some(vorsatzwort) = name_entry.name_affix.clone() {
-                name_build.family_ext = Some(field_extension(
-                    "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
-                    ExtensionValue::String(vorsatzwort.to_string()),
-                )?);
-            }
-
-            names.push(Some(name_build))
+        // prefix
+        if let Some(prefix) = name_entry.name_prefix.clone() {
+            name_build.prefix = vec![Some(prefix)];
+            name_build.prefix_ext = vec![Some(field_extension(
+                "http://hl7.org/fhir/StructureDefinition/iso21090-EN-qualifier".into(),
+                ExtensionValue::Code("AC".into()),
+            )?)];
         }
+
+        // namenszusatz
+        if let Some(namenszusatz) = name_entry.name_extension.clone() {
+            name_build.family_ext = Some(field_extension(
+                "http://fhir.de/StructureDefinition/humanname-namenszusatz".into(),
+                ExtensionValue::String(namenszusatz),
+            )?);
+        }
+
+        // vorsatzwort
+        if let Some(vorsatzwort) = name_entry.name_affix.clone() {
+            name_build.family_ext = Some(field_extension(
+                "http://hl7.org/fhir/StructureDefinition/humanname-own-prefix".into(),
+                ExtensionValue::String(vorsatzwort),
+            )?);
+        }
+
+        names.push(Some(name_build));
     }
+
     Ok(names)
 }
 
@@ -122,32 +187,24 @@ fn map_multiple_birth(pat_data: &PersonDto) -> Result<Option<PatientMultipleBirt
     let multi_birth_number = pat_data.multiple_birth_order;
     let msg_id = pat_data.id();
 
-    #[derive(Debug, PartialEq, Eq)]
-    enum MultiBirthFlags {
-        Yes,
-        No,
-        None,
-        Unsupported(String),
-    }
-
     match (multi_birth_flag, multi_birth_number) {
         // nur Mehrlingsgeburt-Kennung vorhanden
-        (multi_birth_flag, None) => match multi_birth_flag {
-            Some(true) => Ok(Some(PatientMultipleBirth::Boolean(true))),
-            Some(false) => Ok(Some(PatientMultipleBirth::Boolean(false))),
-            None => Ok(None),
+        (Some(multi_birth_flag), None) => match multi_birth_flag {
+            true => Ok(Some(PatientMultipleBirth::Boolean(true))),
+            false => Ok(Some(PatientMultipleBirth::Boolean(false))),
         },
 
         (_multi_birth_flag, Some(multi_birth_number)) => Ok(Some(PatientMultipleBirth::Integer(
             multi_birth_number as i32,
         ))),
+        (None, None) => Ok(None),
     }
 }
 
 fn map_deceased(data: &PersonDto) -> Result<Option<PatientDeceased>, ContentError> {
     // patient vital status
     let death_time = data.time_of_death.clone();
-    let death_confirm = data.is_deceased_indicator.clone();
+    let death_confirm = data.is_deceased_indicator;
 
     match (death_time, death_confirm) {
         (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(death_time))),
@@ -157,7 +214,7 @@ fn map_deceased(data: &PersonDto) -> Result<Option<PatientDeceased>, ContentErro
     }
 }
 
-fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, BuilderError> {
+pub fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, BuilderError> {
     let mut res = vec![];
 
     for elem in dto.address.clone() {
@@ -191,7 +248,7 @@ fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, BuilderErr
 
     Ok(res)
 }
-fn create_patient_merge_dto(
+pub fn create_patient_merge_dto(
     patient_dto: &PersonDto,
     config: &Fhir,
 ) -> Result<(Option<(Parameters, Identifier)>), ContentError> {
@@ -201,7 +258,13 @@ fn create_patient_merge_dto(
             new_pid,
             config,
         )?)),
-        (_, _) => Ok(None),
+        (_, _) => {
+            log!(
+                Level::Error,
+                "failed to create a patient merge data - no pid found"
+            );
+            Ok(None)
+        }
     }
 }
 pub fn create_patient_merge(
@@ -396,7 +459,7 @@ pub fn parse_datetime(input: &str) -> Result<DateTime, ContentError> {
 fn create_patient_identifiers(
     dto: &PersonDto,
     config: &Fhir,
-) -> Result<Vec<Option<Identifier>>, BuilderError> {
+) -> Result<Vec<Option<Identifier>>, ContentError> {
     // mandatory PID identifier
     let mut identifiers = vec![Some(create_patient_identifier_pid(
         dto.pid.clone(),
@@ -414,12 +477,13 @@ fn create_patient_identifiers(
                 Ok(None)
             }
         })
-        .collect::<Result<Vec<Option<Identifier>>, BuilderError>>()?;
+        .collect::<Result<Vec<Option<Identifier>>, ContentError>>()?;
 
     let ids: Vec<_> = insurance_ids.into_iter().flatten().collect();
 
     // first pick is insurance number of 10 literals without expiration date
     // second pick is first number without expiration date
+    // or first available
     const GKV10_SYSTEM: &str = "http://fhir.de/sid/gkv/kvid-10";
     let selected = ids
         .iter()
@@ -431,6 +495,7 @@ fn create_patient_identifiers(
             ids.iter()
                 .find(|v| v.period.as_ref().and_then(|p| p.end.as_ref()).is_none())
         })
+        .or_else(|| ids.first())
         .cloned();
 
     if let Some(id) = selected {
@@ -444,7 +509,7 @@ fn map_versicherungsdaten(
     msg_id: String,
     insurance: &Insurance,
     config: &Fhir,
-) -> Result<Option<Identifier>, BuilderError> {
+) -> Result<Option<Identifier>, ContentError> {
     // Versicherungsnummer
     let mut result = Identifier::builder()
         .value(insurance.insurance_number.to_string())
@@ -505,18 +570,16 @@ fn map_versicherungsdaten(
         result.system = Some(config.person.other_insurance_system.to_string());
     }
 
-    result.period = get_identifier_period(insurance)?;
+    result.period = get_insurance_period(insurance)?;
 
     Ok(Some(result))
 }
 
-fn get_identifier_period(insurance: &Insurance) -> Result<Option<Period>, BuilderError> {
-    match (insurance.valid_from.clone(), insurance.valid_to.clone()) {
-        (Some(start), Some(end)) => Ok(Some(Period::builder().start(start).end(end).build()?)),
-        (Some(start), None) => Ok(Some(Period::builder().start(start).build()?)),
-        (None, Some(end)) => Ok(Some(Period::builder().end(end).build()?)),
-        (None, None) => Ok(None),
-    }
+pub fn get_insurance_period(insurance: &Insurance) -> Result<Option<Period>, ContentError> {
+    let start = parse_date_as_date_time(insurance.valid_from.clone())?;
+    let end = parse_date_as_date_time(insurance.valid_to.clone())?;
+
+    Ok(get_period_from_date_time(start, end)?)
 }
 
 pub fn is_valid_gkv10(insurance_number: &str) -> bool {

@@ -5,18 +5,17 @@ use crate::hl7_error::Hl7MessageAccessError::{
 
 use crate::hl7_error::{Hl7MessageAccessError, Hl7ParsingError};
 use anyhow::anyhow;
-use chrono::{NaiveDateTime, TimeZone};
+use chrono::{NaiveDate, NaiveDateTime, TimeZone, Timelike};
 use chrono_tz::Europe::Berlin;
 use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::time::OffsetDateTime;
-use fhir_model::{DateTime, Instant};
+use fhir_model::{DateTime, Instant, time};
 use hl7_parser::Message;
 use hl7_parser::message::{Repeat, Segment};
 use hl7_parser::query::LocationQueryResult;
 use std::fmt;
 use std::fmt::Display;
 use std::str::FromStr;
-
 /// message type
 pub const ENV_1: &str = "ENV-1";
 
@@ -360,12 +359,22 @@ pub fn parse_datetime(input: &str) -> Result<DateTime, Hl7ParsingError> {
     )))
 }
 
+pub fn parse_naive_date(input: &str) -> Result<NaiveDate, Hl7ParsingError> {
+    NaiveDate::parse_from_str(input, "%Y%m%d").map_err(Hl7ParsingError::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use adt_config::test_utils::tests::read_test_resource;
     use hl7_parser::parser::parse_segment;
     use rstest::rstest;
+
+    #[test]
+    fn parse_naive_date_test() {
+        assert!(parse_naive_date("2021-01-01").is_err());
+        assert!(parse_naive_date("20210101").is_ok());
+    }
 
     #[test]
     fn test_parse_subcomponent() {

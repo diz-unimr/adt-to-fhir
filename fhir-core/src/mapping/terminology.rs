@@ -1,7 +1,7 @@
 // todo: generate terminology from FHIR models
 use fhir_model::r4b::types::Coding;
 
-pub(crate) enum AufnahmeGrundStelle<'a> {
+pub enum AufnahmeGrundStelle<'a> {
     ErsteUndZweite(&'a str),
     Dritte(&'a str),
     Vierte(&'a str),
@@ -19,7 +19,7 @@ impl From<AufnahmeGrundStelle<'_>> for Option<Coding> {
     }
 }
 
-pub(crate) enum EntlassgrundStelle<'a> {
+pub enum EntlassgrundStelle<'a> {
     ErsteUndZweite(&'a str),
     Dritte(&'a str),
 }

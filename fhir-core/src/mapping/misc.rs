@@ -10,7 +10,8 @@ use fhir_model::r4b::resources::{
     BundleEntry, BundleEntryRequest, IdentifiableResource, Parameters, Resource, ResourceType,
 };
 use fhir_model::r4b::types::{
-    CodeableConcept, Coding, Extension, ExtensionValue, FieldExtension, Identifier, Reference,
+    CodeableConcept, Coding, Extension, ExtensionValue, FieldExtension, Identifier, Meta, Period,
+    PeriodBuilder, Reference,
 };
 use fhir_model::time::{Month, OffsetDateTime};
 use fhir_model::{BuilderError, Date, DateTime, Instant, time};
@@ -234,13 +235,60 @@ pub fn field_extension(
         .build()
 }
 
-pub fn parse_date(input: &str) -> Result<Date, ParsingError> {
-    let dt = NaiveDate::parse_and_remainder(input, "%Y%m%d")?.0;
+pub fn parse_date(date: Option<NaiveDate>) -> Result<Option<Date>, ParsingError> {
+    if let Some(date) = date {
+        let date = time::Date::from_calendar_date(
+            date.year(),
+            Month::try_from(date.month() as u8)?,
+            date.day() as u8,
+        )?;
+        Ok(Some(Date::Date(date)))
+    } else {
+        Ok(None)
+    }
+}
 
-    let date = time::Date::from_calendar_date(
-        dt.year(),
-        Month::try_from(dt.month() as u8)?,
-        dt.day() as u8,
-    )?;
-    Ok(Date::Date(date))
+pub fn parse_date_as_date_time(date: Option<NaiveDate>) -> Result<Option<DateTime>, ParsingError> {
+    if let Some(date) = date {
+        let date = time::Date::from_calendar_date(
+            date.year(),
+            Month::try_from(date.month() as u8)?,
+            date.day() as u8,
+        )?;
+        Ok(Some(DateTime::Date(Date::Date(date))))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn get_meta(config: &Fhir) -> Result<Meta, BuilderError> {
+    Meta::builder()
+        .source(config.meta_source.to_string())
+        .build()
+}
+
+pub fn get_period_from_date(
+    start: Option<Date>,
+    end: Option<Date>,
+) -> Result<Option<Period>, ContentError> {
+    match (start, end) {
+        (Some(s), Some(e)) => {
+            get_period_from_date_time(Some(DateTime::Date(s)), Some(DateTime::Date(e)))
+        }
+        (None, Some(e)) => get_period_from_date_time(None, Some(DateTime::Date(e))),
+        (Some(start), None) => get_period_from_date_time(Some(DateTime::Date(start)), None),
+        _ => Ok(None),
+    }
+}
+
+pub fn get_period_from_date_time(
+    start: Option<DateTime>,
+    end: Option<DateTime>,
+) -> Result<Option<Period>, ContentError> {
+    match (start, end) {
+        (Some(s), Some(e)) => Ok(Some(PeriodBuilder::default().start(s).end(e).build()?)),
+        (None, Some(e)) => Ok(Some(PeriodBuilder::default().end(e).build()?)),
+        (Some(start), None) => Ok(Some(PeriodBuilder::default().start(start).build()?)),
+        _ => Ok(None),
+    }
 }

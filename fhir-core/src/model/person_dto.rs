@@ -1,4 +1,5 @@
 use crate::model::meta::{MappingOp, Operation};
+use chrono::NaiveDate;
 use derive_builder::Builder;
 use fhir_model::{Date, DateTime};
 
@@ -19,8 +20,8 @@ impl crate::model::meta::ModelDto for PersonDto {
 pub struct PersonDto {
     pub meta: MappingOp,
     pub pid: String,
-
-    pub gender: GenderDto,
+    #[builder(default)]
+    pub gender: Option<GenderDto>,
     #[builder(default)]
     pub date_of_birth: Option<Date>,
     #[builder(default)]
@@ -57,10 +58,18 @@ pub struct Insurance {
     #[builder(default)]
     pub assigner_id: String,
     #[builder(default)]
-    pub valid_from: Option<DateTime>,
+    pub valid_from: Option<NaiveDate>,
     #[builder(default)]
-    pub valid_to: Option<DateTime>,
+    pub valid_to: Option<NaiveDate>,
+    #[builder(default)]
+    pub insurance_type: Option<InsuranceType>,
 }
+#[derive(Debug, Clone, PartialEq)]
+pub enum InsuranceType {
+    GKV_PKV,
+    Other,
+}
+
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
 pub struct PersonName {
