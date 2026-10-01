@@ -1,8 +1,8 @@
 use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::mapper::{map_visit_number, subject_ref};
-use crate::fhir::patient::map_deceased;
 use adt_config::config::Fhir;
 use anyhow::anyhow;
+use chrono::NaiveDateTime;
 use fhir_core::mapping::misc::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code, parse_datetime,
     resource_ref,
@@ -183,6 +183,9 @@ fn map_vital_status(
     pid: &str,
     visit: &str,
 ) -> Result<Option<Observation>, MappingError> {
+    let is_deceased: bool;
+    let deceased_date: Option<NaiveDateTime>;
+
     if map_deceased(msg)?.is_none() || map_deceased(msg)? == Some(PatientDeceased::Boolean(false)) {
         return match message_type(msg).ok() {
             // is alive observation will be created at patient admission,

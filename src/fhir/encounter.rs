@@ -9,15 +9,16 @@ use crate::fhir::mapper::{
 };
 use adt_config::config::Fhir;
 
-use crate::fhir::terminology::{
-    AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
-};
 use EncounterType::Einrichtungskontakt;
 use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
 use fhir_core::fhir_error::FhirMappingError;
+use fhir_core::mapping::fall_mapper::{map_default_identifier_enc, map_meta};
 use fhir_core::mapping::misc::{
     coding_data_absent_reason_unsupported, get_cc_with_one_code, parse_datetime, resource_ref,
+};
+use fhir_core::mapping::terminology::{
+    AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
 use fhir_core::model::fab_mapping::map_fab_schluessel;
 use fhir_model::DateTime;
@@ -27,16 +28,18 @@ use fhir_model::r4b::resources::{
     EncounterLocation, ResourceType,
 };
 use fhir_model::r4b::types::{
-    CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
+    CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Period, Reference,
 };
 use hl7_parser::Message;
 use hl7_parser::message::Field;
 use log::{Level, log};
+use processor_hl7v2::hl7::is_ward_valid_icu;
 use processor_hl7v2::hl7::parser::{
     MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1, PV1_36_1,
     PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
     get_message_key, message_type, query,
 };
+use processor_hl7v2::hl7_to_encounter::map_visit_number;
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -412,7 +415,7 @@ fn base_encounter(
             // identifier for Einrichtungskontakt
             Some(map_level_identifier(enc_type, config, msg)?),
             // common identifier is last
-            Some(map_default_identifier(
+            Some(map_default_identifier_enc(
                 config.fall.system.clone(),
                 visit_number.to_string(),
             )?),
@@ -425,24 +428,6 @@ fn base_encounter(
         .status(map_encounter_status(&map_period(msg, enc_type)?));
 
     Ok(admit)
-}
-
-fn map_default_identifier(system: String, value: String) -> Result<Identifier, MappingError> {
-    Ok(Identifier::builder()
-        .system(system)
-        .value(value)
-        .r#use(IdentifierUse::Official)
-        .r#type(
-            CodeableConcept::builder()
-                .coding(vec![Some(
-                    Coding::builder()
-                        .system("http://terminology.hl7.org/CodeSystem/v2-0203".to_string())
-                        .code("VN".to_string())
-                        .build()?,
-                )])
-                .build()?,
-        )
-        .build()?)
 }
 
 /// Maps the [`IdentifierUse::Usual`] identifier depending on the [`EncounterType`].
@@ -553,7 +538,7 @@ fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
 
     if let Some(pv2_3_1) = query(msg, PV2_3_1)
         && check_is_numeric_ascii(pv2_3_1, PV2_3_1)?
-        && pv2_3_1.eq("06")
+        && (pv2_3_1.eq("06") | pv2_3_1.eq("05"))
     {
         Ok(Some(
             Coding::builder()
@@ -564,6 +549,7 @@ fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
         ))
     } else {
         match (code, query(msg, PV1_36_1)) {
+            // fixme : sollte PV1-4.1 sein z.b. 'E^^HL7~01^Notfall^301'
             // A->'Unfall/Notarztwagen', E-> 'Notfall ohne Einweisung'
             (Some("A"), _) | (Some("E"), _) => Ok(Some(
                 Coding::builder()
@@ -623,13 +609,6 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
         (_, Some(_)) => EncounterStatus::Finished,
         (Some(_), _) => EncounterStatus::InProgress,
     }
-}
-
-fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
-    Ok(Meta::builder()
-        .profile(vec![Some(config.fall.profile.clone())])
-        .source(config.meta_source.to_string())
-        .build()?)
 }
 
 fn map_encounter_class(msg: &Message) -> Result<Coding, anyhow::Error> {
@@ -853,7 +832,6 @@ fn map_conditions(
             let Some(condition_id) = dg1.field(20) else {
                 continue;
             };
-
             if condition_id.is_empty() || priority.is_empty() || condition_typ.is_empty() {
                 continue;
             }

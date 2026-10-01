@@ -1,5 +1,5 @@
 use crate::error::{MappingError, MessageAccessError, ParsingError};
-use crate::fhir::{encounter, location, observation, organization, patient};
+use crate::fhir::{encounter, location, observation, organization};
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -16,18 +16,16 @@ use processor_hl7v2::hl7::parser::{
     message_type, query,
 };
 
+use crate::error::MappingError::Hl7ParsingError;
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
-use fhir_core::mapping::misc::upsert_reference;
-use fhir_core::mapping::misc::{identifier_search, resource_ref};
+use fhir_core::mapping::misc::resource_ref;
 use fhir_core::model::fab_mapping::is_valid_date;
-use fhir_model::time::{Month, OffsetDateTime};
-use fhir_model::{BuilderError, Instant};
-use fhir_model::{Date, DateTime, time};
+use fhir_model::Instant;
+use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 use log::{Level, log};
-use std::slice;
-use uuid::Uuid;
+use processor_hl7v2::hl7_to_patient_dto;
 
 pub(crate) struct FhirMapper {
     pub(crate) config: Fhir,
@@ -44,6 +42,7 @@ impl FhirMapper {
 
     pub(crate) fn map(&self, msg: &str) -> Result<Option<String>, MappingError> {
         // deserialize
+
         let v2_msg = Message::parse_with_lenient_newlines(msg, true)?;
 
         // map hl7 message
@@ -74,22 +73,28 @@ impl FhirMapper {
 
         Ok(Some(result))
     }
-    pub fn is_begleitperson(msg: &Message) -> Result<bool, MessageAccessError> {
-        Ok(query(msg, PV1_2).is_some_and(|f| f == "H"))
-    }
 
     fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>, MappingError> {
-        if is_begleitperson(v2_msg)? {
+        if query(v2_msg, PV1_2).is_some_and(|f| f == "H") {
             log!(
                 Level::Info,
                 "Skipping message id '{}' since it targets patients companion.",
-                get_message_key(v2_msg)?
+                get_message_key(v2_msg).map_err(|e| MappingError::Hl7ParsingError(
+                    Hl7ParsingError::Other(anyhow!(e))
+                ))?
             );
 
             return Ok(vec![]);
         }
 
-        let p = patient::map(v2_msg, &self.config)?;
+        let p = hl7_to_patient_dto::map(v2_msg)
+            .map_err(|e| {
+                MappingError::Hl7ParsingError(Hl7ParsingError::Other(anyhow!(e.to_string())))
+            })?
+            .map(|dto| {
+                let patient1 = Ok(fhir_core::mapping::patient::map(dto, &self.config))?;
+                patient1
+            });
         let e = encounter::map(v2_msg, &self.config, &self.resources)?;
         let l = location::map(v2_msg, &self.config, &self.resources)?;
         let obs = observation::map(v2_msg, &self.config)?;
@@ -148,41 +153,12 @@ pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
     }
 }
 
-pub(crate) fn get_meta(config: &Fhir) -> Result<Meta, MappingError> {
-    Ok(Meta::builder()
-        .source(config.meta_source.to_string())
-        .build()?)
-}
 pub(crate) fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, MappingError> {
     let pid = query(msg, PID_2).ok_or(anyhow!("missing pid value in PID.2"))?;
 
     resource_ref(&ResourceType::Patient, pid, sid).map_err(MappingError::BuilderError)
 }
 
-pub(crate) fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> {
-    match message_type(msg)? {
-        MessageType::A14 => Ok(query(msg, PID_4).ok_or(anyhow!("empty visit number in PID.4"))?),
-        _ => Ok(query(msg, PV1_19_1).ok_or(anyhow!("empty visit number in PV1.19"))?),
-    }
-}
-
-pub(crate) fn is_ward_valid_icu(msg: &Message, resources: &ResourceMap) -> bool {
-    query(msg, PV1_3_1)
-        .and_then(|ward_id| resources.ward_map.get(ward_id))
-        .is_some_and(|ward| {
-            ward.is_icu
-                && query(msg, ZBE_2)
-                    .and_then(|zbe_start| {
-                        let option = NaiveDate::parse_from_str(zbe_start, "%Y%m%d%H%M");
-                        option.ok()
-                    })
-                    .is_some_and(|n_date| {
-                        ward.valid_period
-                            .iter()
-                            .any(|period| is_valid_date(period, &n_date))
-                    })
-        })
-}
 /// FieldExtension with unsupported data absent reason entry
 pub(crate) fn coding_data_absent_reason_unsupported() -> Result<CodeableConcept, MappingError> {
     Ok(CodeableConcept::builder()
@@ -203,7 +179,7 @@ mod tests {
     };
     use fhir_core::mapping::misc::{full_url_from_identifiers, parse_datetime, patch_bundle_entry};
     use fhir_model::DateTime::DateTime;
-    use fhir_model::r4b::codes::HTTPVerb::Patch;
+    use fhir_model::r4b::codes::HTTPVerb::{Delete, Patch};
     use fhir_model::r4b::codes::ResourceType::Observation;
     use fhir_model::r4b::resources::{
         Bundle, BundleEntry, BundleEntryRequest, Encounter, ObservationBuilder,
@@ -214,8 +190,10 @@ mod tests {
     use fhir_model::time::macros::datetime;
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use insta::assert_json_snapshot;
+    use processor_hl7v2::hl7_to_patient_dto::map;
     use rstest::rstest;
     use serde_json::Value;
+    use std::slice;
     use std::str::FromStr;
 
     #[test]
@@ -903,5 +881,57 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
                 }
             }
         }
+    }
+
+    #[test]
+    fn patient_merge_snapshot_test() {
+        let config = &get_test_config();
+
+        let msg =
+            Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
+EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
+PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
+MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
+                .unwrap();
+        let entry = fhir_core::mapping::patient::map(
+            &hl7_to_patient_dto::map(&msg).unwrap().unwrap(),
+            config,
+        )
+        .unwrap()
+        .unwrap()
+        .resource
+        .unwrap();
+        insta::assert_json_snapshot!(entry);
+    }
+
+    #[test]
+    fn test_delete_patient_snapshot() {
+        let config = &get_test_config();
+
+        let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20221121142711||ADT^A29^ADT_A21|71546182|P|2.5||684450133|NE|NE||8859/1
+EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
+PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#, true)
+            .unwrap();
+
+        let entry = fhir_core::mapping::patient::map(&map(&msg).unwrap().unwrap(), config)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            entry.request,
+            Some(
+                BundleEntryRequest::builder()
+                    .url(format!(
+                        "{}?identifier={}|1234567",
+                        &ResourceType::Patient,
+                        config.person.system
+                    ))
+                    .method(Delete)
+                    .build()
+                    .unwrap()
+            )
+        );
+
+        insta::assert_json_snapshot!(entry);
     }
 }

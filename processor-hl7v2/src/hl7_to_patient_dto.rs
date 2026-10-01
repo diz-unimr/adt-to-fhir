@@ -6,7 +6,7 @@ pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponen
 use crate::hl7_error::Hl7MessageAccessError::{
     MissingMessageSegment, MissingMessageValue, UnsupportedContentError,
 };
-use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7ParsingError};
+use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
 use anyhow::anyhow;
 use fhir_core::mapping::patient::is_valid_gkv10;
 use fhir_core::model::meta::Operation::Patch;

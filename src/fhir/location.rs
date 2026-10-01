@@ -1,5 +1,5 @@
 use crate::error::MappingError;
-use crate::fhir::mapper::{get_meta, is_inpatient_location, is_ward_valid_icu, parse_fab};
+use crate::fhir::mapper::{is_inpatient_location, is_ward_valid_icu, parse_fab};
 
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;

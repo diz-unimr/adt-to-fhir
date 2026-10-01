@@ -1,14 +1,12 @@
 use crate::error::MappingError;
 use adt_config::config::Fhir;
-use fhir_model::r4b::codes::IdentifierUse;
 
-use crate::fhir::mapper::{get_meta, parse_fab};
+use crate::fhir::mapper::parse_fab;
 use adt_config::resources::ResourceMap;
-use fhir_core::mapping::misc::{
-    EntryRequestType, bundle_entry, get_cc_with_one_code, resource_ref,
-};
-use fhir_model::r4b::resources::{BundleEntry, Organization, ResourceType};
-use fhir_model::r4b::types::Identifier;
+use fhir_core::mapping::misc::{EntryRequestType, bundle_entry};
+use fhir_core::mapping::orga_mapping::{map_department_dto, map_ward_dto};
+use fhir_core::model::orga_dto::{DepartmentDto, WardDto};
+use fhir_model::r4b::resources::{BundleEntry, Organization};
 use hl7_parser::Message;
 use processor_hl7v2::hl7::parser::{PV1_3_1, query};
 
@@ -41,26 +39,11 @@ fn map_department_org(
     resources: &ResourceMap,
 ) -> Result<Option<Organization>, MappingError> {
     if let Some(fab_ref) = parse_fab(msg) {
-        let mut organization = Organization::builder()
-            .meta(get_meta(config)?)
-            .identifier(vec![Some(
-                Identifier::builder()
-                    .value(fab_ref.to_string())
-                    .system(config.organization.department.system.to_string())
-                    .r#use(IdentifierUse::Usual)
-                    .build()?,
-            )])
-            .r#type(vec![Some(get_cc_with_one_code(
-                "dept".to_string(),
-                "http://terminology.hl7.org/CodeSystem/organization-type".to_string(),
-            )?)])
-            .build()?;
+        let department = DepartmentDto {
+            department_identifier: fab_ref.to_string(),
+        };
 
-        // local department name may differ from official medical department name
-        if let Some(department_entry) = resources.department_map.get(fab_ref) {
-            organization.name = Some(department_entry.abteilungs_bezeichnung.to_string());
-        }
-        Ok(Some(organization))
+        Ok(Some(map_department_dto(&department, config, resources)?))
     } else {
         Ok(None)
     }
@@ -70,27 +53,13 @@ fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, Ma
     // ward is sometimes empty
     if let Some(ward_name) = query(msg, PV1_3_1) {
         if let Some(fab_ref) = parse_fab(msg) {
-            Ok(Some(
-                Organization::builder()
-                    .meta(get_meta(config)?)
-                    .part_of(resource_ref(
-                        &ResourceType::Organization,
-                        fab_ref,
-                        config.organization.department.system.as_str(),
-                    )?)
-                    .identifier(vec![Some(
-                        Identifier::builder()
-                            .value(ward_name.to_string())
-                            .system(config.organization.ward.system.to_string())
-                            .r#use(IdentifierUse::Usual)
-                            .build()?,
-                    )])
-                    .r#type(vec![Some(get_cc_with_one_code(
-                        "other".to_string(),
-                        "http://terminology.hl7.org/CodeSystem/organization-type".to_string(),
-                    )?)])
-                    .build()?,
-            ))
+            let ward_input = WardDto {
+                ward_name: ward_name.to_string(),
+                part_of_department: DepartmentDto {
+                    department_identifier: fab_ref.to_string(),
+                },
+            };
+            Ok(Some(map_ward_dto(&ward_input, config)?))
         } else {
             Ok(None)
         }

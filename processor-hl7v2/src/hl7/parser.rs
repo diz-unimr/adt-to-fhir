@@ -3,13 +3,13 @@ use crate::hl7_error::Hl7MessageAccessError::{
     MissingMessageSegment, MissingMessageValue, UnsupportedContentError,
 };
 
-use crate::hl7_error::{Hl7MessageAccessError, Hl7ParsingError};
+use crate::hl7_error::{Hl7MessageAccessError, Hl7MessageParsingError};
 use anyhow::anyhow;
 use chrono::{NaiveDate, NaiveDateTime, TimeZone, Timelike};
 use chrono_tz::Europe::Berlin;
 use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::time::OffsetDateTime;
-use fhir_model::{DateTime, Instant, time};
+use fhir_model::{DateTime, Instant};
 use hl7_parser::Message;
 use hl7_parser::message::{Repeat, Segment};
 use hl7_parser::query::LocationQueryResult;
@@ -88,7 +88,7 @@ pub const PV1_3_4: &str = "PV1.3.4";
 /// __note:__ usually set
 pub const PV1_3_5: &str = "PV1.3.5";
 
-/// admission source
+/// admission type
 pub const PV1_4_1: &str = "PV1.4.1";
 
 /// admission reason
@@ -335,11 +335,11 @@ pub fn get_message_key<'a>(msg: &'a Message<'_>) -> Result<&'a str, Hl7MessageAc
     ))
 }
 
-pub fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, Hl7ParsingError> {
+pub fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, Hl7MessageParsingError> {
     if !input.is_empty() && input.chars().all(|c| c.is_ascii_digit()) {
         Ok(true)
     } else {
-        Err(Hl7ParsingError::Other(anyhow!(
+        Err(Hl7MessageParsingError::Other(anyhow!(
             "input '{}' should be numeric but got '{}'",
             source,
             input
@@ -347,7 +347,7 @@ pub fn check_is_numeric_ascii(input: &str, source: &str) -> Result<bool, Hl7Pars
     }
 }
 
-pub fn parse_datetime(input: &str) -> Result<DateTime, Hl7ParsingError> {
+pub fn parse_datetime(input: &str) -> Result<DateTime, Hl7MessageParsingError> {
     let dt = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?;
     let dt_with_tz = Berlin
         .from_local_datetime(&dt)
@@ -359,8 +359,12 @@ pub fn parse_datetime(input: &str) -> Result<DateTime, Hl7ParsingError> {
     )))
 }
 
-pub fn parse_naive_date(input: &str) -> Result<NaiveDate, Hl7ParsingError> {
-    NaiveDate::parse_from_str(input, "%Y%m%d").map_err(Hl7ParsingError::from)
+pub fn parse_naive_date(input: &str) -> Result<NaiveDate, Hl7MessageParsingError> {
+    NaiveDate::parse_from_str(input, "%Y%m%d").map_err(Hl7MessageParsingError::from)
+}
+
+pub fn parse_naive_datetime(input: &str) -> Result<NaiveDateTime, Hl7MessageParsingError> {
+    NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M").map_err(Hl7MessageParsingError::from)
 }
 
 #[cfg(test)]
@@ -481,12 +485,12 @@ EVN|A01|202111221030|202111221029||
     fn check_is_numeric_ascii_test() {
         assert!(check_is_numeric_ascii("01", "test").unwrap());
 
-        if let Err(Hl7ParsingError::Other(_)) = check_is_numeric_ascii("", "test-empty") {
+        if let Err(Hl7MessageParsingError::Other(_)) = check_is_numeric_ascii("", "test-empty") {
         } else {
             panic!("check_is_numeric_ascii failed for empty input");
         }
 
-        if let Err(Hl7ParsingError::Other(_)) = check_is_numeric_ascii("a", "test-empty") {
+        if let Err(Hl7MessageParsingError::Other(_)) = check_is_numeric_ascii("a", "test-empty") {
         } else {
             panic!("check_is_numeric_ascii failed for alphanumeric input");
         }
