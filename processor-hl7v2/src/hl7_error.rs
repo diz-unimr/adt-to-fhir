@@ -1,6 +1,7 @@
-use crate::hl7_to_encounter::FallBuilderError;
 use chrono::ParseError;
 use derive_builder::UninitializedFieldError;
+use fhir_core::model::encounter_dto::FallBuilderError;
+use fhir_core::model::meta::MappingOpEncounterBuilderError;
 use fhir_core::model::person_dto::{
     InsuranceBuilderError, PersonDtoBuilderError, PersonNameBuilderError,
 };
@@ -51,6 +52,15 @@ impl From<PersonDtoBuilderError> for Hl7MappingError {
     fn from(err: PersonDtoBuilderError) -> Self {
         Hl7MappingError::BuilderError {
             builder_name: "PersonDtoBuilder".to_string(),
+            builder_error: err.to_string(),
+        }
+    }
+}
+
+impl From<MappingOpEncounterBuilderError> for Hl7MappingError {
+    fn from(err: MappingOpEncounterBuilderError) -> Self {
+        Hl7MappingError::BuilderError {
+            builder_name: "MappingOpEncounterBuilder".to_string(),
             builder_error: err.to_string(),
         }
     }

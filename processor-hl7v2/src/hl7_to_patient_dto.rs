@@ -3,20 +3,19 @@ use crate::hl7::parser::{
     get_message_key, message_type, parse_datetime, parse_naive_date, query, segment_value,
 };
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
+use crate::hl7_error::Hl7MappingError;
 use crate::hl7_error::Hl7MessageAccessError::{
     MissingMessageSegment, MissingMessageValue, UnsupportedContentError,
 };
-use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
 use anyhow::anyhow;
-use fhir_core::mapping::patient::is_valid_gkv10;
-use fhir_core::model::meta::Operation::Patch;
-use fhir_core::model::meta::{MappingOp, Operation};
+use fhir_core::mapping::patient_mapper::is_valid_gkv10;
+use fhir_core::model::meta::ProcessingOperation::Patch;
+use fhir_core::model::meta::{MappingOp, ProcessingOperation};
 use fhir_core::model::person_dto::{
     AddressDto, AddressDtoBuilder, Insurance, InsuranceBuilder, InsuranceType, MaritalStatusDto,
     PersonDto, PersonDtoBuilder, PersonDtoBuilderError, PersonName, PersonNameBuilder,
     PersonNameBuilderError,
 };
-use fhir_model::r4b::resources::PatientMultipleBirth;
 
 use hl7_parser::Message;
 use hl7_parser::message::Segment;
@@ -159,10 +158,10 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
         | MessageType::A07
         | MessageType::A08
         => {
-            Ok(Some(hl7_to_patient_dto(msg,MappingOp { id, operation: Operation::UpdateAsCreate })?))
+            Ok(Some(hl7_to_patient_dto(msg,MappingOp { id, operation: ProcessingOperation::UpdateAsCreate })?))
         }
         MessageType::A02 | MessageType::A03 | MessageType::A31 => {
-            Ok(Some(hl7_to_patient_dto(msg,MappingOp { id, operation: Operation::CreateIfNotExists })?))
+            Ok(Some(hl7_to_patient_dto(msg,MappingOp { id, operation: ProcessingOperation::CreateIfNotExists })?))
         }
         MessageType::A34 | MessageType::A40 => {
             Ok(Some(create_patient_merge_hl7(msg, MappingOp { id, operation: Patch })?))
@@ -188,7 +187,7 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
         MessageType::A29 => {
 
             // todo:  in case of mapping error fallback to a minimal delete request without resource!
-            Ok(Some(hl7_to_patient_dto(msg,MappingOp{id ,operation: Operation::Delete})?))
+            Ok(Some(hl7_to_patient_dto(msg,MappingOp{id ,operation: ProcessingOperation::Delete})?))
         }
         other => Err(Hl7MappingError::from(UnsupportedContentError(other.to_string(), ENV_1.to_string()))),
     }
@@ -278,7 +277,7 @@ mod tests {
     use super::*;
 
     use adt_config::test_utils::tests::get_test_config;
-    use fhir_core::mapping::patient::{map_addresses_dto, map_name};
+    use fhir_core::mapping::patient_mapper::{map_addresses_dto, map_name};
     use fhir_model::Date;
     use fhir_model::DateTime;
 
@@ -348,7 +347,7 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
             multibirth_flag, multibirth_num
         );
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )
@@ -375,7 +374,7 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
 PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J||DE||||N"#;
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )
@@ -389,7 +388,7 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
 PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|N||DE||||N"#;
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )
@@ -403,7 +402,7 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
 PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|2|DE||||N"#;
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )
@@ -429,7 +428,7 @@ PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M||
         );
 
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         );
@@ -447,7 +446,7 @@ EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
 PID|1|9999999|9999999|88888888|Nachname^SäuglingVorname^^^^^L||202511022120|M|||Strasse. 1&Strasse.&1^^Stadt^^30000^DE^L~^^Stadt^^^^BDL||0000000000000^PRN^PH^^^00000^0000000^^^^^000000000000|||U|||||12345678^^^KH^VN~1234567^^^KH^PT||Stadt|J|1|DE||||N"#;
 
         let msg = Message::parse_with_lenient_newlines(&input, true).unwrap();
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         );
@@ -472,7 +471,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
                     .unwrap();
 
         // act
-        let (params, _) = fhir_core::mapping::patient::create_patient_merge_dto(
+        let (params, _) = fhir_core::mapping::patient_mapper::create_patient_merge_dto(
             &create_patient_merge_hl7(
                 &msg,
                 MappingOp {
@@ -546,7 +545,7 @@ PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr.
 IN1|1||555555555^^^^NII~22222^^^^NIIP~AOK|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich|||20020120|20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||201108220723||R|||||A454874316|||||||M| ^^^^^D  |||||A454874316^^^^^^^20150630
 "#, true).unwrap();
 
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )
@@ -641,7 +640,7 @@ IN2|4||12345TES^TEST GmbH||||||||||||||||||||||||||^PC^0.0||||DE|||N|||kl|||||||
                 true,
             ).unwrap();
 
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )
@@ -664,7 +663,7 @@ IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = &get_test_config();
 
-        let actual = fhir_core::mapping::patient::map_patient(
+        let actual = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )
@@ -713,7 +712,7 @@ IN2|1||||||||||||||||||||||||||||^PC^0^K
 IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||20091231||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||||R|||||K454874316|||||||M| ^^^^^D  |||||K454874316^^^^^^^20150630
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = &get_test_config();
-        let identifiers = fhir_core::mapping::patient::map_patient(
+        let identifiers = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )
@@ -762,7 +761,7 @@ IN2|1||||||||||||||||||||||||||||^PC^0^K
 IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||||R|||||454874316|||||||M| ^^^^^D  |||||454874316^^^^^^^20150630
 IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let config = &get_test_config();
-        let identifiers = fhir_core::mapping::patient::map_patient(
+        let identifiers = fhir_core::mapping::patient_mapper::map_patient(
             &map(&msg).unwrap().unwrap(),
             &get_test_config(),
         )

@@ -4,9 +4,7 @@ use crate::fhir::encounter::EncounterType::{Fachabteilungskontakt, Versorgungsst
 use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
-use crate::fhir::mapper::{
-    is_inpatient_location, is_ward_valid_icu, map_visit_number, parse_fab, subject_ref,
-};
+use crate::fhir::mapper::{is_inpatient_location, parse_fab, subject_ref};
 use adt_config::config::Fhir;
 
 use EncounterType::Einrichtungskontakt;
@@ -15,7 +13,8 @@ use anyhow::anyhow;
 use fhir_core::fhir_error::FhirMappingError;
 use fhir_core::mapping::fall_mapper::{map_default_identifier_enc, map_meta};
 use fhir_core::mapping::misc::{
-    coding_data_absent_reason_unsupported, get_cc_with_one_code, parse_datetime, resource_ref,
+    EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported, get_cc_with_one_code,
+    parse_datetime, resource_ref,
 };
 use fhir_core::mapping::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,

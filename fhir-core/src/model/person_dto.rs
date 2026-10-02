@@ -1,17 +1,7 @@
-use crate::model::meta::{MappingOp, Operation};
+use crate::model::meta::MappingOp;
 use chrono::NaiveDate;
 use derive_builder::Builder;
 use fhir_model::{Date, DateTime};
-
-impl crate::model::meta::ModelDto for PersonDto {
-    fn id(&self) -> String {
-        self.pid.to_string()
-    }
-
-    fn operation(&self) -> Operation {
-        self.meta.operation
-    }
-}
 
 /// Main structure for person data
 
@@ -49,7 +39,11 @@ pub struct PersonDto {
     #[builder(default)]
     pub insurance: Vec<Option<Insurance>>,
 }
-
+impl PersonDto {
+    pub fn id(&self) -> &String {
+        &self.meta.id
+    }
+}
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
 pub struct Insurance {
@@ -250,7 +244,7 @@ pub struct AddressDto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::meta::MappingOpBuilder;
+    use crate::model::meta::{MappingOpBuilder, ProcessingOperation};
 
     #[test]
     fn test_gender_conversion() {
@@ -381,7 +375,7 @@ mod tests {
             .meta(
                 MappingOpBuilder::default()
                     .id("42")
-                    .operation(Operation::UpdateAsCreate)
+                    .operation(ProcessingOperation::UpdateAsCreate)
                     .build()
                     .unwrap(),
             )

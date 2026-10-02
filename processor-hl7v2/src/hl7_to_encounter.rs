@@ -1,50 +1,84 @@
-use crate::hl7::is_ward_valid_icu;
 use crate::hl7::parser::MessageType::A14;
 use crate::hl7::parser::{
-    PID_4, PID_21_1, PV1_2, PV1_4__2_1, PV1_4_1, PV1_19_1, PV1_36_1, PV1_40_1, PV1_44, PV1_45,
-    PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key, message_type, parse_naive_datetime, query,
+    MessageType, PID_2, PID_4, PID_21_1, PV1_2, PV1_3_1, PV1_4__2_1, PV1_4_1, PV1_19_1, PV1_36_1,
+    PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key, message_type,
+    parse_naive_datetime, query,
 };
-use crate::hl7_error::Hl7MappingError::BuilderError;
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
 use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
 use chrono::NaiveDateTime;
 use derive_builder::Builder;
-use futures::TryFutureExt;
+use fhir_core::model::meta::{MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation};
+
+use fhir_core::model::encounter_dto::{Fall, Fall_Diagnose, Fall_DiagnoseBuilder, FallBuilder};
 use hl7_parser::Message;
+use log::{Level, log};
 use std::num::NonZeroU32;
 
-#[derive(Debug, Clone, PartialEq, Builder)]
-#[builder(setter(into))]
-pub struct Fall {
-    pub pid: String,
-    pub visit_number: String,
-    pub bed_status: String,
+fn map(msg: &Message) -> Result<Option<Fall>, Hl7MappingError> {
+    let message_type = message_type(msg)?;
+    let id = get_message_key(msg)?.to_string();
 
-    pub admission_datetime: NaiveDateTime,
-    pub admission_type: String,
-    pub admission_reason_1_2: Option<String>,
-    pub admission_reason_3_4: Option<String>,
+    match message_type {
+        MessageType::A01
+        | MessageType::A02
+        | MessageType::A03
+        | MessageType::A04
+        | MessageType::A05
+        | MessageType::A06
+        | MessageType::A07
+        | MessageType::A08
+        | MessageType::A13 => {
+            let mut lvl_1_request_type = ProcessingOperation::UpdateAsCreate;
+            if message_type == MessageType::A04 {
+                // A04 hat eine eigene Bewegung-ID und kein Ende-Zeitpunkt. Einrichtungskontakt
+                // darf nur angelegt werden, falls er fehlt, sonst würden wir eventuell beendete
+                // Fälle wieder öffen!
+                lvl_1_request_type = ProcessingOperation::CreateIfNotExists;
+            }
 
-    pub movement_id: String,
-    pub movement_start: NaiveDateTime,
-    pub movement_end: Option<NaiveDateTime>,
-    pub is_icu_stay: bool,
+            let operation = MappingOpEncounterBuilder::default()
+                .id(id)
+                .operation_lv1(lvl_1_request_type)
+                .operation_lv2(ProcessingOperation::UpdateAsCreate)
+                .operation_lv3(ProcessingOperation::UpdateAsCreate)
+                .build()?;
 
-    pub discharge: Option<NaiveDateTime>,
-    pub discharge_reason_12: Option<String>,
-    pub discharge_reason_3: Option<String>,
-    pub diagnosis: Option<Vec<Fall_Diagnose>>,
-    pub mothers_enc_number: Option<String>,
+            Ok(Some(extract_raw_data(msg, operation)?))
+        }
+
+        MessageType::A11 | MessageType::A27 | MessageType::A12 | MessageType::A38 => {
+            let lvl_1_request_type = match message_type {
+                // A12 deletes only  Fachabteilungskontakt & Versorgungsstellenkontakt
+                MessageType::A12 => ProcessingOperation::Skip,
+                _ => ProcessingOperation::Delete,
+            };
+
+            let operation = MappingOpEncounterBuilder::default()
+                .id(id)
+                .operation_lv1(lvl_1_request_type)
+                .operation_lv2(ProcessingOperation::Delete)
+                .operation_lv3(ProcessingOperation::Delete)
+                .build()?;
+
+            Ok(Some(extract_raw_data(msg, operation)?))
+        }
+        _ => {
+            log!(Level::Info, "Unhandled message type {:?}", message_type);
+            Ok(None)
+        }
+    }
 }
 
-fn map(msg: &Message, resources: &ResourceMap) -> Result<Fall, Hl7MappingError> {
+fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall, Hl7MappingError> {
     /*
      * mandatory properties
      */
-    let msg_type = message_type(msg)?;
-    let id = get_message_key(msg)?.to_string();
 
+    let pid = query(msg, PID_2).ok_or(Hl7MessageAccessError::MissingMessageValue(
+        "PID-2".to_string(),
+    ))?;
     let encounter_number = map_visit_number(msg)?;
     let admission_datetime = parse_naive_datetime(query(msg, PV1_44).ok_or(
         Hl7MessageAccessError::MissingMessageValue("PV1.44".to_string()),
@@ -65,7 +99,7 @@ fn map(msg: &Message, resources: &ResourceMap) -> Result<Fall, Hl7MappingError> 
     let discharge_datetime = query(msg, PV1_45);
     let movement_end = query(msg, ZBE_3);
 
-    let is_valid_ICU_ward = is_ward_valid_icu(msg, resources);
+    let current_ward_location = query(msg, PV1_3_1);
 
     // hospitalization
     let entlassgrund_1_u_2 = query(msg, PV1_36_1);
@@ -86,12 +120,15 @@ fn map(msg: &Message, resources: &ResourceMap) -> Result<Fall, Hl7MappingError> 
     let mothers_encounter_number = query(msg, PID_21_1);
 
     let mut fall = FallBuilder::default()
+        .meta(operation)
+        .pid(pid)
         .visit_number(encounter_number)
         .admission_datetime(admission_datetime)
         .bed_status(bed_status)
         .movement_id(movement_id)
         .movement_start(movement_start)
         .build()?;
+
     if let Some(date_time) = discharge_datetime {
         fall.discharge = Some(parse_naive_datetime(date_time)?)
     }
@@ -105,7 +142,7 @@ fn map(msg: &Message, resources: &ResourceMap) -> Result<Fall, Hl7MappingError> 
         fall.discharge_reason_3 = Some(entlassgrund_3.to_string())
     }
     if let Some(aufnahmeart) = aufnahmeart {
-        fall.admission_type = aufnahmeart.to_string();
+        fall.admission_type = Some(aufnahmeart.to_string());
     }
     if let Some(aufnahmegrund_1_u_2) = aufnahmegrund_1_u_2 {
         fall.admission_reason_1_2 = Some(aufnahmegrund_1_u_2.to_string());
@@ -119,16 +156,12 @@ fn map(msg: &Message, resources: &ResourceMap) -> Result<Fall, Hl7MappingError> 
     if let Some(mothers_encounter_number) = mothers_encounter_number {
         fall.mothers_enc_number = Some(mothers_encounter_number.to_string());
     }
+    if let Some(current_ward_location) = current_ward_location {
+        fall.ward_short_name = Some(current_ward_location.to_string());
+    }
     Ok(fall)
 }
-#[derive(Debug, Clone, PartialEq, Builder)]
-#[builder(setter(into))]
-pub struct Fall_Diagnose {
-    pub ordinal_number: u32,
-    pub id: String,
-    pub condition_typ: String,
-    pub priority: NonZeroU32,
-}
+
 fn extract_diagnosis(msg: &Message) -> Result<Vec<Fall_Diagnose>, Hl7MappingError> {
     let mut res = vec![];
     if msg.segment_count("DG1") > 0 {
@@ -154,7 +187,7 @@ fn extract_diagnosis(msg: &Message) -> Result<Vec<Fall_Diagnose>, Hl7MappingErro
             let priority_u32 = priority
                 .raw_value()
                 .parse::<f32>()
-                .map_err(|e| Hl7MessageParsingError::ParseFloatError(e.into()))?
+                .map_err(Hl7MessageParsingError::ParseFloatError)?
                 .floor() as u32;
 
             let rank_nz = NonZeroU32::new(priority_u32).ok_or(Hl7MessageParsingError::Other(
@@ -169,10 +202,10 @@ fn extract_diagnosis(msg: &Message) -> Result<Vec<Fall_Diagnose>, Hl7MappingErro
                     row_number
                         .raw_value()
                         .parse::<u32>()
-                        .map_err(|e| Hl7MessageParsingError::ParseIntError(e.into()))?,
+                        .map_err(Hl7MessageParsingError::ParseIntError)?,
                 )
                 .build()
-                .map_err(|e| BuilderError {
+                .map_err(|e| Hl7MappingError::BuilderError {
                     builder_name: "Fall_DiagnoseBuilder".to_string(),
                     builder_error: e.to_string(),
                 })?;
@@ -187,5 +220,57 @@ pub fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> 
     match message_type(msg)? {
         A14 => Ok(query(msg, PID_4).ok_or(anyhow!("empty visit number in PID.4"))?),
         _ => Ok(query(msg, PV1_19_1).ok_or(anyhow!("empty visit number in PV1.19"))?),
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use adt_config::test_utils::tests::read_test_resource;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("a01_test.hl7")]
+    #[case("a02_test.hl7")]
+    #[case("a03_test.hl7")]
+    #[case("a04_test.hl7")]
+    #[case("a04_test2.hl7")]
+    #[case("a04_amb_notfall.hl7")]
+    #[case("a05_ns_test.hl7")]
+    #[case("a06_teilsstationaer_test.hl7")]
+    #[case("a07_nachstationaer_test.hl7")]
+    #[case("a08_test.hl7")]
+    #[case("a11_test.hl7")]
+    #[case("a38_test.hl7")]
+    pub fn aXX_test(#[case] test_file_name: String) {
+        let binding = read_test_resource(test_file_name.as_str());
+        let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
+        let result = map(&msg);
+        match result {
+            Ok(o) => {
+                assert!(!o.unwrap().meta.id.is_empty())
+            }
+            Err(e) => {
+                println!("{}", e);
+                panic!("failed hl7 to DTO mapping")
+            }
+        }
+    }
+
+    #[test]
+    pub fn a34_test() {
+        let binding = read_test_resource("a34_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
+        let result = map(&msg);
+        match result {
+            Ok(a) => {
+                assert!(
+                    a.is_none(),
+                    "A34 has no encounter component and therefor result should be `OK(None)`"
+                )
+            }
+            Err(_) => {
+                panic!("failed hl7 mapping")
+            }
+        }
     }
 }

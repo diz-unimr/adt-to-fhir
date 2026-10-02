@@ -1,5 +1,5 @@
 use crate::error::{MappingError, MessageAccessError, ParsingError};
-use crate::fhir::mapper::{map_visit_number, subject_ref};
+use crate::fhir::mapper::subject_ref;
 use adt_config::config::Fhir;
 use anyhow::anyhow;
 use chrono::NaiveDateTime;
@@ -17,6 +17,7 @@ use hl7_parser::Message;
 use processor_hl7v2::hl7::parser::{
     MessageType, PID_2, PV1_19_1, ZBE_2, ZNG_6, ZNG_7, ZNG_11, message_type, query,
 };
+use processor_hl7v2::hl7_to_encounter::map_visit_number;
 use std::ops::Div;
 
 const LOINC_PATIENT_DISPOSITION: &str = "67162-8";

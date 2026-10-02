@@ -4,20 +4,22 @@ use derive_builder::Builder;
 #[builder(setter(into))]
 pub struct MappingOp {
     pub id: String,
-    pub operation: Operation,
+    pub operation: ProcessingOperation,
 }
 
-impl MappingOp {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Operation {
+pub enum ProcessingOperation {
     UpdateAsCreate,
     CreateIfNotExists,
     Delete,
     Patch,
     Skip,
 }
-
-pub(crate) trait ModelDto {
-    fn id(&self) -> String;
-    fn operation(&self) -> Operation;
+#[derive(Debug, Clone, PartialEq, Builder)]
+#[builder(setter(into))]
+pub struct MappingOpEncounter {
+    pub id: String,
+    pub operation_lv1: ProcessingOperation,
+    pub operation_lv2: ProcessingOperation,
+    pub operation_lv3: ProcessingOperation,
 }

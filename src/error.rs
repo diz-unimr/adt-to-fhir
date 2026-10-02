@@ -32,7 +32,7 @@ pub(crate) enum MappingError {
     #[error(transparent)]
     Other(#[from] anyhow::Error),
     #[error(transparent)]
-    Hl7ParsingError(#[from] hl7_error::Hl7ParsingError),
+    Hl7ParsingError(#[from] hl7_error::Hl7MessageAccessError),
 }
 
 impl MappingError {

@@ -92,7 +92,7 @@ impl FhirMapper {
                 MappingError::Hl7ParsingError(Hl7ParsingError::Other(anyhow!(e.to_string())))
             })?
             .map(|dto| {
-                let patient1 = Ok(fhir_core::mapping::patient::map(dto, &self.config))?;
+                let patient1 = Ok(fhir_core::mapping::patient_mapper::map(dto, &self.config))?;
                 patient1
             });
         let e = encounter::map(v2_msg, &self.config, &self.resources)?;
@@ -893,7 +893,7 @@ EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
 PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
 MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
                 .unwrap();
-        let entry = fhir_core::mapping::patient::map(
+        let entry = fhir_core::mapping::patient_mapper::map(
             &hl7_to_patient_dto::map(&msg).unwrap().unwrap(),
             config,
         )
@@ -913,7 +913,7 @@ EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
 PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#, true)
             .unwrap();
 
-        let entry = fhir_core::mapping::patient::map(&map(&msg).unwrap().unwrap(), config)
+        let entry = fhir_core::mapping::patient_mapper::map(&map(&msg).unwrap().unwrap(), config)
             .unwrap()
             .unwrap();
 

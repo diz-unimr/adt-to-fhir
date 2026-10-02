@@ -1,14 +1,11 @@
+use crate::fhir_error::ContentError;
+use crate::model::encounter_dto::Fall;
 use adt_config::config::Fhir;
 use fhir_model::BuilderError;
 use fhir_model::r4b::codes::IdentifierUse;
+use fhir_model::r4b::resources::BundleEntry;
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta};
 
-pub fn map_meta(config: &Fhir) -> Result<Meta, anyhow::Error> {
-    Ok(Meta::builder()
-        .profile(vec![Some(config.fall.profile.clone())])
-        .source(config.meta_source.to_string())
-        .build()?)
-}
 pub fn map_default_identifier_enc(
     system: String,
     value: String,
@@ -28,4 +25,14 @@ pub fn map_default_identifier_enc(
                 .build()?,
         )
         .build()
+}
+pub fn map_meta_encounter(config: &Fhir) -> Result<Meta, anyhow::Error> {
+    Ok(Meta::builder()
+        .profile(vec![Some(config.fall.profile.clone())])
+        .source(config.meta_source.to_string())
+        .build()?)
+}
+
+pub fn map(input: Fall, config: &Fhir) -> Result<BundleEntry, ContentError> {
+    panic!("not implemented")
 }
