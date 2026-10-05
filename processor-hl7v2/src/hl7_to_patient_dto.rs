@@ -1,6 +1,7 @@
 use crate::hl7::parser::{
-    ENV_1, MRG_1, MessageType, PID_2, PID_5, PID_16_1, PID_24, PID_25, PID_29, PID_30,
-    get_message_key, message_type, parse_datetime, parse_naive_date, query, segment_value,
+    ENV_1, MRG_1, MessageType, PID_2, PID_5, PID_16_1, PID_24, PID_25, PID_29, PID_30, ZNG_6,
+    ZNG_7, ZNG_11, get_message_key, message_type, parse_datetime, parse_naive_date, query,
+    segment_value,
 };
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
 use crate::hl7_error::Hl7MappingError;
@@ -58,6 +59,21 @@ pub fn hl7_to_patient_dto(
         && let Ok(birth_order) = multi_birth_number.parse::<u32>()
     {
         patient_builder.multiple_birth_order(Some(birth_order));
+    }
+    if let Some(head_circumference) = query(msg, ZNG_11)
+        && let Ok(circumference) = head_circumference.parse::<u32>()
+    {
+        patient_builder.birth_head_circumference(Some(circumference));
+    }
+    if let Some(body_length) = query(msg, ZNG_6)
+        && let Ok(birth_length) = body_length.parse::<u32>()
+    {
+        patient_builder.birth_body_length(Some(birth_length));
+    }
+    if let Some(weight) = query(msg, ZNG_7)
+        && let Ok(birth_weight) = weight.parse::<u32>()
+    {
+        patient_builder.birth_weight(Some(birth_weight));
     }
 
     match patient_builder.build() {

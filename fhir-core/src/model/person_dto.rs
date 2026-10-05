@@ -38,6 +38,12 @@ pub struct PersonDto {
     pub address: Vec<Option<AddressDto>>,
     #[builder(default)]
     pub insurance: Vec<Option<Insurance>>,
+    #[builder(default)]
+    pub birth_head_circumference: Option<u32>,
+    #[builder(default)]
+    pub birth_body_length: Option<u32>,
+    #[builder(default)]
+    pub birth_weight: Option<u32>,
 }
 impl PersonDto {
     pub fn id(&self) -> &String {
