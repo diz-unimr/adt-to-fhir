@@ -1,4 +1,4 @@
-use crate::model::meta::MappingOp;
+use crate::model::meta::MappingOpPerson;
 use chrono::NaiveDate;
 use derive_builder::Builder;
 use fhir_model::{Date, DateTime};
@@ -8,8 +8,12 @@ use fhir_model::{Date, DateTime};
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
 pub struct PersonDto {
-    pub meta: MappingOp,
+    pub meta: MappingOpPerson,
     pub pid: String,
+
+    /// note: use only for observation mapping - never for encounter
+    #[builder(default)]
+    pub encounter_number: Option<String>,
     #[builder(default)]
     pub gender: Option<GenderDto>,
     #[builder(default)]
@@ -250,7 +254,7 @@ pub struct AddressDto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::meta::{MappingOpBuilder, ProcessingOperation};
+    use crate::model::meta::{MappingTarget, ProcessingOperation};
 
     #[test]
     fn test_gender_conversion() {
@@ -378,13 +382,10 @@ mod tests {
 
     fn get_minimal_person() -> PersonDto {
         PersonDtoBuilder::default()
-            .meta(
-                MappingOpBuilder::default()
-                    .id("42")
-                    .operation(ProcessingOperation::UpdateAsCreate)
-                    .build()
-                    .unwrap(),
-            )
+            .meta(MappingOpPerson {
+                id: "42".to_string(),
+                operation: MappingTarget::Person(ProcessingOperation::UpdateAsCreate),
+            })
             .pid("42")
             .gender(GenderDto::Unknown)
             .build()

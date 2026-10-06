@@ -11,6 +11,7 @@ use chrono::NaiveDateTime;
 use derive_builder::Builder;
 use fhir_core::model::meta::{MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation};
 
+use crate::hl7::map_visit_number;
 use fhir_core::model::encounter_dto::{Fall, Fall_Diagnose, Fall_DiagnoseBuilder, FallBuilder};
 use hl7_parser::Message;
 use log::{Level, log};
@@ -214,13 +215,6 @@ fn extract_diagnosis(msg: &Message) -> Result<Vec<Fall_Diagnose>, Hl7MappingErro
         }
     };
     Ok(res)
-}
-
-pub fn map_visit_number<'a>(msg: &'a Message) -> Result<&'a str, anyhow::Error> {
-    match message_type(msg)? {
-        A14 => Ok(query(msg, PID_4).ok_or(anyhow!("empty visit number in PID.4"))?),
-        _ => Ok(query(msg, PV1_19_1).ok_or(anyhow!("empty visit number in PV1.19"))?),
-    }
 }
 #[cfg(test)]
 mod tests {

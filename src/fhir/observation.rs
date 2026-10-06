@@ -1,6 +1,7 @@
 use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::mapper::subject_ref;
 use adt_config::config::Fhir;
+use anyhow::Result;
 use anyhow::anyhow;
 use chrono::NaiveDateTime;
 use fhir_core::mapping::misc::{
@@ -15,9 +16,10 @@ use fhir_model::r4b::resources::{
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Quantity, Reference};
 use hl7_parser::Message;
 use processor_hl7v2::hl7::parser::{
-    MessageType, PID_2, PV1_19_1, ZBE_2, ZNG_6, ZNG_7, ZNG_11, message_type, query,
+    MessageType, PID_2, PID_29, PID_30, PV1_19_1, ZBE_2, ZNG_6, ZNG_7, ZNG_11, message_type, query,
 };
-use processor_hl7v2::hl7_to_encounter::map_visit_number;
+
+use processor_hl7v2::hl7::map_visit_number;
 use std::ops::Div;
 
 const LOINC_PATIENT_DISPOSITION: &str = "67162-8";
@@ -177,6 +179,18 @@ fn encounter_reference(msg: &Message, config: &Fhir) -> Result<Reference, Mappin
         &config.fall.einrichtungskontakt.system,
     )
     .map_err(MappingError::BuilderError)
+}
+
+pub fn map_deceased(msg: &Message) -> Result<Option<PatientDeceased>> {
+    // patient vital status
+    let death_time = query(msg, PID_29);
+    let death_confirm = query(msg, PID_30);
+
+    match (death_time, death_confirm) {
+        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(parse_datetime(death_time)?))),
+        (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm == "Y"))),
+        _ => Ok(None),
+    }
 }
 fn map_vital_status(
     msg: &Message,

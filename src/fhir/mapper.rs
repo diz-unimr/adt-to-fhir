@@ -1,5 +1,6 @@
 use crate::error::{MappingError, MessageAccessError, ParsingError};
 use crate::fhir::{encounter, location, observation, organization};
+use anyhow::Result;
 use anyhow::anyhow;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
@@ -74,41 +75,42 @@ impl FhirMapper {
         Ok(Some(result))
     }
 
-    fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>, MappingError> {
+    fn map_resources(&self, v2_msg: &Message) -> Result<Vec<Option<BundleEntry>>> {
         if query(v2_msg, PV1_2).is_some_and(|f| f == "H") {
             log!(
                 Level::Info,
                 "Skipping message id '{}' since it targets patients companion.",
-                get_message_key(v2_msg).map_err(|e| MappingError::Hl7ParsingError(
-                    Hl7ParsingError::Other(anyhow!(e))
-                ))?
+                get_message_key(v2_msg)?
             );
 
             return Ok(vec![]);
         }
 
-        let p = hl7_to_patient_dto::map(v2_msg)
-            .map_err(|e| {
-                MappingError::Hl7ParsingError(Hl7ParsingError::Other(anyhow!(e.to_string())))
-            })?
-            .map(|dto| {
-                let patient1 = Ok(fhir_core::mapping::patient_mapper::map(dto, &self.config))?;
-                patient1
-            });
-        let e = encounter::map(v2_msg, &self.config, &self.resources)?;
-        let l = location::map(v2_msg, &self.config, &self.resources)?;
-        let obs = observation::map(v2_msg, &self.config)?;
-        let org = organization::map(v2_msg, &self.config, &self.resources)?;
-        let res = p
-            .into_iter()
-            .chain(e)
-            .chain(l)
-            .chain(obs)
-            .chain(org)
-            .map(Some)
-            .collect();
+        if let Some(pat_raw) = hl7_to_patient_dto::map(v2_msg)? {
+            if let Some(pat_entry) =
+                fhir_core::mapping::patient_mapper::map(&pat_raw, &self.config)?
+            {
+                let p = vec![pat_entry];
+                let e = encounter::map(v2_msg, &self.config, &self.resources)?;
+                let l = location::map(v2_msg, &self.config, &self.resources)?;
+                let obs = observation::map(v2_msg, &self.config)?;
+                let org = organization::map(v2_msg, &self.config, &self.resources)?;
+                let res = p
+                    .into_iter()
+                    .chain(e)
+                    .chain(l)
+                    .chain(obs)
+                    .chain(org)
+                    .map(Some)
+                    .collect();
 
-        Ok(res)
+                Ok(res)
+            } else {
+                Ok(vec![])
+            }
+        } else {
+            Ok(vec![])
+        }
     }
 }
 

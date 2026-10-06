@@ -11,20 +11,21 @@ use crate::hl7_error::Hl7MessageAccessError::{
 use anyhow::anyhow;
 use fhir_core::mapping::patient_mapper::is_valid_gkv10;
 use fhir_core::model::meta::ProcessingOperation::Patch;
-use fhir_core::model::meta::{MappingOp, ProcessingOperation};
+use fhir_core::model::meta::{MappingOpPerson, MappingTarget, ProcessingOperation};
 use fhir_core::model::person_dto::{
     AddressDto, AddressDtoBuilder, Insurance, InsuranceBuilder, InsuranceType, MaritalStatusDto,
     PersonDto, PersonDtoBuilder, PersonDtoBuilderError, PersonName, PersonNameBuilder,
     PersonNameBuilderError,
 };
 
+use crate::hl7::{map_visit_number, map_visit_number_lenient};
 use hl7_parser::Message;
 use hl7_parser::message::Segment;
 use log::{Level, log};
 
 pub fn hl7_to_patient_dto(
     msg: &Message,
-    mapping_op: MappingOp,
+    mapping_op: MappingOpPerson,
 ) -> Result<PersonDto, Hl7MappingError> {
     let mut binding = PersonDtoBuilder::default();
     let patient_builder = binding
@@ -74,6 +75,9 @@ pub fn hl7_to_patient_dto(
         && let Ok(birth_weight) = weight.parse::<u32>()
     {
         patient_builder.birth_weight(Some(birth_weight));
+    }
+    if let Some(enc_number) = map_visit_number_lenient(&msg) {
+        patient_builder.encounter_number(enc_number.to_string());
     }
 
     match patient_builder.build() {
@@ -174,13 +178,13 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
         | MessageType::A07
         | MessageType::A08
         => {
-            Ok(Some(hl7_to_patient_dto(msg,MappingOp { id, operation: ProcessingOperation::UpdateAsCreate })?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson { id, operation: MappingTarget::Person(ProcessingOperation::UpdateAsCreate) })?))
         }
         MessageType::A02 | MessageType::A03 | MessageType::A31 => {
-            Ok(Some(hl7_to_patient_dto(msg,MappingOp { id, operation: ProcessingOperation::CreateIfNotExists })?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson { id, operation: MappingTarget::Person(ProcessingOperation::CreateIfNotExists) })?))
         }
         MessageType::A34 | MessageType::A40 => {
-            Ok(Some(create_patient_merge_hl7(msg, MappingOp { id, operation: Patch })?))
+            Ok(Some(create_patient_merge_hl7(msg, MappingOpPerson { id, operation: MappingTarget::Person(Patch) })?))
         }
         // patient stays unchanged
         MessageType::A11
@@ -203,7 +207,7 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
         MessageType::A29 => {
 
             // todo:  in case of mapping error fallback to a minimal delete request without resource!
-            Ok(Some(hl7_to_patient_dto(msg,MappingOp{id ,operation: ProcessingOperation::Delete})?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson {id ,operation: MappingTarget::Person(ProcessingOperation::Delete)})?))
         }
         other => Err(Hl7MappingError::from(UnsupportedContentError(other.to_string(), ENV_1.to_string()))),
     }
@@ -211,7 +215,7 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
 
 fn create_patient_merge_hl7(
     msg: &Message,
-    mapping_op: MappingOp,
+    mapping_op: MappingOpPerson,
 ) -> Result<PersonDto, Hl7MappingError> {
     let new_patient_id = query(msg, PID_2)
         .map(String::from)
@@ -490,9 +494,9 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
         let (params, _) = fhir_core::mapping::patient_mapper::create_patient_merge_dto(
             &create_patient_merge_hl7(
                 &msg,
-                MappingOp {
+                MappingOpPerson {
                     id: "42".to_string(),
-                    operation: Patch,
+                    operation: MappingTarget::Person(Patch),
                 },
             )
             .unwrap(),

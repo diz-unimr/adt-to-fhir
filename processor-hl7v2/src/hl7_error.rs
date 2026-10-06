@@ -117,7 +117,7 @@ impl Hl7MappingError {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum Hl7MessageParsingError {
+pub enum Hl7MessageParsingError {
     /// HL7 Message could not be parsed
     #[error(transparent)]
     Hl7MessageParseError(#[from] hl7_parser::parser::ParseError),

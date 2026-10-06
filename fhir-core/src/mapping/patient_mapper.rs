@@ -13,7 +13,7 @@ use crate::mapping::misc::{
     get_period_from_date_time, parse_date, parse_date_as_date_time, patch_bundle_entry,
     upsert_reference,
 };
-use crate::model::meta::ProcessingOperation;
+use crate::model::meta::{MappingTarget, ProcessingOperation};
 
 use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
@@ -32,22 +32,18 @@ use regex::Regex;
 
 pub fn map(data: &PersonDto, config: &Fhir) -> Result<Option<BundleEntry>, FhirMappingError> {
     match &data.meta.operation {
-        ProcessingOperation::UpdateAsCreate
-        | ProcessingOperation::CreateIfNotExists
-        | ProcessingOperation::Delete => {
+        MappingTarget::Person(ProcessingOperation::UpdateAsCreate)
+        | MappingTarget::Person(ProcessingOperation::CreateIfNotExists)
+        | MappingTarget::Person(ProcessingOperation::Delete) => {
             let pat = map_patient(data, config);
             match &data.meta.operation {
-                ProcessingOperation::UpdateAsCreate => Ok(Some(bundle_entry(
-                    pat?,
-                    EntryRequestType::UpdateAsCreate,
-                    config,
-                )?)),
-                ProcessingOperation::CreateIfNotExists => Ok(Some(bundle_entry(
-                    pat?,
-                    EntryRequestType::ConditionalCreate,
-                    config,
-                )?)),
-                ProcessingOperation::Delete => match pat {
+                MappingTarget::Person(ProcessingOperation::UpdateAsCreate) => Ok(Some(
+                    bundle_entry(pat?, EntryRequestType::UpdateAsCreate, config)?,
+                )),
+                MappingTarget::Person(ProcessingOperation::CreateIfNotExists) => Ok(Some(
+                    bundle_entry(pat?, EntryRequestType::ConditionalCreate, config)?,
+                )),
+                MappingTarget::Person(ProcessingOperation::Delete) => match pat {
                     Ok(pat) => {
                         // return full mapped patient with delete request
                         Ok(Some(bundle_entry(pat, EntryRequestType::Delete, config)?))
@@ -77,7 +73,7 @@ pub fn map(data: &PersonDto, config: &Fhir) -> Result<Option<BundleEntry>, FhirM
             }
         }
 
-        ProcessingOperation::Patch => {
+        MappingTarget::Person(ProcessingOperation::Patch) => {
             if let Some((content, target_to_be_patched)) = create_patient_merge_dto(data, config)? {
                 let patch = patch_bundle_entry(
                     content,
@@ -95,7 +91,8 @@ pub fn map(data: &PersonDto, config: &Fhir) -> Result<Option<BundleEntry>, FhirM
                 ))
             }
         }
-        ProcessingOperation::Skip => Ok(None),
+        MappingTarget::Person(ProcessingOperation::Skip) => Ok(None),
+        _ => Ok(None),
     }
 }
 pub fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError> {

@@ -30,6 +30,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "chrono-tz",
+ "config",
  "env_logger",
  "fhir-core",
  "fhir-model",
