@@ -1,7 +1,7 @@
 use crate::hl7::parser::{
-    ENV_1, MRG_1, MessageType, PID_2, PID_5, PID_16_1, PID_24, PID_25, PID_29, PID_30, ZNG_6,
-    ZNG_7, ZNG_11, get_message_key, message_type, parse_datetime, parse_naive_date, query,
-    segment_value,
+    ENV_1, MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29,
+    PID_30, ZNG_6, ZNG_7, ZNG_11, get_message_key, message_type, parse_datetime, parse_naive_date,
+    parse_naive_datetime, query, segment_value,
 };
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
 use crate::hl7_error::Hl7MappingError;
@@ -13,12 +13,12 @@ use fhir_core::mapping::patient_mapper::is_valid_gkv10;
 use fhir_core::model::meta::ProcessingOperation::Patch;
 use fhir_core::model::meta::{MappingOpPerson, MappingTarget, ProcessingOperation};
 use fhir_core::model::person_dto::{
-    AddressDto, AddressDtoBuilder, Insurance, InsuranceBuilder, InsuranceType, MaritalStatusDto,
-    PersonDto, PersonDtoBuilder, PersonDtoBuilderError, PersonName, PersonNameBuilder,
-    PersonNameBuilderError,
+    AddressDto, AddressDtoBuilder, DtoDates, GenderDto, Insurance, InsuranceBuilder, InsuranceType,
+    MaritalStatusDto, PersonDto, PersonDtoBuilder, PersonDtoBuilderError, PersonName,
+    PersonNameBuilder, PersonNameBuilderError,
 };
 
-use crate::hl7::{map_visit_number, map_visit_number_lenient};
+use crate::hl7::map_visit_number_lenient;
 use hl7_parser::Message;
 use hl7_parser::message::Segment;
 use log::{Level, log};
@@ -39,6 +39,22 @@ pub fn hl7_to_patient_dto(
         )
         .address(address_from_hl7(msg));
 
+    if let Some(birthday) = query(msg, PID_7) {
+        if birthday.len() > 8 {
+            let datetime = DtoDates::Datetime(parse_naive_datetime(birthday)?);
+            patient_builder.date_of_birth(datetime);
+        }
+        if birthday.len() == 8 {
+            let date = DtoDates::Date(parse_naive_date(birthday)?);
+            patient_builder.date_of_birth(date);
+        }
+    }
+
+    if let Some(hl7_gender) = query(msg, PID_8) {
+        patient_builder.gender(GenderDto::from_hl7(hl7_gender));
+    } else {
+        patient_builder.gender(GenderDto::Unknown);
+    }
     if let Some(marital_status) = query(msg, PID_16_1) {
         patient_builder.marital_status(MaritalStatusDto::from_hl7(marital_status));
     }
@@ -46,8 +62,17 @@ pub fn hl7_to_patient_dto(
     if let Some("J") = query(msg, PID_30) {
         patient_builder.is_deceased_indicator(true);
     }
-    if let Some(death_time) = query(msg, PID_29) {
-        patient_builder.time_of_death(Some(parse_datetime(death_time)?));
+
+    if let Some(death_date) = query(msg, PID_29) {
+        if death_date.len() > 8 {
+            let datetime = DtoDates::Datetime(parse_naive_datetime(death_date)?);
+
+            patient_builder.time_of_death(Some(datetime));
+        }
+        if death_date.len() == 8 {
+            let date = DtoDates::Date(parse_naive_date(death_date)?);
+            patient_builder.time_of_death(Some(date));
+        }
     }
 
     if let Some("J") = query(msg, PID_24) {
@@ -295,6 +320,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Insurance>, Hl7Mapping
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Datelike;
 
     use adt_config::test_utils::tests::get_test_config;
     use fhir_core::mapping::patient_mapper::{map_addresses_dto, map_name};
@@ -819,10 +845,37 @@ IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
     }
 
     #[test]
+    fn test_pat_mapping() {
+        let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS||RECAPP|ORBIS|201111280725||ADT^A04|11657277|P|2.5|||||DE||DE
+EVN|A04|201111280722|201111280722||TEST
+PID|1|111111|111111||Mustermann^Max|Mustermann|19500118|M|||Mustergasse 10^^Musterort^^33333^DE||012345/12346^^PH|||M|kl|||||||N||DE
+NK1|1|Fr. Müller, Miriam|14^Ehefrau| |s.Pat.
+PV1|1|O|NEPPOLAMB^^^NEP^NEP^000000|R||||44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|44444ARZT^Arzt^Hans Jürgen^^Praxis^^Dr. med.|N||||||N|||20900000||K|||HSA||||||||||||||||9||||200703280736|||||||A
+IN1|1||8888888888^^^^NII~P DEMO^^^^XX|AOK Hessen|^^Marburg^^35039^D||||AOK^1^^^1&gesetzlich||||20110518||50001|||||||1|||||||||R|||||123456789|||||||U|
+IN2|1||||||||||||||||||||||||||||^PC^0^K
+IN1|2|00000001|5555555^^^^NII~P DEMO^^^^XX|AOK - Die Gesundheitskasse in Hessen-|Musterstrasse 1^^Musterort^^66666^D||||AOK^1^^^1&gesetzlich||||||50001|Mustermann^Max||19500118|Mustergasse 10^^Musterort^^33333^D|||2|||||||||R|||||454874316|||||||M| ^^^^^D  |||||454874316^^^^^^^20150630
+IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
+        let config = &get_test_config();
+        let dto = &map(&msg).unwrap().unwrap();
+        assert!(dto.date_of_birth.is_some());
+        match dto.date_of_birth {
+            Some(DtoDates::Datetime(date)) => {
+                panic!("expected date no datetime")
+            }
+            Some(DtoDates::Date(date)) => {
+                assert_eq!(date.day(), 18);
+
+                assert_eq!(date.month(), 1);
+                assert_eq!(date.year(), 1950);
+            }
+            None => {}
+        }
+    }
+    #[test]
     fn test_try_set_identifier_expect_error() {
         let raw = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
-PID|1|1212121|1212121|21600000|Sokolovski, Malina||19820101101139|F|||Hexengasse 1^^Traumstadt^^12345^D^L~Wettergasse 42^^Wetter^^54321^D^L||012345/1234^^PH~0123451234^^CP~max-muster.mann@web.de^^X.400|||S|ev||||12345~23456|||||D||||N
+PID|1|1212121|1212121|21600000|Sokolovski, Malina||19820102|F|||Hexengasse 1^^Traumstadt^^12345^D^L~Wettergasse 42^^Wetter^^54321^D^L||012345/1234^^PH~0123451234^^CP~max-muster.mann@web.de^^X.400|||S|ev||||12345~23456|||||D||||N
 IN1|1||777777777^^^^NII~AOK HESSEN^^^^XX|AOK Hessen|Strasse 1&Strasse&1^^Stadt^^123456^DE^L||||AOK^1^^^1&gesetzliche Krankenkasse^^NII~AOK^1^^^^^U|||20011344||||||||||H|||||||||M|||||X000000000|||||||F||||||X000000000
 IN2|1|X000000000|||||||||||||||||||||||||||^PC^100.0||||DE|||N||||||||||||||||||||||||||||||||||"#;
 
@@ -833,7 +886,7 @@ IN2|1|X000000000|||||||||||||||||||||||||||^PC^100.0||||DE|||N||||||||||||||||||
 
         let raw = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20251102212117||ADT^A08^ADT_A01|12332112|P|2.5||123788998|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
-PID|1|1212121|1212121|21600000|Sokolovski, Malina||19820101101139|F|||Hexengasse 1^^Traumstadt^^12345^D^L~Wettergasse 42^^Wetter^^54321^D^L||012345/1234^^PH~0123451234^^CP~max-muster.mann@web.de^^X.400|||S|ev||||12345~23456|||||D||||N
+PID|1|1212121|1212121|21600000|Sokolovski, Malina||19820102|F|||Hexengasse 1^^Traumstadt^^12345^D^L~Wettergasse 42^^Wetter^^54321^D^L||012345/1234^^PH~0123451234^^CP~max-muster.mann@web.de^^X.400|||S|ev||||12345~23456|||||D||||N
 IN1|1||777777777^^^^NII~AOK HESSEN^^^^XX|AOK Hessen|Strasse 1&Strasse&1^^Stadt^^123456^DE^L||||AOK^1^^^1&gesetzliche Krankenkasse^^NII~AOK^1^^^^^U||||20011344|||||||||H|||||||||M|||||X000000000|||||||F||||||X000000000
 IN2|1|X000000000|||||||||||||||||||||||||||^PC^100.0||||DE|||N||||||||||||||||||||||||||||||||||"#;
 
@@ -844,11 +897,10 @@ IN2|1|X000000000|||||||||||||||||||||||||||^PC^100.0||||DE|||N||||||||||||||||||
     }
 
     #[test]
-    #[test]
     fn test_map_addresses() {
         let msg = r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|202208200651||ADT^A04^ADT_A04|65298857|P|2.5||640340718|NE|NE||8859/1
 EVN|A08|202511022120||11036_123456789|ZZZZZZZZ|202511022120
-PID|1|1212121|1212121|21600000|Sokolovski, Malina||19820101101139|F|||Hexengasse 1^^Traumstadt^^12345^D^L~Wettergasse 42^^Wetter^^54321^D^L||012345/1234^^PH~0123451234^^CP~max-muster.mann@web.de^^X.400|||S|ev||||12345~23456|||||D||||N"#;
+PID|1|1212121|1212121|21600000|Sokolovski, Malina||19820102|F|||Hexengasse 1^^Traumstadt^^12345^D^L~Wettergasse 42^^Wetter^^54321^D^L||012345/1234^^PH~0123451234^^CP~max-muster.mann@web.de^^X.400|||S|ev||||12345~23456|||||D||||N"#;
         let msg = Message::parse_with_lenient_newlines(msg, true).unwrap();
 
         // two addresses

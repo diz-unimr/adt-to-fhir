@@ -1,7 +1,7 @@
 use crate::model::meta::MappingOpPerson;
 use chrono::NaiveDate;
 use derive_builder::Builder;
-use fhir_model::{Date, DateTime};
+use fhir_model::time::OffsetDateTime;
 
 /// Main structure for person data
 
@@ -17,7 +17,7 @@ pub struct PersonDto {
     #[builder(default)]
     pub gender: Option<GenderDto>,
     #[builder(default)]
-    pub date_of_birth: Option<Date>,
+    pub date_of_birth: Option<DtoDates>,
     #[builder(default)]
     pub marital_status: Option<MaritalStatusDto>,
     #[builder(default)]
@@ -35,7 +35,7 @@ pub struct PersonDto {
     #[builder(default)]
     pub occupation: Option<String>,
     #[builder(default)]
-    pub time_of_death: Option<DateTime>,
+    pub time_of_death: Option<DtoDates>,
     #[builder(default)]
     pub replaced_by_pid: Option<String>,
     #[builder(default)]
@@ -48,6 +48,11 @@ pub struct PersonDto {
     pub birth_body_length: Option<u32>,
     #[builder(default)]
     pub birth_weight: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum DtoDates {
+    Date(NaiveDate),
+    Datetime(OffsetDateTime),
 }
 impl PersonDto {
     pub fn id(&self) -> &String {

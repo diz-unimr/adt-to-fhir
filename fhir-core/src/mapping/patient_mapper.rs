@@ -1,17 +1,17 @@
 use crate::fhir_error::ContentError::MissingValueError;
 use crate::fhir_error::{ContentError, FhirMappingError};
-use crate::model::person_dto::{GenderDto, Insurance, MaritalStatusDto, PersonDto};
+use crate::model::person_dto::{DtoDates, GenderDto, Insurance, MaritalStatusDto, PersonDto};
 use adt_config::config::Fhir;
 use anyhow::anyhow;
+use chrono::NaiveDateTime;
 use chrono::TimeZone;
-use chrono::{Datelike, NaiveDateTime};
 use chrono_tz::Europe::Berlin;
 use std::sync::LazyLock;
 
 use crate::mapping::misc::{
     EntryRequestType, bundle_entry, field_extension, get_cc_with_one_code,
-    get_period_from_date_time, parse_date, parse_date_as_date_time, patch_bundle_entry,
-    upsert_reference,
+    get_period_from_date_time, parse_date, parse_naive_date_as_date_time,
+    parse_naive_datetime_as_date, patch_bundle_entry, upsert_reference,
 };
 use crate::model::meta::{MappingTarget, ProcessingOperation};
 
@@ -111,7 +111,12 @@ pub fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, Conte
         .build()?;
 
     // birth_date
-    patient.birth_date = pat_data.date_of_birth.clone();
+
+    patient.birth_date = match pat_data.date_of_birth {
+        None => None,
+        Some(DtoDates::Date(date)) => parse_date(Some(date))?,
+        Some(DtoDates::Datetime(datetime)) => Some(parse_naive_datetime_as_date(datetime)?),
+    };
 
     // marital_status
     if let Some(ref marital_status) = pat_data.marital_status {
@@ -206,8 +211,12 @@ fn map_deceased(data: &PersonDto) -> Result<Option<PatientDeceased>, ContentErro
     let death_confirm = data.is_deceased_indicator;
 
     match (death_time, death_confirm) {
-        (Some(death_time), _) => Ok(Some(PatientDeceased::DateTime(death_time))),
-
+        (Some(DtoDates::Datetime(death_time)), _) => Ok(Some(PatientDeceased::DateTime(
+            DateTime::DateTime(death_time.into()),
+        ))),
+        (Some(DtoDates::Date(death_time)), _) => Ok(Some(PatientDeceased::DateTime(
+            parse_naive_date_as_date_time(death_time)?,
+        ))),
         (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm))),
         _ => Ok(None),
     }
@@ -575,10 +584,23 @@ fn map_versicherungsdaten(
 }
 
 pub fn get_insurance_period(insurance: &Insurance) -> Result<Option<Period>, ContentError> {
-    let start = parse_date_as_date_time(insurance.valid_from.clone())?;
-    let end = parse_date_as_date_time(insurance.valid_to.clone())?;
+    match (insurance.valid_from, insurance.valid_to) {
+        (Some(from), Some(to)) => {
+            let start = parse_naive_date_as_date_time(from)?;
+            let end = parse_naive_date_as_date_time(to)?;
 
-    Ok(get_period_from_date_time(start, end)?)
+            get_period_from_date_time(Some(start), Some(end))
+        }
+        (Some(from), None) => {
+            let start = parse_naive_date_as_date_time(from)?;
+            get_period_from_date_time(Some(start), None)
+        }
+        (None, Some(to)) => {
+            let end = parse_naive_date_as_date_time(to)?;
+            get_period_from_date_time(None, Some(end))
+        }
+        (None, None) => Ok(None),
+    }
 }
 
 pub fn is_valid_gkv10(insurance_number: &str) -> bool {

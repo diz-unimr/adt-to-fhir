@@ -1,6 +1,6 @@
 use crate::model::meta::MappingOpEncounter;
-use chrono::NaiveDateTime;
 use derive_builder::Builder;
+use fhir_model::time::OffsetDateTime;
 use std::num::NonZeroU32;
 
 #[derive(Debug, Clone, PartialEq, Builder)]
@@ -23,7 +23,7 @@ pub struct Fall {
 
     pub bed_status: String,
 
-    pub admission_datetime: NaiveDateTime,
+    pub admission_datetime: OffsetDateTime,
     #[builder(default)]
     pub admission_type: Option<String>,
 
@@ -34,12 +34,12 @@ pub struct Fall {
 
     pub movement_id: String,
 
-    pub movement_start: NaiveDateTime,
+    pub movement_start: OffsetDateTime,
     #[builder(default)]
-    pub movement_end: Option<NaiveDateTime>,
+    pub movement_end: Option<OffsetDateTime>,
 
     #[builder(default)]
-    pub discharge: Option<NaiveDateTime>,
+    pub discharge: Option<OffsetDateTime>,
     #[builder(default)]
     pub discharge_reason_12: Option<String>,
     #[builder(default)]

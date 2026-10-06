@@ -76,7 +76,6 @@ expression: b
         ],
         "gender": "male",
         "birthDate": "1982-01-01",
-        "deceasedBoolean": false,
         "address": [
           {
             "type": "both",

@@ -248,17 +248,22 @@ pub fn parse_date(date: Option<NaiveDate>) -> Result<Option<Date>, ParsingError>
     }
 }
 
-pub fn parse_date_as_date_time(date: Option<NaiveDate>) -> Result<Option<DateTime>, ParsingError> {
-    if let Some(date) = date {
-        let date = time::Date::from_calendar_date(
-            date.year(),
-            Month::try_from(date.month() as u8)?,
-            date.day() as u8,
-        )?;
-        Ok(Some(DateTime::Date(Date::Date(date))))
-    } else {
-        Ok(None)
-    }
+pub fn parse_naive_date_as_date_time(date: NaiveDate) -> Result<DateTime, ParsingError> {
+    let date = time::Date::from_calendar_date(
+        date.year(),
+        Month::try_from(date.month() as u8)?,
+        date.day() as u8,
+    )?;
+    Ok(DateTime::Date(Date::Date(date)))
+}
+
+pub fn parse_naive_datetime_as_date(date: OffsetDateTime) -> Result<Date, ParsingError> {
+    let date = time::Date::from_calendar_date(
+        date.year(),
+        Month::try_from(date.month() as u8)?,
+        date.day(),
+    )?;
+    Ok(Date::Date(date))
 }
 
 pub fn get_meta(config: &Fhir) -> Result<Meta, BuilderError> {
@@ -290,5 +295,26 @@ pub fn get_period_from_date_time(
         (None, Some(e)) => Ok(Some(PeriodBuilder::default().end(e).build()?)),
         (Some(start), None) => Ok(Some(PeriodBuilder::default().start(start).build()?)),
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::mapping::misc::parse_date;
+    use chrono::NaiveDate;
+    use fhir_model::Date;
+    use std::str::FromStr;
+
+    #[test]
+    fn parse_date_test() {
+        let nd = NaiveDate::from_ymd(2021, 1, 10);
+        match parse_date(Some(nd)).unwrap() {
+            Some(date) => {
+                assert_eq!(date, Date::from_str("2021-01-10").unwrap())
+            }
+            _ => {
+                panic!("Failed to parse date")
+            }
+        }
     }
 }

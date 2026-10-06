@@ -30,6 +30,7 @@ chrono-tz = "0.10"
 fhir-core = { path = "../fhir-core" }
 adt-config = { path = "../adt-config" }
 derive_builder = "0.20"
+time = "0.3.55"
 
 [dev-dependencies]
 rstest = "0.26.1"
