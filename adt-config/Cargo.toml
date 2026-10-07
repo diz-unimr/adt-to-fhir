@@ -7,14 +7,14 @@ edition = "2024"
 test-utils = []
 
 [dependencies]
-serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-validator = { version = "0.20", features = ["derive"] }
-config = "0.15"
-anyhow = "1.0"
-fhir-model = { version = "0.12", default-features = false, features = ["builders", "r4b"] }
-chrono = { version = "0.4", features = ["serde"] }
-thiserror = "2.0"
+serde_json = "1.0.151"
+serde = { version = "1.0.229", features = ["derive"] }
+validator = { version = "0.21.0", features = ["derive"] }
+config = "0.15.27"
+anyhow = "1.0.104"
+fhir-model = { version = "0.12.1", default-features = false, features = ["builders", "r4b"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+thiserror = "2.0.21"
 #reqwest = { version = "0.13", features = ["blocking", "json"] }
 
 [dev-dependencies]

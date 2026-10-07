@@ -6,19 +6,19 @@ edition = "2024"
 [dependencies]
 #rdkafka = { version = "0.38", features = ["ssl", "cmake-build"] }
 #tokio = { version = "1.50", features = ["full"] }
-log = "0.4"
+log = "0.4.34"
 #env_logger = "0.11"
 #tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 #futures = "0.3"
 #config = "0.15"
 #serde = { version = "1.0", features = ["derive"] }
 #serde_json = "1.0"
-fhir-model = { version = "0.12", default-features = false, features = ["builders", "r4b"] }
-hl7-parser = "0.3"
-anyhow = "1.0"
-thiserror = "2.0"
-chrono = { version = "0.4", features = ["serde"] }
-chrono-tz = "0.10"
+fhir-model = { version = "0.12.1", default-features = false, features = ["builders", "r4b"] }
+hl7-parser = "0.3.0"
+anyhow = "1.0.104"
+thiserror = "2.0.21"
+chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = "0.10.4"
 #regex = "1.12"
 #tokio-util = "0.7"
 #validator = { version = "0.21", features = ["derive"] }
@@ -29,11 +29,11 @@ chrono-tz = "0.10"
 #uuid = { version = "1", features = ["v5"] }
 fhir-core = { path = "../fhir-core" }
 adt-config = { path = "../adt-config" }
-derive_builder = "0.20"
+derive_builder = "0.20.2"
 time = "0.3.55"
 
 [dev-dependencies]
-rstest = "0.26.1"
+rstest = "0.27.0"
 #mock-collector = "0.2"
 #reqwest = { version = "0.13", features = ["json"] }
 adt-config = { path = "../adt-config", features = ["test-utils"] }

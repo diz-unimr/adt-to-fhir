@@ -5,6 +5,6 @@ edition = "2024"
 
 [dependencies]
 fhir-core = { path = "../fhir-core" }
-log = "0.4"
+log = "0.4.34"
 [dev-dependencies]
 adt-config = { path = "../adt-config", features = ["test-utils"] }
