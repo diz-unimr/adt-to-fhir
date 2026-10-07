@@ -3,10 +3,7 @@ use crate::fhir::{encounter, location, observation, organization};
 use anyhow::Result;
 use anyhow::anyhow;
 use fhir_model::r4b::codes::BundleType;
-use fhir_model::r4b::resources::{
-    Bundle, BundleEntry,
-    ResourceType,
-};
+use fhir_model::r4b::resources::{Bundle, BundleEntry, ResourceType};
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
 use processor_hl7v2::hl7::parser::{
     PID_2, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, get_message_key, query,
@@ -174,9 +171,11 @@ mod tests {
     };
     use fhir_core::mapping::misc::{full_url_from_identifiers, parse_datetime, patch_bundle_entry};
     use fhir_model::DateTime::DateTime;
+    use fhir_model::r4b::codes::HTTPVerb;
     use fhir_model::r4b::codes::HTTPVerb::{Delete, Patch};
     use fhir_model::r4b::resources::{
-        Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource, ResourceType,
+        Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource,
+        ResourceType,
     };
     use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};
@@ -889,7 +888,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
             config,
         );
         let entry = result.unwrap().unwrap();
-        insta::assert_json_snapshot!(entry);
+        assert_json_snapshot!(entry);
     }
 
     #[test]
@@ -911,7 +910,7 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
                 BundleEntryRequest::builder()
                     .url(format!(
                         "{}?identifier={}|1234567",
-                        &ResourceType::Patient,
+                        ResourceType::Patient,
                         config.person.system
                     ))
                     .method(Delete)
@@ -920,6 +919,6 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
             )
         );
 
-        insta::assert_json_snapshot!(entry);
+        assert_json_snapshot!(entry);
     }
 }

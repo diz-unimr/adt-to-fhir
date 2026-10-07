@@ -150,10 +150,20 @@ pub fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderErr
             _ => None,
         };
 
+        if name_entry.family.is_none() {
+            continue;
+        }
+
         let mut name_build = HumanName::builder().build()?;
         name_build.r#use = name_use;
-        name_build.given = name_entry.given_name.clone();
         name_build.family = name_entry.family.clone();
+        if name_entry
+            .given_name
+            .iter()
+            .any(|n| n.is_some() && n.iter().any(|nn| !nn.is_empty()))
+        {
+            name_build.given = name_entry.given_name.clone();
+        }
 
         // prefix
         if let Some(prefix) = name_entry.name_prefix.clone() {
