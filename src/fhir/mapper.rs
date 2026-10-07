@@ -76,34 +76,36 @@ impl FhirMapper {
             return Ok(vec![]);
         }
 
-        if let Some(pat_raw) = hl7_to_patient_dto::map(v2_msg)? {
-            if let Some(pat_entry) =
-                fhir_core::mapping::patient_mapper::map(&pat_raw, &self.config)?
-            {
-                let p = vec![pat_entry];
-                let e = encounter::map(v2_msg, &self.config, &self.resources)?;
-                let l = location::map(v2_msg, &self.config, &self.resources)?;
-                let obs = observation::map(v2_msg, &self.config)?;
-                let org = organization::map(v2_msg, &self.config, &self.resources)?;
-                let res = p
-                    .into_iter()
-                    .chain(e)
-                    .chain(l)
-                    .chain(obs)
-                    .chain(org)
-                    .map(Some)
-                    .collect();
-
-                Ok(res)
-            } else {
-                Ok(vec![])
+        let p: Vec<BundleEntry> = match hl7_to_patient_dto::map(v2_msg)? {
+            Some(pat_raw) => {
+                if let Some(pat_entry) =
+                    fhir_core::mapping::patient_mapper::map(&pat_raw, &self.config)?
+                {
+                    vec![pat_entry]
+                } else {
+                    vec![]
+                }
             }
-        } else {
-            Ok(vec![])
-        }
+            _ => {
+                vec![]
+            }
+        };
+        let e = encounter::map(v2_msg, &self.config, &self.resources)?;
+        let l = location::map(v2_msg, &self.config, &self.resources)?;
+        let obs = observation::map(v2_msg, &self.config)?;
+        let org = organization::map(v2_msg, &self.config, &self.resources)?;
+        let res = p
+            .into_iter()
+            .chain(e)
+            .chain(l)
+            .chain(obs)
+            .chain(org)
+            .map(Some)
+            .collect();
+
+        Ok(res)
     }
 }
-
 pub fn is_inpatient_location(msg: &Message) -> Result<bool, MappingError> {
     Ok(query(msg, PV1_2) == Some("I") && query(msg, PV1_3_5).map(|v| v == "KLINIKUM").is_some())
 }
@@ -791,7 +793,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
                 assert_json_snapshot!(b, {".meta.lastUpdated" => "2026-08-14T07:52:30.71123337Z"});
             }
             Ok(None) => {
-                panic!("We should have been an error here - but got empty result!")
+                panic!("We should have an error here - but got empty result!")
             }
             Err(e) => {
                 panic!("test failed result Error: {}", e.to_string())
@@ -878,11 +880,11 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
         let config = &get_test_config();
 
         let msg =
-            Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
+                Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
 EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
 PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
 MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
-                .unwrap();
+                    .unwrap();
         let result = fhir_core::mapping::patient_mapper::map(
             &hl7_to_patient_dto::map(&msg).unwrap().unwrap(),
             config,
@@ -898,7 +900,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20221121142711||ADT^A29^ADT_A21|71546182|P|2.5||684450133|NE|NE||8859/1
 EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
 PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#, true)
-            .unwrap();
+                .unwrap();
 
         let entry = fhir_core::mapping::patient_mapper::map(&map(&msg).unwrap().unwrap(), config)
             .unwrap()
