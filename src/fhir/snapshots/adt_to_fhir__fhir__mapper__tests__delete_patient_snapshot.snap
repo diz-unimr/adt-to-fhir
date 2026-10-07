@@ -49,7 +49,6 @@ expression: entry.first()
     ],
     "gender": "male",
     "birthDate": "1945-02-01",
-    "deceasedBoolean": false,
     "address": [
       {
         "type": "both",
