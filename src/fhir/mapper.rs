@@ -1,27 +1,20 @@
-use crate::error::{MappingError, MessageAccessError, ParsingError};
+use crate::error::MappingError;
 use crate::fhir::{encounter, location, observation, organization};
 use anyhow::Result;
 use anyhow::anyhow;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, TimeZone};
-use chrono_tz::Europe::Berlin;
-use fhir_model::DateFormatError::InvalidDate;
-use fhir_model::r4b::codes::HTTPVerb::Patch;
-use fhir_model::r4b::codes::{BundleType, HTTPVerb, IdentifierUse};
+use fhir_model::r4b::codes::BundleType;
 use fhir_model::r4b::resources::{
-    Bundle, BundleEntry, BundleEntryRequest, IdentifiableResource, Parameters, Resource,
+    Bundle, BundleEntry,
     ResourceType,
 };
 use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
 use processor_hl7v2::hl7::parser::{
-    MessageType, PID_2, PID_4, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, PV1_19_1, ZBE_2, get_message_key,
-    message_type, query,
+    PID_2, PV1_2, PV1_3_1, PV1_3_4, PV1_3_5, get_message_key, query,
 };
 
-use crate::error::MappingError::Hl7ParsingError;
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
 use fhir_core::mapping::misc::resource_ref;
-use fhir_core::model::fab_mapping::is_valid_date;
 use fhir_model::Instant;
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
@@ -182,14 +175,10 @@ mod tests {
     use fhir_core::mapping::misc::{full_url_from_identifiers, parse_datetime, patch_bundle_entry};
     use fhir_model::DateTime::DateTime;
     use fhir_model::r4b::codes::HTTPVerb::{Delete, Patch};
-    use fhir_model::r4b::codes::ResourceType::Observation;
     use fhir_model::r4b::resources::{
-        Bundle, BundleEntry, BundleEntryRequest, Encounter, ObservationBuilder,
-        ObservationReferenceRangeBuilder, Parameters, Patient, Resource, ResourceType,
+        Bundle, BundleEntry, BundleEntryRequest, Encounter, Parameters, Patient, Resource, ResourceType,
     };
     use fhir_model::time;
-    use fhir_model::time::format_description::well_known::iso8601::FormattedComponents::DateTimeOffset;
-    use fhir_model::time::macros::datetime;
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use insta::assert_json_snapshot;
     use processor_hl7v2::hl7_to_patient_dto::map;
@@ -895,14 +884,11 @@ EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
 PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
 MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
                 .unwrap();
-        let entry = fhir_core::mapping::patient_mapper::map(
+        let result = fhir_core::mapping::patient_mapper::map(
             &hl7_to_patient_dto::map(&msg).unwrap().unwrap(),
             config,
-        )
-        .unwrap()
-        .unwrap()
-        .resource
-        .unwrap();
+        );
+        let entry = result.unwrap().unwrap();
         insta::assert_json_snapshot!(entry);
     }
 
