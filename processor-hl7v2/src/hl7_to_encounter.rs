@@ -1,14 +1,10 @@
-use crate::hl7::parser::MessageType::A14;
 use crate::hl7::parser::{
-    MessageType, PID_2, PID_4, PID_21_1, PV1_2, PV1_3_1, PV1_4__2_1, PV1_4_1, PV1_19_1, PV1_36_1,
+    MessageType, PID_2, PID_21_1, PV1_2, PV1_3_1, PV1_4__2_1, PV1_4_1, PV1_19_1, PV1_36_1,
     PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key, message_type,
-    parse_naive_datetime, query,
+    parse_to_datetime, query,
 };
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
-use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
-use chrono::NaiveDateTime;
-use derive_builder::Builder;
 use fhir_core::model::meta::{MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation};
 
 use crate::hl7::map_visit_number;
@@ -81,7 +77,7 @@ fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall
         "PID-2".to_string(),
     ))?;
     let encounter_number = map_visit_number(msg)?;
-    let admission_datetime = parse_naive_datetime(query(msg, PV1_44).ok_or(
+    let admission_datetime = parse_to_datetime(query(msg, PV1_44).ok_or(
         Hl7MessageAccessError::MissingMessageValue("PV1.44".to_string()),
     )?)?;
     let bed_status = query(msg, PV1_2).ok_or(Hl7MessageAccessError::MissingMessageValue(
@@ -90,7 +86,7 @@ fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall
     let movement_id = query(msg, ZBE_1_1).ok_or(Hl7MessageAccessError::MissingMessageValue(
         "ZBE1.1".to_string(),
     ))?;
-    let movement_start = parse_naive_datetime(query(msg, ZBE_2).ok_or(
+    let movement_start = parse_to_datetime(query(msg, ZBE_2).ok_or(
         Hl7MessageAccessError::MissingMessageValue("ZBE-2".to_string()),
     )?)?;
 
@@ -131,10 +127,10 @@ fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall
         .build()?;
 
     if let Some(date_time) = discharge_datetime {
-        fall.discharge = Some(parse_naive_datetime(date_time)?)
+        fall.discharge = Some(parse_to_datetime(date_time)?)
     }
     if let Some(date_time) = movement_end {
-        fall.movement_end = Some(parse_naive_datetime(date_time)?);
+        fall.movement_end = Some(parse_to_datetime(date_time)?);
     }
     if let Some(entlassgrund_1_u_2) = entlassgrund_1_u_2 {
         fall.discharge_reason_12 = Some(entlassgrund_1_u_2.to_string())
@@ -235,7 +231,7 @@ mod tests {
     #[case("a08_test.hl7")]
     #[case("a11_test.hl7")]
     #[case("a38_test.hl7")]
-    pub fn aXX_test(#[case] test_file_name: String) {
+    pub fn a_xx_test(#[case] test_file_name: String) {
         let binding = read_test_resource(test_file_name.as_str());
         let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
         let result = map(&msg);

@@ -360,11 +360,11 @@ pub fn parse_datetime(input: &str) -> Result<DateTime, Hl7MessageParsingError> {
     )))
 }
 
-pub fn parse_naive_date(input: &str) -> Result<NaiveDate, Hl7MessageParsingError> {
+pub fn parse_to_naive_date(input: &str) -> Result<NaiveDate, Hl7MessageParsingError> {
     NaiveDate::parse_from_str(input, "%Y%m%d").map_err(Hl7MessageParsingError::from)
 }
 
-pub fn parse_naive_datetime(input: &str) -> Result<OffsetDateTime, Hl7MessageParsingError> {
+pub fn parse_to_datetime(input: &str) -> Result<OffsetDateTime, Hl7MessageParsingError> {
     let date_tz = NaiveDateTime::parse_from_str(input, "%Y%m%d%H%M")?
         .and_local_timezone(Berlin)
         .earliest()
@@ -383,15 +383,15 @@ mod tests {
 
     #[test]
     fn parse_naive_date_test() {
-        assert!(parse_naive_date("2021-01-01").is_err());
-        assert!(parse_naive_date("20210101").is_ok());
+        assert!(parse_to_naive_date("2021-01-01").is_err());
+        assert!(parse_to_naive_date("20210101").is_ok());
 
-        let d = parse_naive_date("20210102").unwrap();
+        let d = parse_to_naive_date("20210102").unwrap();
         assert_eq!(d, NaiveDate::from_ymd_opt(2021, 01, 02).unwrap());
     }
     #[test]
     fn parse_naive_datetime_test() {
-        let datetime = parse_naive_datetime("202101130725");
+        let datetime = parse_to_datetime("202101130725");
         assert!(datetime.is_ok());
         assert_eq!(datetime.as_ref().unwrap().day(), 13);
         assert_eq!(datetime.as_ref().unwrap().month(), Month::January);

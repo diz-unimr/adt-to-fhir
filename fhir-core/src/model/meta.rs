@@ -4,7 +4,7 @@ use derive_builder::Builder;
 #[builder(setter(into))]
 pub struct MappingOpPerson {
     pub id: String,
-    pub operation: MappingTarget,
+    pub operation: ProcessingOperation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,10 +22,4 @@ pub struct MappingOpEncounter {
     pub operation_lv1: ProcessingOperation,
     pub operation_lv2: ProcessingOperation,
     pub operation_lv3: ProcessingOperation,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MappingTarget {
-    Person(ProcessingOperation),
-    Observation(ProcessingOperation),
-    Observation_with_Zng(ProcessingOperation),
 }

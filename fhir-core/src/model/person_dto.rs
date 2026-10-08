@@ -42,12 +42,6 @@ pub struct PersonDto {
     pub address: Vec<Option<AddressDto>>,
     #[builder(default)]
     pub insurance: Vec<Option<Insurance>>,
-    #[builder(default)]
-    pub birth_head_circumference: Option<u32>,
-    #[builder(default)]
-    pub birth_body_length: Option<u32>,
-    #[builder(default)]
-    pub birth_weight: Option<u32>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum DtoDates {
@@ -259,7 +253,7 @@ pub struct AddressDto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::meta::{MappingTarget, ProcessingOperation};
+    use crate::model::meta::ProcessingOperation;
 
     #[test]
     fn test_gender_conversion() {
@@ -389,7 +383,7 @@ mod tests {
         PersonDtoBuilder::default()
             .meta(MappingOpPerson {
                 id: "42".to_string(),
-                operation: MappingTarget::Person(ProcessingOperation::UpdateAsCreate),
+                operation: ProcessingOperation::UpdateAsCreate,
             })
             .pid("42")
             .gender(GenderDto::Unknown)

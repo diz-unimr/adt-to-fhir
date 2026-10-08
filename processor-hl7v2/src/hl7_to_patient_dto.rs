@@ -1,7 +1,7 @@
 use crate::hl7::parser::{
     ENV_1, MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29,
-    PID_30, ZNG_6, ZNG_7, ZNG_11, get_message_key, message_type, parse_datetime, parse_naive_date,
-    parse_naive_datetime, query, segment_value,
+    PID_30, ZNG_6, ZNG_7, ZNG_11, get_message_key, message_type, parse_datetime, parse_to_datetime,
+    parse_to_naive_date, query, segment_value,
 };
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
 use crate::hl7_error::Hl7MappingError;
@@ -11,7 +11,7 @@ use crate::hl7_error::Hl7MessageAccessError::{
 use anyhow::anyhow;
 use fhir_core::mapping::patient_mapper::is_valid_gkv10;
 use fhir_core::model::meta::ProcessingOperation::Patch;
-use fhir_core::model::meta::{MappingOpPerson, MappingTarget, ProcessingOperation};
+use fhir_core::model::meta::{MappingOpPerson, ProcessingOperation};
 use fhir_core::model::person_dto::{
     AddressDto, AddressDtoBuilder, DtoDates, GenderDto, Insurance, InsuranceBuilder, InsuranceType,
     MaritalStatusDto, PersonDto, PersonDtoBuilder, PersonDtoBuilderError, PersonName,
@@ -41,11 +41,11 @@ pub fn hl7_to_patient_dto(
 
     if let Some(birthday) = query(msg, PID_7) {
         if birthday.len() > 8 {
-            let datetime = DtoDates::Datetime(parse_naive_datetime(birthday)?);
+            let datetime = DtoDates::Datetime(parse_to_datetime(birthday)?);
             patient_builder.date_of_birth(datetime);
         }
         if birthday.len() == 8 {
-            let date = DtoDates::Date(parse_naive_date(birthday)?);
+            let date = DtoDates::Date(parse_to_naive_date(birthday)?);
             patient_builder.date_of_birth(date);
         }
     }
@@ -65,12 +65,12 @@ pub fn hl7_to_patient_dto(
 
     if let Some(death_date) = query(msg, PID_29) {
         if death_date.len() > 8 {
-            let datetime = DtoDates::Datetime(parse_naive_datetime(death_date)?);
+            let datetime = DtoDates::Datetime(parse_to_datetime(death_date)?);
 
             patient_builder.time_of_death(Some(datetime));
         }
         if death_date.len() == 8 {
-            let date = DtoDates::Date(parse_naive_date(death_date)?);
+            let date = DtoDates::Date(parse_to_naive_date(death_date)?);
             patient_builder.time_of_death(Some(date));
         }
     }
@@ -85,21 +85,6 @@ pub fn hl7_to_patient_dto(
         && let Ok(birth_order) = multi_birth_number.parse::<u32>()
     {
         patient_builder.multiple_birth_order(Some(birth_order));
-    }
-    if let Some(head_circumference) = query(msg, ZNG_11)
-        && let Ok(circumference) = head_circumference.parse::<u32>()
-    {
-        patient_builder.birth_head_circumference(Some(circumference));
-    }
-    if let Some(body_length) = query(msg, ZNG_6)
-        && let Ok(birth_length) = body_length.parse::<u32>()
-    {
-        patient_builder.birth_body_length(Some(birth_length));
-    }
-    if let Some(weight) = query(msg, ZNG_7)
-        && let Ok(birth_weight) = weight.parse::<u32>()
-    {
-        patient_builder.birth_weight(Some(birth_weight));
     }
     if let Some(enc_number) = map_visit_number_lenient(&msg) {
         patient_builder.encounter_number(enc_number.to_string());
@@ -203,13 +188,13 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
         | MessageType::A07
         | MessageType::A08
         => {
-            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson { id, operation: MappingTarget::Person(ProcessingOperation::UpdateAsCreate) })?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson { id, operation: ProcessingOperation::UpdateAsCreate })?))
         }
         MessageType::A02 | MessageType::A03 | MessageType::A31 => {
-            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson { id, operation: MappingTarget::Person(ProcessingOperation::CreateIfNotExists) })?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson { id, operation: ProcessingOperation::CreateIfNotExists })?))
         }
         MessageType::A34 | MessageType::A40 => {
-            Ok(Some(create_patient_merge_hl7(msg, MappingOpPerson { id, operation: MappingTarget::Person(Patch) })?))
+            Ok(Some(create_patient_merge_hl7(msg, MappingOpPerson { id, operation: Patch})?))
         }
         // patient stays unchanged
         MessageType::A11
@@ -232,7 +217,7 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
         MessageType::A29 => {
 
             // todo:  in case of mapping error fallback to a minimal delete request without resource!
-            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson {id ,operation: MappingTarget::Person(ProcessingOperation::Delete)})?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson {id ,operation: ProcessingOperation::Delete})?))
         }
         other => Err(Hl7MappingError::from(UnsupportedContentError(other.to_string(), ENV_1.to_string()))),
     }
@@ -299,7 +284,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Insurance>, Hl7Mapping
     if let Some(start) = in1
         .field(12)
         .filter(|f| !f.is_empty())
-        .map(|f| parse_naive_date(f.raw_value()))
+        .map(|f| parse_to_naive_date(f.raw_value()))
         .transpose()?
     {
         result.valid_from(start);
@@ -308,7 +293,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Insurance>, Hl7Mapping
     if let Some(end) = in1
         .field(13)
         .filter(|f| !f.is_empty())
-        .map(|f| parse_naive_date(f.raw_value()))
+        .map(|f| parse_to_naive_date(f.raw_value()))
         .transpose()?
     {
         result.valid_to(end);
@@ -522,7 +507,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
                 &msg,
                 MappingOpPerson {
                     id: "42".to_string(),
-                    operation: MappingTarget::Person(Patch),
+                    operation: Patch,
                 },
             )
             .unwrap(),
