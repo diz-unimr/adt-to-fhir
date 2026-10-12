@@ -1,5 +1,5 @@
 use crate::error::MappingError;
-use crate::fhir::{encounter, location, observation, organization};
+use crate::fhir::{encounter, location, organization};
 use anyhow::Result;
 use anyhow::anyhow;
 use fhir_model::r4b::codes::BundleType;
@@ -12,11 +12,12 @@ use processor_hl7v2::hl7::parser::{
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
 use fhir_core::mapping::misc::resource_ref;
+use fhir_core::mapping::observation_mapper;
 use fhir_model::Instant;
 use fhir_model::time::OffsetDateTime;
 use hl7_parser::Message;
 use log::{Level, log};
-use processor_hl7v2::hl7_to_patient_dto;
+use processor_hl7v2::{hl7_to_observation, hl7_to_patient_dto};
 
 pub(crate) struct FhirMapper {
     pub(crate) config: Fhir,
@@ -92,7 +93,11 @@ impl FhirMapper {
         };
         let e = encounter::map(v2_msg, &self.config, &self.resources)?;
         let l = location::map(v2_msg, &self.config, &self.resources)?;
-        let obs = observation::map(v2_msg, &self.config)?;
+        let obs: Vec<BundleEntry> = match &hl7_to_observation::map(v2_msg)? {
+            Some(obs_dto) => observation_mapper::map(obs_dto, &self.config)?,
+            None => vec![],
+        };
+
         let org = organization::map(v2_msg, &self.config, &self.resources)?;
         let res = p
             .into_iter()

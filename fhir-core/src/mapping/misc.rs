@@ -30,6 +30,14 @@ pub fn parse_datetime(input: &str) -> Result<DateTime, ParsingError> {
     )))
 }
 
+pub fn parse_datetime_from_offset(
+    offset_date_time: &OffsetDateTime,
+) -> Result<DateTime, ParsingError> {
+    Ok(DateTime::DateTime(Instant(
+        OffsetDateTime::from_unix_timestamp(offset_date_time.unix_timestamp())?,
+    )))
+}
+
 pub fn upsert_reference(
     resource_type: &ResourceType,
     identifier: &Identifier,
