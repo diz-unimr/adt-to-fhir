@@ -1,5 +1,5 @@
 use crate::error::MappingError;
-use crate::fhir::mapper::{is_inpatient_location, parse_fab};
+use crate::fhir::mapper::is_inpatient_location;
 
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
@@ -11,8 +11,8 @@ use fhir_core::mapping::misc::{
 use fhir_model::r4b::resources::{BundleEntry, EncounterLocation, Location, ResourceType};
 use hl7_parser::Message;
 use log::{Level, log};
-use processor_hl7v2::hl7::is_ward_valid_icu;
 use processor_hl7v2::hl7::parser::{MessageType, PV1_3_1, PV1_3_2, PV1_3_3, message_type, query};
+use processor_hl7v2::hl7::{is_ward_valid_icu, parse_department_name};
 
 pub(super) fn map(
     msg: &Message,
@@ -65,7 +65,7 @@ pub(crate) fn create_locations(
         let pv1_3_2 = query(msg, PV1_3_2);
         let pv1_3_3 = query(msg, PV1_3_3);
 
-        if parse_fab(msg).is_some() {
+        if parse_department_name(msg).is_some() {
             match (pv1_3_1, pv1_3_2, pv1_3_3) {
                 (Some(_), None, None) => {
                     if let Some(loc) = map_ward_location(msg, config, resources)? {
@@ -107,7 +107,7 @@ pub(crate) fn map_ward_location(
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Option<Location>, MappingError> {
-    if let (department, Some(ward_id)) = (parse_fab(msg), query(msg, PV1_3_1)) {
+    if let (department, Some(ward_id)) = (parse_department_name(msg), query(msg, PV1_3_1)) {
         let mut location = Location::builder()
             .meta(get_meta(config)?)
             .physical_type(get_cc_with_one_code(

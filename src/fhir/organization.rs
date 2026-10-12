@@ -1,13 +1,13 @@
 use crate::error::MappingError;
 use adt_config::config::Fhir;
 
-use crate::fhir::mapper::parse_fab;
 use adt_config::resources::ResourceMap;
 use fhir_core::mapping::misc::{EntryRequestType, bundle_entry};
 use fhir_core::mapping::orga_mapping::{map_department_dto, map_ward_dto};
 use fhir_core::model::orga_dto::{DepartmentDto, WardDto};
 use fhir_model::r4b::resources::{BundleEntry, Organization};
 use hl7_parser::Message;
+use processor_hl7v2::hl7::parse_department_name;
 use processor_hl7v2::hl7::parser::{PV1_3_1, query};
 
 pub(crate) fn map(
@@ -38,7 +38,7 @@ fn map_department_org(
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Option<Organization>, MappingError> {
-    if let Some(fab_ref) = parse_fab(msg) {
+    if let Some(fab_ref) = parse_department_name(msg) {
         let department = DepartmentDto {
             department_identifier: fab_ref.to_string(),
         };
@@ -52,7 +52,7 @@ fn map_department_org(
 fn map_ward_org(msg: &Message, config: &Fhir) -> Result<Option<Organization>, MappingError> {
     // ward is sometimes empty
     if let Some(ward_name) = query(msg, PV1_3_1) {
-        if let Some(fab_ref) = parse_fab(msg) {
+        if let Some(fab_ref) = parse_department_name(msg) {
             let ward_input = WardDto {
                 ward_name: ward_name.to_string(),
                 part_of_department: DepartmentDto {

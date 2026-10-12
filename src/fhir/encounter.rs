@@ -4,7 +4,7 @@ use crate::fhir::encounter::EncounterType::{Fachabteilungskontakt, Versorgungsst
 use crate::fhir::location::{
     map_bed_location, map_room_location, map_ward_location, to_encounter_location,
 };
-use crate::fhir::mapper::{is_inpatient_location, parse_fab, subject_ref};
+use crate::fhir::mapper::{is_inpatient_location, subject_ref};
 use adt_config::config::Fhir;
 
 use EncounterType::Einrichtungskontakt;
@@ -38,7 +38,9 @@ use processor_hl7v2::hl7::parser::{
     PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
     get_message_key, message_type, query,
 };
-use processor_hl7v2::hl7::{is_begleitperson, is_ward_valid_icu, map_visit_number};
+use processor_hl7v2::hl7::{
+    is_begleitperson, is_ward_valid_icu, map_visit_number, parse_department_name,
+};
 
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
@@ -349,7 +351,7 @@ fn map_abteilungskontakt(
             .build()?;
 
         enc.service_type = Some(service_type);
-        if let Some(fab) = parse_fab(msg) {
+        if let Some(fab) = parse_department_name(msg) {
             enc.service_provider = Some(fab_ref(fab, config)?);
         }
 
@@ -372,7 +374,7 @@ fn get_service_type(
     let system_fachabteilungs_schluessel: &str =
         "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
 
-    if let Some(fab) = parse_fab(msg) {
+    if let Some(fab) = parse_department_name(msg) {
         let msg_id = get_message_key(msg)?;
         match map_fab_schluessel(fab, msg_id, config, resources) {
             Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
@@ -759,9 +761,10 @@ fn map_lvl_3_locations(
 ) -> Result<Vec<Option<EncounterLocation>>> {
     let mut locations: Vec<Option<EncounterLocation>> = vec![];
 
-    if let (Some(_department), Some(loc)) =
-        (parse_fab(msg), map_ward_location(msg, config, resources)?)
-    {
+    if let (Some(_department), Some(loc)) = (
+        parse_department_name(msg),
+        map_ward_location(msg, config, resources)?,
+    ) {
         // department location should be always available
         let mut department_location = to_encounter_location(loc)?;
         department_location.status = Some(get_location_status(msg)?);
