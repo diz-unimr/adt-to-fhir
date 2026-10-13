@@ -17,17 +17,6 @@ impl From<BuilderError> for FhirMappingError {
         ContentError::from(err).into()
     }
 }
-impl FhirMappingError {
-    pub(crate) fn name(&self) -> &str {
-        match self {
-            FhirMappingError::MissingContentError { .. } => "MissingContentError",
-
-            FhirMappingError::MissingResourceError { .. } => "MissingResourceError",
-
-            FhirMappingError::ProcessingFailed(_) => "ProcessingFailed",
-        }
-    }
-}
 
 impl From<ParseError> for ContentError {
     fn from(err: ParseError) -> Self {

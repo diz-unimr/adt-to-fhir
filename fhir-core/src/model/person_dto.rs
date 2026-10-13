@@ -69,7 +69,7 @@ pub struct Insurance {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum InsuranceType {
-    GKV_PKV,
+    GkvPkv,
     Other,
 }
 

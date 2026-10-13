@@ -121,7 +121,7 @@ fn build_names(v2_msg: &Message) -> Result<Vec<Option<PersonName>>, PersonNameBu
             let family_name = repeat_component(name_field, 1).map(|e| e.to_string());
             let given_name = repeat_component(name_field, 2).map(|ff| ff.to_string());
             let mut builder = PersonNameBuilder::default();
-            let mut name = builder
+            let name = builder
                 .family(family_name)
                 .given_name(vec![given_name])
                 .name_prefix(repeat_component(name_field, 6).map(|e| e.to_string()))
@@ -275,7 +275,7 @@ fn map_versicherungsdaten(in1: &Segment) -> Result<Option<Insurance>, Hl7Mapping
     result.insurance_number(insurance_number);
 
     if is_valid_gkv10(insurance_number) {
-        result.insurance_type(InsuranceType::GKV_PKV);
+        result.insurance_type(InsuranceType::GkvPkv);
     } else {
         // OTHER INSURANCE NUMBER! vor 2012 waren 9 - 12 Stellen ohne führenden Buchstaben valide.
         result.insurance_type(InsuranceType::Other);

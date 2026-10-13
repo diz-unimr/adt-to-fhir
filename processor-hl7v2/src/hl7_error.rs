@@ -100,21 +100,6 @@ impl From<BuilderError> for Hl7MappingError {
         }
     }
 }
-impl Hl7MappingError {
-    pub(crate) fn name(&self) -> &str {
-        match self {
-            Hl7MappingError::MessageError(_) => "MessageError",
-            Hl7MappingError::MissingResourceError { .. } => "MissingResourceError",
-            Hl7MappingError::Other(_) => "Other",
-            Hl7MappingError::BuilderUninitializedFieldError { .. } => {
-                "BuilderUninitializedFieldError"
-            }
-            Hl7MappingError::InputValidationError { .. } => "InputValidationError",
-            Hl7MappingError::Hl7ParsingError(_) => "Hl7ParsingError",
-            Hl7MappingError::BuilderError { .. } => "BuilderError",
-        }
-    }
-}
 
 #[derive(Debug, Error)]
 pub enum Hl7MessageParsingError {
@@ -138,22 +123,7 @@ pub enum Hl7MessageParsingError {
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
-impl Hl7MessageParsingError {
-    pub(crate) fn name(&self) -> &str {
-        match self {
-            Hl7MessageParsingError::DateFormatError(_) => "DateFormatError",
-            Hl7MessageParsingError::ParseError(_) => "ParseError",
-            Hl7MessageParsingError::ParseDateError(_) => "ParseDateError",
-            Hl7MessageParsingError::ParseIntError(_) => "ParseIntError",
-            Hl7MessageParsingError::ParseFloatError(_) => "ParseFloatError",
-            Hl7MessageParsingError::InvalidFormatError(_) => "InvalidFormatError",
-            Hl7MessageParsingError::ComponentRangeError(_) => "ComponentRangeError",
 
-            Hl7MessageParsingError::Other(_) => "OtherError",
-            Hl7MessageParsingError::Hl7MessageParseError(_) => "Hl7MessageParseError",
-        }
-    }
-}
 #[derive(Debug, Error)]
 pub enum Hl7MessageAccessError {
     #[error("Missing message segment {0}")]

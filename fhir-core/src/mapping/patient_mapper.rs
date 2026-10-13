@@ -1,6 +1,6 @@
 use crate::fhir_error::ContentError::MissingValueError;
 use crate::fhir_error::{ContentError, FhirMappingError};
-use crate::model::person_dto::{DtoDates, GenderDto, Insurance, MaritalStatusDto, PersonDto};
+use crate::model::person_dto::{DtoDates, GenderDto, Insurance, PersonDto};
 use adt_config::config::Fhir;
 use anyhow::anyhow;
 use chrono::NaiveDateTime;
@@ -96,7 +96,6 @@ pub fn map(data: &PersonDto, config: &Fhir) -> Result<Option<BundleEntry>, FhirM
             }
         }
         ProcessingOperation::Skip => Ok(None),
-        _ => Ok(None),
     }
 }
 pub fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError> {
@@ -272,7 +271,7 @@ pub fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, Builde
 pub fn create_patient_merge_dto(
     patient_dto: &PersonDto,
     config: &Fhir,
-) -> Result<(Option<(Parameters, Identifier)>), ContentError> {
+) -> Result<Option<(Parameters, Identifier)>, ContentError> {
     match (patient_dto.pid.clone(), patient_dto.replaced_by_pid.clone()) {
         (replaced_patient_id, Some(new_pid)) => Ok(Some(create_patient_merge(
             replaced_patient_id,

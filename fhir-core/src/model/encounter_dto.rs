@@ -5,7 +5,7 @@ use std::num::NonZeroU32;
 
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
-pub struct Fall_Diagnose {
+pub struct FallDiagnose {
     pub ordinal_number: u32,
     pub id: String,
     pub condition_typ: String,
@@ -45,7 +45,7 @@ pub struct Fall {
     #[builder(default)]
     pub discharge_reason_3: Option<String>,
     #[builder(default)]
-    pub diagnosis: Option<Vec<Fall_Diagnose>>,
+    pub diagnosis: Option<Vec<FallDiagnose>>,
     #[builder(default)]
     pub mothers_enc_number: Option<String>,
     #[builder(default)]

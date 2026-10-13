@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use fhir_core::model::meta::{MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation};
 
 use crate::hl7::map_visit_number;
-use fhir_core::model::encounter_dto::{Fall, Fall_Diagnose, Fall_DiagnoseBuilder, FallBuilder};
+use fhir_core::model::encounter_dto::{Fall, FallBuilder, FallDiagnose, FallDiagnoseBuilder};
 use hl7_parser::Message;
 use log::{Level, log};
 use std::num::NonZeroU32;
@@ -111,7 +111,7 @@ fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall
     let aufnahmegrund_3_u_4 = query(msg, PV1_4__2_1);
 
     //map_conditions
-    let diagnosis_list: Vec<Fall_Diagnose> = extract_diagnosis(msg)?;
+    let diagnosis_list: Vec<FallDiagnose> = extract_diagnosis(msg)?;
 
     // map_mothers_encounter
     let mothers_encounter_number = query(msg, PID_21_1);
@@ -159,7 +159,7 @@ fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall
     Ok(fall)
 }
 
-fn extract_diagnosis(msg: &Message) -> Result<Vec<Fall_Diagnose>, Hl7MappingError> {
+fn extract_diagnosis(msg: &Message) -> Result<Vec<FallDiagnose>, Hl7MappingError> {
     let mut res = vec![];
     if msg.segment_count("DG1") > 0 {
         for dg1 in msg.segments().filter(|seg| seg.name.eq("DG1")) {
@@ -191,7 +191,7 @@ fn extract_diagnosis(msg: &Message) -> Result<Vec<Fall_Diagnose>, Hl7MappingErro
                 anyhow!("could not parse diagnosis rank into non zero value!"),
             ))?;
 
-            let dg = Fall_DiagnoseBuilder::default()
+            let dg = FallDiagnoseBuilder::default()
                 .priority(rank_nz)
                 .condition_typ(condition_typ.raw_value())
                 .id(condition_id.raw_value())

@@ -5,7 +5,7 @@ use crate::hl7_error::Hl7MessageAccessError::{
 
 use crate::hl7_error::{Hl7MessageAccessError, Hl7MessageParsingError};
 use anyhow::anyhow;
-use chrono::{NaiveDate, NaiveDateTime, TimeZone, Timelike};
+use chrono::{NaiveDate, NaiveDateTime, TimeZone};
 use chrono_tz::Europe::Berlin;
 use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::time::OffsetDateTime;

@@ -66,9 +66,6 @@ pub fn map(input: &ObservationDto, config: &Fhir) -> Result<Vec<BundleEntry>, Fh
     Ok(result)
 }
 
-fn get_vital_obs(data: &ObservationDto) -> Result<Vec<BundleEntry>, FhirMappingError> {
-    todo!()
-}
 fn patient_disposition_coding() -> Vec<Option<Coding>> {
     vec![
         Coding::builder()
@@ -84,8 +81,8 @@ fn map_vital_status(
     data: &ObservationDto,
     config: &Fhir,
 ) -> Result<Option<Observation>, ContentError> {
-    if let Some(isAlive) = data.is_alive
-        && isAlive
+    if let Some(is_alive) = data.is_alive
+        && is_alive
     {
         let res = get_basic_observation_builder(data.effective_date)?
             .category(vec![Some(get_cc_with_one_code(

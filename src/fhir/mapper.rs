@@ -35,9 +35,6 @@ impl FhirMapper {
             resources: ResourceMap::new()?,
         })
     }
-    pub(crate) fn new_test(config: Fhir, resources: ResourceMap) -> Result<Self, anyhow::Error> {
-        Ok(FhirMapper { config, resources })
-    }
 
     pub(crate) fn map(&self, msg: &str) -> Result<Option<String>, MappingError> {
         // deserialize
