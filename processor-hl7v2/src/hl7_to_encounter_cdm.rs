@@ -1,3 +1,4 @@
+use crate::hl7::map_visit_number;
 use crate::hl7::parser::{
     MessageType, PID_2, PID_21_1, PV1_2, PV1_3_1, PV1_4__2_1, PV1_4_1, PV1_19_1, PV1_36_1,
     PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key, message_type,
@@ -5,15 +6,11 @@ use crate::hl7::parser::{
 };
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
 use anyhow::anyhow;
-use fhir_core::canonical_model::canonical_meta::{
-    MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation,
-};
-use std::error::Error;
-
-use crate::hl7::map_visit_number;
-use crate::hl7_error::Hl7MappingError::BuilderError;
 use fhir_core::canonical_model::canonical_encounter::{
     EncounterCdm, EncounterCdmBuilder, EncounterDiagnosisCdm, EncounterDiagnosisCdmBuilder,
+};
+use fhir_core::canonical_model::canonical_meta::{
+    MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation,
 };
 use hl7_parser::Message;
 use log::{Level, log};

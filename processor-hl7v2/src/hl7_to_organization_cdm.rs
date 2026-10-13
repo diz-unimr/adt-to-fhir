@@ -42,7 +42,7 @@ fn map_ward_org(msg: &Message) -> Result<Option<WardCdm>, Hl7MappingError> {
 }
 #[cfg(test)]
 mod tests {
-    use crate::hl7_to_organization;
+    use crate::hl7_to_organization_cdm;
     use hl7_parser::Message;
 
     #[test]
@@ -54,6 +54,6 @@ PV1|1|I|^^^^^945400^^^|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||
 
         let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
 
-        assert_eq!(hl7_to_organization::map(&msg).unwrap(), (None, None));
+        assert_eq!(hl7_to_organization_cdm::map(&msg).unwrap(), (None, None));
     }
 }

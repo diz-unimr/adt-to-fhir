@@ -13,12 +13,12 @@ use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Referenc
 use fhir_model::time::OffsetDateTime;
 
 use fhir_core::mapping::misc::resource_ref;
-use fhir_core::mapping::{observation_mapper, organization_mapper, patient_mapper};
+use fhir_core::mapping::{observation_cdm_to_fhir, organization_cdm_to_fhir, patient_cdm_to_fhir};
 
 use hl7_parser::Message;
 
 use processor_hl7v2::hl7::parser::{PID_2, PV1_2, PV1_3_5, get_message_key, query};
-use processor_hl7v2::{hl7_to_observation, hl7_to_organization, hl7_to_patient_dto};
+use processor_hl7v2::{hl7_to_observation_cdm, hl7_to_organization_cdm, hl7_to_patient_cdm};
 
 use crate::error::MappingError;
 use log::{Level, log};
@@ -84,7 +84,7 @@ impl FhirMapper {
         let p = self.map_patient(v2_msg)?;
         let e = encounter::map(v2_msg, &self.config, &self.resources)?;
         let l = location::map(v2_msg, &self.config, &self.resources)?;
-        let obs = self.map_observations(&v2_msg)?;
+        let obs = self.map_observations(v2_msg)?;
         let org = self.map_organizations(v2_msg)?;
         let res = p
             .into_iter()
@@ -99,24 +99,24 @@ impl FhirMapper {
     }
 
     fn map_organizations(&self, v2_msg: &Message) -> Result<Vec<BundleEntry>> {
-        let (dep, ward) = hl7_to_organization::map(v2_msg)?;
+        let (dep, ward) = hl7_to_organization_cdm::map(v2_msg)?;
         let org: Vec<BundleEntry> =
-            organization_mapper::map(dep, ward, &self.config, &self.resources)?;
+            organization_cdm_to_fhir::map(dep, ward, &self.config, &self.resources)?;
         Ok(org)
     }
 
     fn map_observations(&self, v2_msg: &Message) -> Result<Vec<BundleEntry>> {
-        let obs: Vec<BundleEntry> = match &hl7_to_observation::map(v2_msg)? {
-            Some(obs_dto) => observation_mapper::map(obs_dto, &self.config)?,
+        let obs: Vec<BundleEntry> = match &hl7_to_observation_cdm::map(v2_msg)? {
+            Some(obs_dto) => observation_cdm_to_fhir::map(obs_dto, &self.config)?,
             None => vec![],
         };
         Ok(obs)
     }
 
     fn map_patient(&self, v2_msg: &Message) -> Result<Vec<BundleEntry>> {
-        let p: Vec<BundleEntry> = match hl7_to_patient_dto::map(v2_msg)? {
+        let p: Vec<BundleEntry> = match hl7_to_patient_cdm::map(v2_msg)? {
             Some(pat_raw) => {
-                if let Some(pat_entry) = patient_mapper::map(&pat_raw, &self.config)? {
+                if let Some(pat_entry) = patient_cdm_to_fhir::map(&pat_raw, &self.config)? {
                     vec![pat_entry]
                 } else {
                     vec![]
@@ -169,7 +169,7 @@ mod tests {
     use fhir_model::time;
     use fhir_model::time::{Month, OffsetDateTime, Time};
     use insta::assert_json_snapshot;
-    use processor_hl7v2::hl7_to_patient_dto::map;
+    use processor_hl7v2::hl7_to_patient_cdm::map;
     use rstest::rstest;
     use serde_json::Value;
     use std::slice;
@@ -840,7 +840,8 @@ EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
 PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
 MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
                 .unwrap();
-        let result = patient_mapper::map(&hl7_to_patient_dto::map(&msg).unwrap().unwrap(), config);
+        let result =
+            patient_cdm_to_fhir::map(&hl7_to_patient_cdm::map(&msg).unwrap().unwrap(), config);
         let entry = result.unwrap().unwrap();
         assert_json_snapshot!(entry);
     }
@@ -854,7 +855,7 @@ EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
 PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#, true)
             .unwrap();
 
-        let entry = patient_mapper::map(&map(&msg).unwrap().unwrap(), config)
+        let entry = patient_cdm_to_fhir::map(&map(&msg).unwrap().unwrap(), config)
             .unwrap()
             .unwrap();
 

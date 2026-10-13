@@ -12,8 +12,8 @@ use adt_config::resources::ResourceMap;
 use anyhow::Result;
 use anyhow::anyhow;
 use fhir_core::fhir_error::FhirMappingError;
+use fhir_core::mapping::encounter_cdm_to_fhir::{map_default_identifier_enc, map_meta_encounter};
 use fhir_core::mapping::fab_mapping::map_fab_schluessel;
-use fhir_core::mapping::fall_mapper::{map_default_identifier_enc, map_meta_encounter};
 use fhir_core::mapping::misc::{
     EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported, get_cc_with_one_code,
     parse_datetime, resource_ref,

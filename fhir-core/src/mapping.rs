@@ -1,7 +1,7 @@
+pub mod encounter_cdm_to_fhir;
 pub mod fab_mapping;
-pub mod fall_mapper;
 pub mod misc;
-pub mod observation_mapper;
-pub mod organization_mapper;
-pub mod patient_mapper;
+pub mod observation_cdm_to_fhir;
+pub mod organization_cdm_to_fhir;
+pub mod patient_cdm_to_fhir;
 pub mod terminology;
