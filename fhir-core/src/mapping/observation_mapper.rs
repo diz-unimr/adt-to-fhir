@@ -1,9 +1,9 @@
+use crate::canonical_model::canconical_obervation::ObservationCdm;
 use crate::fhir_error::{ContentError, FhirMappingError};
 use crate::mapping::misc::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code,
     parse_datetime_from_offset, resource_ref,
 };
-use crate::model::obervation_dto::ObservationDto;
 use adt_config::config::Fhir;
 
 use fhir_model::r4b::codes::ObservationStatus;
@@ -28,7 +28,7 @@ const VITAL_SIGNS_CATEGORY_CODE: &str = "vital-signs";
 const SURVEY_CATEGORY_CODE: &str = "survey";
 const UCUM_SYSTEM: &str = "http://unitsofmeasure.org";
 
-pub fn map(input: &ObservationDto, config: &Fhir) -> Result<Vec<BundleEntry>, FhirMappingError> {
+pub fn map(input: &ObservationCdm, config: &Fhir) -> Result<Vec<BundleEntry>, FhirMappingError> {
     let mut result: Vec<BundleEntry> = vec![];
 
     if let Some(is_alive) = map_vital_status(input, config)? {
@@ -78,7 +78,7 @@ fn patient_disposition_coding() -> Vec<Option<Coding>> {
 }
 
 fn map_vital_status(
-    data: &ObservationDto,
+    data: &ObservationCdm,
     config: &Fhir,
 ) -> Result<Option<Observation>, ContentError> {
     if let Some(is_alive) = data.is_alive
@@ -144,7 +144,7 @@ fn get_basic_observation_builder(
 }
 
 fn map_body_length(
-    input: &ObservationDto,
+    input: &ObservationCdm,
     config: &Fhir,
 ) -> Result<Option<Observation>, ContentError> {
     if let Some(quantity_value) = input.length {
@@ -201,7 +201,7 @@ fn map_body_length(
 }
 
 fn map_body_weight(
-    input: &ObservationDto,
+    input: &ObservationCdm,
     config: &Fhir,
 ) -> Result<Option<Observation>, ContentError> {
     if let Some(quantity_value) = input.weight {
@@ -261,7 +261,7 @@ fn map_body_weight(
 }
 
 fn map_head_circumference(
-    input: &ObservationDto,
+    input: &ObservationCdm,
     config: &Fhir,
 ) -> Result<Option<Observation>, ContentError> {
     if let Some(quantity_value) = input.head_circumference {
@@ -316,7 +316,7 @@ fn map_head_circumference(
 }
 
 fn get_birth_obs_builder(
-    input: &ObservationDto,
+    input: &ObservationCdm,
     config: &Fhir,
     identifier: Identifier,
     quantity_value: f64,

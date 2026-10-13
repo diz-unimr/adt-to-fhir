@@ -3,7 +3,7 @@ use fhir_model::time::OffsetDateTime;
 
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
-pub struct ObservationDto {
+pub struct ObservationCdm {
     pub pid: String,
     pub encounter_number: String,
     pub effective_date: OffsetDateTime,

@@ -12,6 +12,7 @@ use adt_config::resources::ResourceMap;
 use anyhow::Result;
 use anyhow::anyhow;
 use fhir_core::fhir_error::FhirMappingError;
+use fhir_core::mapping::fab_mapping::map_fab_schluessel;
 use fhir_core::mapping::fall_mapper::{map_default_identifier_enc, map_meta_encounter};
 use fhir_core::mapping::misc::{
     EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported, get_cc_with_one_code,
@@ -20,7 +21,6 @@ use fhir_core::mapping::misc::{
 use fhir_core::mapping::terminology::{
     AufnahmeGrundStelle, EntlassgrundStelle, diagnose_role_coding, kontakt_diagnose_procedures,
 };
-use fhir_core::model::fab_mapping::map_fab_schluessel;
 use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterLocationStatus, EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{

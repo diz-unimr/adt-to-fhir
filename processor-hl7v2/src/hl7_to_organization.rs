@@ -1,18 +1,18 @@
 use crate::hl7::parse_department_name;
 use crate::hl7::parser::{PV1_3_1, query};
 use crate::hl7_error::Hl7MappingError;
-use fhir_core::model::orga_dto::{DepartmentDto, WardDto};
+use fhir_core::canonical_model::canonical_organization::{DepartmentCdm, WardCdm};
 use hl7_parser::Message;
 
-pub fn map(msg: &Message) -> Result<(Option<DepartmentDto>, Option<WardDto>), Hl7MappingError> {
+pub fn map(msg: &Message) -> Result<(Option<DepartmentCdm>, Option<WardCdm>), Hl7MappingError> {
     let department_org = map_department_org(msg)?;
     let war_org = map_ward_org(msg)?;
     Ok((department_org, war_org))
 }
 
-fn map_department_org(msg: &Message) -> Result<Option<DepartmentDto>, Hl7MappingError> {
+fn map_department_org(msg: &Message) -> Result<Option<DepartmentCdm>, Hl7MappingError> {
     if let Some(fab_ref) = parse_department_name(msg) {
-        let department = DepartmentDto {
+        let department = DepartmentCdm {
             department_identifier: fab_ref.to_string(),
         };
 
@@ -22,13 +22,13 @@ fn map_department_org(msg: &Message) -> Result<Option<DepartmentDto>, Hl7Mapping
     }
 }
 
-fn map_ward_org(msg: &Message) -> Result<Option<WardDto>, Hl7MappingError> {
+fn map_ward_org(msg: &Message) -> Result<Option<WardCdm>, Hl7MappingError> {
     // ward is sometimes empty
     if let Some(ward_name) = query(msg, PV1_3_1) {
         if let Some(fab_ref) = parse_department_name(msg) {
-            let ward_input = WardDto {
+            let ward_input = WardCdm {
                 ward_name: ward_name.to_string(),
-                part_of_department: DepartmentDto {
+                part_of_department: DepartmentCdm {
                     department_identifier: fab_ref.to_string(),
                 },
             };

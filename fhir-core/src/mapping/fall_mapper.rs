@@ -1,5 +1,5 @@
+use crate::canonical_model::canonical_encounter::EncounterCdm;
 use crate::fhir_error::ContentError;
-use crate::model::encounter_dto::Fall;
 use adt_config::config::Fhir;
 use fhir_model::BuilderError;
 use fhir_model::r4b::codes::IdentifierUse;
@@ -33,6 +33,6 @@ pub fn map_meta_encounter(config: &Fhir) -> Result<Meta, anyhow::Error> {
         .build()?)
 }
 
-pub fn map(input: Fall, config: &Fhir) -> Result<BundleEntry, ContentError> {
+pub fn map(input: EncounterCdm, config: &Fhir) -> Result<BundleEntry, ContentError> {
     panic!("not implemented")
 }

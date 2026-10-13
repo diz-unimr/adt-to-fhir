@@ -1,6 +1,6 @@
+use crate::canonical_model::canonical_patient::{CdmDates, GenderCdm, Insurance, PatientCdm};
 use crate::fhir_error::ContentError::MissingValueError;
 use crate::fhir_error::{ContentError, FhirMappingError};
-use crate::model::person_dto::{DtoDates, GenderDto, Insurance, PersonDto};
 use adt_config::config::Fhir;
 use anyhow::anyhow;
 use chrono::NaiveDateTime;
@@ -8,12 +8,12 @@ use chrono::TimeZone;
 use chrono_tz::Europe::Berlin;
 use std::sync::LazyLock;
 
+use crate::canonical_model::canonical_meta::ProcessingOperation;
 use crate::mapping::misc::{
     EntryRequestType, bundle_entry, field_extension, get_cc_with_one_code,
     get_period_from_date_time, parse_date, parse_naive_date_as_date_time,
     parse_naive_datetime_as_date, patch_bundle_entry, upsert_reference,
 };
-use crate::model::meta::ProcessingOperation;
 
 use fhir_model::DateFormatError::InvalidDate;
 use fhir_model::r4b::codes::{AddressType, AdministrativeGender, IdentifierUse, NameUse};
@@ -30,7 +30,7 @@ use fhir_model::{BuilderError, DateTime, Instant};
 use log::{Level, log};
 use regex::Regex;
 
-pub fn map(data: &PersonDto, config: &Fhir) -> Result<Option<BundleEntry>, FhirMappingError> {
+pub fn map(data: &PatientCdm, config: &Fhir) -> Result<Option<BundleEntry>, FhirMappingError> {
     match &data.meta.operation {
         ProcessingOperation::UpdateAsCreate
         | ProcessingOperation::CreateIfNotExists
@@ -98,7 +98,7 @@ pub fn map(data: &PersonDto, config: &Fhir) -> Result<Option<BundleEntry>, FhirM
         ProcessingOperation::Skip => Ok(None),
     }
 }
-pub fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, ContentError> {
+pub fn map_patient(pat_data: &PatientCdm, config: &Fhir) -> Result<Patient, ContentError> {
     // patient resource
     let mut patient = Patient::builder()
         .meta(
@@ -117,8 +117,8 @@ pub fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, Conte
 
     patient.birth_date = match pat_data.date_of_birth {
         None => None,
-        Some(DtoDates::Date(date)) => parse_date(Some(date))?,
-        Some(DtoDates::Datetime(datetime)) => Some(parse_naive_datetime_as_date(datetime)?),
+        Some(CdmDates::Date(date)) => parse_date(Some(date))?,
+        Some(CdmDates::Datetime(datetime)) => Some(parse_naive_datetime_as_date(datetime)?),
     };
 
     // marital_status
@@ -134,16 +134,16 @@ pub fn map_patient(pat_data: &PersonDto, config: &Fhir) -> Result<Patient, Conte
     Ok(patient)
 }
 
-fn map_gender(input: &Option<GenderDto>) -> AdministrativeGender {
+fn map_gender(input: &Option<GenderCdm>) -> AdministrativeGender {
     match input {
-        Some(GenderDto::Male) => AdministrativeGender::Male,
-        Some(GenderDto::Female) => AdministrativeGender::Female,
-        Some(GenderDto::Diverse) => AdministrativeGender::Other,
-        None | Some(GenderDto::Unknown) => AdministrativeGender::Unknown,
+        Some(GenderCdm::Male) => AdministrativeGender::Male,
+        Some(GenderCdm::Female) => AdministrativeGender::Female,
+        Some(GenderCdm::Diverse) => AdministrativeGender::Other,
+        None | Some(GenderCdm::Unknown) => AdministrativeGender::Unknown,
     }
 }
 
-pub fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderError> {
+pub fn map_name(person: &PatientCdm) -> Result<Vec<Option<HumanName>>, BuilderError> {
     let mut names = Vec::new();
 
     for name_entry in person.names.iter().flatten() {
@@ -199,7 +199,7 @@ pub fn map_name(person: &PersonDto) -> Result<Vec<Option<HumanName>>, BuilderErr
     Ok(names)
 }
 
-fn map_multiple_birth(pat_data: &PersonDto) -> Result<Option<PatientMultipleBirth>, ContentError> {
+fn map_multiple_birth(pat_data: &PatientCdm) -> Result<Option<PatientMultipleBirth>, ContentError> {
     let multi_birth_flag = pat_data.is_multiple_birth;
     let multi_birth_number = pat_data.multiple_birth_order;
 
@@ -217,16 +217,16 @@ fn map_multiple_birth(pat_data: &PersonDto) -> Result<Option<PatientMultipleBirt
     }
 }
 
-fn map_deceased(data: &PersonDto) -> Result<Option<PatientDeceased>, ContentError> {
+fn map_deceased(data: &PatientCdm) -> Result<Option<PatientDeceased>, ContentError> {
     // patient vital status
     let death_time = data.time_of_death.clone();
     let death_confirm = data.is_deceased_indicator;
 
     match (death_time, death_confirm) {
-        (Some(DtoDates::Datetime(death_time)), _) => Ok(Some(PatientDeceased::DateTime(
+        (Some(CdmDates::Datetime(death_time)), _) => Ok(Some(PatientDeceased::DateTime(
             DateTime::DateTime(death_time.into()),
         ))),
-        (Some(DtoDates::Date(death_time)), _) => Ok(Some(PatientDeceased::DateTime(
+        (Some(CdmDates::Date(death_time)), _) => Ok(Some(PatientDeceased::DateTime(
             parse_naive_date_as_date_time(death_time)?,
         ))),
         (None, Some(confirm)) => Ok(Some(PatientDeceased::Boolean(confirm))),
@@ -234,7 +234,7 @@ fn map_deceased(data: &PersonDto) -> Result<Option<PatientDeceased>, ContentErro
     }
 }
 
-pub fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, BuilderError> {
+pub fn map_addresses_dto(dto: &PatientCdm) -> Result<Vec<Option<Address>>, BuilderError> {
     let mut res = vec![];
 
     for elem in dto.address.clone() {
@@ -269,7 +269,7 @@ pub fn map_addresses_dto(dto: &PersonDto) -> Result<Vec<Option<Address>>, Builde
     Ok(res)
 }
 pub fn create_patient_merge_dto(
-    patient_dto: &PersonDto,
+    patient_dto: &PatientCdm,
     config: &Fhir,
 ) -> Result<Option<(Parameters, Identifier)>, ContentError> {
     match (patient_dto.pid.clone(), patient_dto.replaced_by_pid.clone()) {
@@ -477,7 +477,7 @@ pub fn parse_datetime(input: &str) -> Result<DateTime, ContentError> {
 /// _Hinweis:_ Es gibt HL7 Nachrichten, die in denen IN1 Segmente fehlen.
 ///
 fn create_patient_identifiers(
-    dto: &PersonDto,
+    dto: &PatientCdm,
     config: &Fhir,
 ) -> Result<Vec<Option<Identifier>>, ContentError> {
     // mandatory PID identifier

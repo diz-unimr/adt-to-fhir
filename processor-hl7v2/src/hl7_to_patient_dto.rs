@@ -1,6 +1,6 @@
 use crate::hl7::parser::{
     ENV_1, MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29,
-    PID_30, ZNG_6, ZNG_7, ZNG_11, get_message_key, message_type, parse_datetime, parse_to_datetime,
+    PID_30, ZNG_7, ZNG_11, get_message_key, message_type, parse_datetime, parse_to_datetime,
     parse_to_naive_date, query, segment_value,
 };
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
@@ -9,14 +9,14 @@ use crate::hl7_error::Hl7MessageAccessError::{
     MissingMessageSegment, MissingMessageValue, UnsupportedContentError,
 };
 use anyhow::anyhow;
-use fhir_core::mapping::patient_mapper::is_valid_gkv10;
-use fhir_core::model::meta::ProcessingOperation::Patch;
-use fhir_core::model::meta::{MappingOpPerson, ProcessingOperation};
-use fhir_core::model::person_dto::{
-    AddressDto, AddressDtoBuilder, DtoDates, GenderDto, Insurance, InsuranceBuilder, InsuranceType,
-    MaritalStatusDto, PersonDto, PersonDtoBuilder, PersonDtoBuilderError, PersonName,
+use fhir_core::canonical_model::canonical_meta::ProcessingOperation::Patch;
+use fhir_core::canonical_model::canonical_meta::{MappingOpPatient, ProcessingOperation};
+use fhir_core::canonical_model::canonical_patient::{
+    AddressCdm, AddressCdmBuilder, CdmDates, GenderCdm, Insurance, InsuranceBuilder, InsuranceType,
+    MaritalStatusCdm, PatientCdm, PatientCdmBuilder, PatientCdmBuilderError, PersonName,
     PersonNameBuilder, PersonNameBuilderError,
 };
+use fhir_core::mapping::patient_mapper::is_valid_gkv10;
 
 use crate::hl7::map_visit_number_lenient;
 use hl7_parser::Message;
@@ -25,9 +25,9 @@ use log::{Level, log};
 
 pub fn hl7_to_patient_dto(
     msg: &Message,
-    mapping_op: MappingOpPerson,
-) -> Result<PersonDto, Hl7MappingError> {
-    let mut binding = PersonDtoBuilder::default();
+    mapping_op: MappingOpPatient,
+) -> Result<PatientCdm, Hl7MappingError> {
+    let mut binding = PatientCdmBuilder::default();
     let patient_builder = binding
         .names(build_names(msg)?)
         .meta(mapping_op)
@@ -41,22 +41,22 @@ pub fn hl7_to_patient_dto(
 
     if let Some(birthday) = query(msg, PID_7) {
         if birthday.len() > 8 {
-            let datetime = DtoDates::Datetime(parse_to_datetime(birthday)?);
+            let datetime = CdmDates::Datetime(parse_to_datetime(birthday)?);
             patient_builder.date_of_birth(datetime);
         }
         if birthday.len() == 8 {
-            let date = DtoDates::Date(parse_to_naive_date(birthday)?);
+            let date = CdmDates::Date(parse_to_naive_date(birthday)?);
             patient_builder.date_of_birth(date);
         }
     }
 
     if let Some(hl7_gender) = query(msg, PID_8) {
-        patient_builder.gender(GenderDto::from_hl7(hl7_gender));
+        patient_builder.gender(GenderCdm::from_hl7(hl7_gender));
     } else {
-        patient_builder.gender(GenderDto::Unknown);
+        patient_builder.gender(GenderCdm::Unknown);
     }
     if let Some(marital_status) = query(msg, PID_16_1) {
-        patient_builder.marital_status(MaritalStatusDto::from_hl7(marital_status));
+        patient_builder.marital_status(MaritalStatusCdm::from_hl7(marital_status));
     }
 
     if let Some("J") = query(msg, PID_30) {
@@ -65,12 +65,12 @@ pub fn hl7_to_patient_dto(
 
     if let Some(death_date) = query(msg, PID_29) {
         if death_date.len() > 8 {
-            let datetime = DtoDates::Datetime(parse_to_datetime(death_date)?);
+            let datetime = CdmDates::Datetime(parse_to_datetime(death_date)?);
 
             patient_builder.time_of_death(Some(datetime));
         }
         if death_date.len() == 8 {
-            let date = DtoDates::Date(parse_to_naive_date(death_date)?);
+            let date = CdmDates::Date(parse_to_naive_date(death_date)?);
             patient_builder.time_of_death(Some(date));
         }
     }
@@ -93,12 +93,12 @@ pub fn hl7_to_patient_dto(
     match patient_builder.build() {
         Ok(p) => Ok(p),
         Err(e) => match e {
-            PersonDtoBuilderError::UninitializedField(error_text) => {
+            PatientCdmBuilderError::UninitializedField(error_text) => {
                 Err(Hl7MappingError::BuilderUninitializedFieldError {
                     details: error_text.to_string(),
                 })
             }
-            PersonDtoBuilderError::ValidationError(details) => {
+            PatientCdmBuilderError::ValidationError(details) => {
                 Err(Hl7MappingError::InputValidationError {
                     resource: "PersonDto".to_string(),
                     details,
@@ -141,12 +141,12 @@ fn build_names(v2_msg: &Message) -> Result<Vec<Option<PersonName>>, PersonNameBu
     Ok(names)
 }
 
-fn address_from_hl7(msg: &Message) -> Vec<Option<AddressDto>> {
+fn address_from_hl7(msg: &Message) -> Vec<Option<AddressCdm>> {
     let mut res = vec![];
 
     if let Some(addr_repeats) = field_repeats(msg, "PID.11") {
         for addr_elem in addr_repeats {
-            let mut addr_builder = AddressDtoBuilder::default();
+            let mut addr_builder = AddressCdmBuilder::default();
 
             // line
             if let Some(lines) = repeat_subcomponents(addr_elem, 1) {
@@ -176,7 +176,7 @@ fn address_from_hl7(msg: &Message) -> Vec<Option<AddressDto>> {
     res
 }
 
-pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
+pub fn map(msg: &Message) -> Result<Option<PatientCdm>, Hl7MappingError> {
     let msg_type = message_type(msg)?;
     let id = get_message_key(msg)?.to_string();
 
@@ -188,13 +188,13 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
         | MessageType::A07
         | MessageType::A08
         => {
-            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson { id, operation: ProcessingOperation::UpdateAsCreate })?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPatient { id, operation: ProcessingOperation::UpdateAsCreate })?))
         }
         MessageType::A02 | MessageType::A03 | MessageType::A31 => {
-            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson { id, operation: ProcessingOperation::CreateIfNotExists })?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPatient { id, operation: ProcessingOperation::CreateIfNotExists })?))
         }
         MessageType::A34 | MessageType::A40 => {
-            Ok(Some(create_patient_merge_hl7(msg, MappingOpPerson { id, operation: Patch})?))
+            Ok(Some(create_patient_merge_hl7(msg, MappingOpPatient { id, operation: Patch})?))
         }
         // patient stays unchanged
         MessageType::A11
@@ -217,7 +217,7 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
         MessageType::A29 => {
 
             // todo:  in case of mapping error fallback to a minimal delete request without resource!
-            Ok(Some(hl7_to_patient_dto(msg, MappingOpPerson {id ,operation: ProcessingOperation::Delete})?))
+            Ok(Some(hl7_to_patient_dto(msg, MappingOpPatient {id ,operation: ProcessingOperation::Delete})?))
         }
         other => Err(Hl7MappingError::from(UnsupportedContentError(other.to_string(), ENV_1.to_string()))),
     }
@@ -225,19 +225,23 @@ pub fn map(msg: &Message) -> Result<Option<PersonDto>, Hl7MappingError> {
 
 fn create_patient_merge_hl7(
     msg: &Message,
-    mapping_op: MappingOpPerson,
-) -> Result<PersonDto, Hl7MappingError> {
+    mapping_op: MappingOpPatient,
+) -> Result<PatientCdm, Hl7MappingError> {
     let new_patient_id = query(msg, PID_2)
         .map(String::from)
         .ok_or(MissingMessageValue("PID.2".to_string()))?;
     let old_pid = query(msg, MRG_1)
         .map(String::from)
         .ok_or(MissingMessageSegment(MRG_1.to_string()))?;
-    Ok(PersonDtoBuilder::default()
+    Ok(PatientCdmBuilder::default()
         .replaced_by_pid(new_patient_id)
         .pid(old_pid)
         .meta(mapping_op)
-        .build()?)
+        .build()
+        .map_err(|err| Hl7MappingError::BuilderError {
+            builder_error: err.to_string(),
+            builder_name: "PatientCdmBuilder".to_string(),
+        })?)
 }
 
 fn insurance_hl7(msg: &Message) -> Result<Vec<Option<Insurance>>, Hl7MappingError> {
@@ -505,7 +509,7 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
         let (params, _) = fhir_core::mapping::patient_mapper::create_patient_merge_dto(
             &create_patient_merge_hl7(
                 &msg,
-                MappingOpPerson {
+                MappingOpPatient {
                     id: "42".to_string(),
                     operation: Patch,
                 },
@@ -844,10 +848,10 @@ IN2|2||R^Rentner||||||||||||||||||||||||||^PC^0^K"#, true).unwrap();
         let dto = &map(&msg).unwrap().unwrap();
         assert!(dto.date_of_birth.is_some());
         match dto.date_of_birth {
-            Some(DtoDates::Datetime(date)) => {
+            Some(CdmDates::Datetime(date)) => {
                 panic!("expected date no datetime")
             }
-            Some(DtoDates::Date(date)) => {
+            Some(CdmDates::Date(date)) => {
                 assert_eq!(date.day(), 18);
 
                 assert_eq!(date.month(), 1);

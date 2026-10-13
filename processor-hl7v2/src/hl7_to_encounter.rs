@@ -5,15 +5,21 @@ use crate::hl7::parser::{
 };
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
 use anyhow::anyhow;
-use fhir_core::model::meta::{MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation};
+use fhir_core::canonical_model::canonical_meta::{
+    MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation,
+};
+use std::error::Error;
 
 use crate::hl7::map_visit_number;
-use fhir_core::model::encounter_dto::{Fall, FallBuilder, FallDiagnose, FallDiagnoseBuilder};
+use crate::hl7_error::Hl7MappingError::BuilderError;
+use fhir_core::canonical_model::canonical_encounter::{
+    EncounterCdm, EncounterCdmBuilder, EncounterDiagnosisCdm, EncounterDiagnosisCdmBuilder,
+};
 use hl7_parser::Message;
 use log::{Level, log};
 use std::num::NonZeroU32;
 
-fn map(msg: &Message) -> Result<Option<Fall>, Hl7MappingError> {
+fn map(msg: &Message) -> Result<Option<EncounterCdm>, Hl7MappingError> {
     let message_type = message_type(msg)?;
     let id = get_message_key(msg)?.to_string();
 
@@ -68,7 +74,10 @@ fn map(msg: &Message) -> Result<Option<Fall>, Hl7MappingError> {
     }
 }
 
-fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall, Hl7MappingError> {
+fn extract_raw_data(
+    msg: &Message,
+    operation: MappingOpEncounter,
+) -> Result<EncounterCdm, Hl7MappingError> {
     /*
      * mandatory properties
      */
@@ -111,12 +120,12 @@ fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall
     let aufnahmegrund_3_u_4 = query(msg, PV1_4__2_1);
 
     //map_conditions
-    let diagnosis_list: Vec<FallDiagnose> = extract_diagnosis(msg)?;
+    let diagnosis_list: Vec<EncounterDiagnosisCdm> = extract_diagnosis(msg)?;
 
     // map_mothers_encounter
     let mothers_encounter_number = query(msg, PID_21_1);
 
-    let mut fall = FallBuilder::default()
+    let mut fall = EncounterCdmBuilder::default()
         .meta(operation)
         .pid(pid)
         .visit_number(encounter_number)
@@ -124,7 +133,11 @@ fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall
         .bed_status(bed_status)
         .movement_id(movement_id)
         .movement_start(movement_start)
-        .build()?;
+        .build()
+        .map_err(|err| Hl7MappingError::BuilderError {
+            builder_name: "EncounterCdmBuilder".to_string(),
+            builder_error: err.to_string(),
+        })?;
 
     if let Some(date_time) = discharge_datetime {
         fall.discharge = Some(parse_to_datetime(date_time)?)
@@ -159,7 +172,7 @@ fn extract_raw_data(msg: &Message, operation: MappingOpEncounter) -> Result<Fall
     Ok(fall)
 }
 
-fn extract_diagnosis(msg: &Message) -> Result<Vec<FallDiagnose>, Hl7MappingError> {
+fn extract_diagnosis(msg: &Message) -> Result<Vec<EncounterDiagnosisCdm>, Hl7MappingError> {
     let mut res = vec![];
     if msg.segment_count("DG1") > 0 {
         for dg1 in msg.segments().filter(|seg| seg.name.eq("DG1")) {
@@ -191,7 +204,7 @@ fn extract_diagnosis(msg: &Message) -> Result<Vec<FallDiagnose>, Hl7MappingError
                 anyhow!("could not parse diagnosis rank into non zero value!"),
             ))?;
 
-            let dg = FallDiagnoseBuilder::default()
+            let dg = EncounterDiagnosisCdmBuilder::default()
                 .priority(rank_nz)
                 .condition_typ(condition_typ.raw_value())
                 .id(condition_id.raw_value())

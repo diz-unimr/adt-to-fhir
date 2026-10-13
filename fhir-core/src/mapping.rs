@@ -1,3 +1,4 @@
+pub mod fab_mapping;
 pub mod fall_mapper;
 pub mod misc;
 pub mod observation_mapper;

@@ -1,9 +1,8 @@
 use chrono::ParseError;
 use derive_builder::UninitializedFieldError;
-use fhir_core::model::encounter_dto::FallBuilderError;
-use fhir_core::model::meta::MappingOpEncounterBuilderError;
-use fhir_core::model::person_dto::{
-    InsuranceBuilderError, PersonDtoBuilderError, PersonNameBuilderError,
+use fhir_core::canonical_model::canonical_meta::MappingOpEncounterBuilderError;
+use fhir_core::canonical_model::canonical_patient::{
+    InsuranceBuilderError, PersonNameBuilderError,
 };
 use fhir_model::time::error::InvalidFormatDescription;
 use fhir_model::{BuilderError, DateFormatError, time};
@@ -48,28 +47,11 @@ impl From<UninitializedFieldError> for Hl7MappingError {
         }
     }
 }
-impl From<PersonDtoBuilderError> for Hl7MappingError {
-    fn from(err: PersonDtoBuilderError) -> Self {
-        Hl7MappingError::BuilderError {
-            builder_name: "PersonDtoBuilder".to_string(),
-            builder_error: err.to_string(),
-        }
-    }
-}
 
 impl From<MappingOpEncounterBuilderError> for Hl7MappingError {
     fn from(err: MappingOpEncounterBuilderError) -> Self {
         Hl7MappingError::BuilderError {
             builder_name: "MappingOpEncounterBuilder".to_string(),
-            builder_error: err.to_string(),
-        }
-    }
-}
-
-impl From<FallBuilderError> for Hl7MappingError {
-    fn from(err: FallBuilderError) -> Self {
-        Hl7MappingError::BuilderError {
-            builder_name: "FallBuilderError".to_string(),
             builder_error: err.to_string(),
         }
     }

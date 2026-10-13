@@ -1,8 +1,8 @@
+use crate::canonical_model::canonical_organization::{DepartmentCdm, WardCdm};
 use crate::fhir_error::ContentError;
 use crate::mapping::misc::{
     EntryRequestType, bundle_entry, get_cc_with_one_code, get_meta, resource_ref,
 };
-use crate::model::orga_dto::{DepartmentDto, WardDto};
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
 use fhir_model::BuilderError;
@@ -11,7 +11,7 @@ use fhir_model::r4b::resources::{BundleEntry, Organization, ResourceType};
 use fhir_model::r4b::types::Identifier;
 
 fn map_department_to_fhir(
-    department: &DepartmentDto,
+    department: &DepartmentCdm,
     config: &Fhir,
     resource_map: &ResourceMap,
 ) -> Result<Organization, BuilderError> {
@@ -40,7 +40,7 @@ fn map_department_to_fhir(
     Ok(organization)
 }
 
-fn map_ward_to_fhir(ward: &WardDto, config: &Fhir) -> Result<Organization, BuilderError> {
+fn map_ward_to_fhir(ward: &WardCdm, config: &Fhir) -> Result<Organization, BuilderError> {
     Organization::builder()
         .meta(get_meta(config)?)
         .part_of(resource_ref(
@@ -63,8 +63,8 @@ fn map_ward_to_fhir(ward: &WardDto, config: &Fhir) -> Result<Organization, Build
 }
 
 pub fn map(
-    dep: Option<DepartmentDto>,
-    ward: Option<WardDto>,
+    dep: Option<DepartmentCdm>,
+    ward: Option<WardCdm>,
     config: &Fhir,
     resource_map: &ResourceMap,
 ) -> Result<Vec<BundleEntry>, ContentError> {
@@ -79,7 +79,7 @@ pub fn map(
     Ok(result)
 }
 fn map_dep(
-    dep: &DepartmentDto,
+    dep: &DepartmentCdm,
     config: &Fhir,
     resource_map: &ResourceMap,
 ) -> Result<BundleEntry, ContentError> {
@@ -89,7 +89,7 @@ fn map_dep(
         config,
     )
 }
-fn map_ward(ward: &WardDto, config: &Fhir) -> Result<BundleEntry, ContentError> {
+fn map_ward(ward: &WardCdm, config: &Fhir) -> Result<BundleEntry, ContentError> {
     bundle_entry(
         map_ward_to_fhir(ward, config)?,
         EntryRequestType::UpdateAsCreate,

@@ -5,7 +5,7 @@ use crate::hl7::parser::{
 use crate::hl7_error::Hl7MessageAccessError;
 use adt_config::resources::ResourceMap;
 use chrono::NaiveDate;
-use fhir_core::model::fab_mapping::is_valid_date;
+use fhir_core::mapping::fab_mapping::is_valid_date;
 use hl7_parser::Message;
 use std::string::ToString;
 

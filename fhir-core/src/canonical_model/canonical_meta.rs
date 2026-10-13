@@ -2,7 +2,7 @@ use derive_builder::Builder;
 
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
-pub struct MappingOpPerson {
+pub struct MappingOpPatient {
     pub id: String,
     pub operation: ProcessingOperation,
 }

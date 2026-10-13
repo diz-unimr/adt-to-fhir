@@ -1,9 +1,9 @@
-use crate::model::orga_dto::WardDto;
+use crate::canonical_model::canonical_organization::WardCdm;
 use derive_builder::Builder;
 
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
-pub struct LocationDto {
+pub struct LocationCdm {
     /// usually build from station name and w
     pub ward_short_name: String,
     /// at ambulatory encounter this is per convention `true`
@@ -17,5 +17,5 @@ pub struct LocationDto {
     #[builder(default)]
     pub bed: Option<String>,
 
-    pub part_of_ward: WardDto,
+    pub part_of_ward: WardCdm,
 }

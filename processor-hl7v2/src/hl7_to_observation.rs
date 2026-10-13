@@ -4,10 +4,10 @@ use crate::hl7::parser::{
     parse_to_datetime, query,
 };
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
-use fhir_core::model::obervation_dto::{ObservationDto, ObservationDtoBuilder};
+use fhir_core::canonical_model::canconical_obervation::{ObservationCdm, ObservationCdmBuilder};
 use hl7_parser::Message;
 
-pub fn map(msg: &Message) -> Result<Option<ObservationDto>, Hl7MappingError> {
+pub fn map(msg: &Message) -> Result<Option<ObservationCdm>, Hl7MappingError> {
     let msg_type = message_type(msg)?;
 
     let is_zng_present = msg.segment_count("ZNG") > 0;
@@ -32,7 +32,7 @@ pub fn map(msg: &Message) -> Result<Option<ObservationDto>, Hl7MappingError> {
         return Ok(None);
     }
 
-    let mut builder = ObservationDtoBuilder::default();
+    let mut builder = ObservationCdmBuilder::default();
     builder.pid(
         query(msg, PID_2)
             .ok_or_else(|| Hl7MessageAccessError::MissingMessageValue("PID_2".to_string()))?,
@@ -66,7 +66,7 @@ pub fn map(msg: &Message) -> Result<Option<ObservationDto>, Hl7MappingError> {
 
 fn set_zng_values(
     msg: &Message,
-    builder: &mut ObservationDtoBuilder,
+    builder: &mut ObservationCdmBuilder,
 ) -> Result<(), Hl7MappingError> {
     if let Some(head) = parse_opt(query(msg, ZNG_11))? {
         builder.head_circumference(head);
