@@ -45,6 +45,7 @@ dependencies = [
  "processor-hl7v2",
  "rdkafka",
  "rstest",
+ "serde",
  "serde_json",
  "thiserror",
  "tokio",

@@ -1,6 +1,6 @@
-use crate::config::{CheckMode, Fhir};
 use crate::error::MappingError;
 use crate::error::MappingError::MissingResourceError;
+use adt_config::config::{CheckMode, Fhir};
 use anyhow::Context;
 use chrono::NaiveDate;
 use fhir_model::r4b::resources::CodeSystem;
@@ -252,7 +252,7 @@ fn init_departments_id_map() -> Result<HashMap<String, String>, anyhow::Error> {
 mod tests {
     use super::*;
     use crate::fhir::resources::{Department, ResourceMap};
-    use crate::test_utils::tests::{get_dummy_resources, get_test_config};
+    use adt_config::test_utils::tests::{get_dummy_resources, get_test_config};
     use std::collections::HashMap;
 
     #[test]
