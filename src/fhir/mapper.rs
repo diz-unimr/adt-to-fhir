@@ -1,21 +1,27 @@
-use crate::error::MappingError;
-use crate::fhir::{encounter, location, organization};
-use anyhow::Result;
-use anyhow::anyhow;
-use fhir_model::r4b::codes::BundleType;
-use fhir_model::r4b::resources::{Bundle, BundleEntry, ResourceType};
-use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
-use processor_hl7v2::hl7::parser::{PID_2, PV1_2, PV1_3_5, get_message_key, query};
+use crate::fhir::{encounter, location};
 
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
-use fhir_core::mapping::misc::resource_ref;
-use fhir_core::mapping::observation_mapper;
+
+use anyhow::Result;
+use anyhow::anyhow;
+
 use fhir_model::Instant;
+use fhir_model::r4b::codes::BundleType;
+use fhir_model::r4b::resources::{Bundle, BundleEntry, ResourceType};
+use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Reference};
 use fhir_model::time::OffsetDateTime;
+
+use fhir_core::mapping::misc::resource_ref;
+use fhir_core::mapping::{observation_mapper, organization_mapper, patient_mapper};
+
 use hl7_parser::Message;
+
+use processor_hl7v2::hl7::parser::{PID_2, PV1_2, PV1_3_5, get_message_key, query};
+use processor_hl7v2::{hl7_to_observation, hl7_to_organization, hl7_to_patient_dto};
+
+use crate::error::MappingError;
 use log::{Level, log};
-use processor_hl7v2::{hl7_to_observation, hl7_to_patient_dto};
 
 pub(crate) struct FhirMapper {
     pub(crate) config: Fhir,
@@ -28,6 +34,9 @@ impl FhirMapper {
             config,
             resources: ResourceMap::new()?,
         })
+    }
+    pub(crate) fn new_test(config: Fhir, resources: ResourceMap) -> Result<Self, anyhow::Error> {
+        Ok(FhirMapper { config, resources })
     }
 
     pub(crate) fn map(&self, msg: &str) -> Result<Option<String>, MappingError> {
@@ -75,28 +84,11 @@ impl FhirMapper {
             return Ok(vec![]);
         }
 
-        let p: Vec<BundleEntry> = match hl7_to_patient_dto::map(v2_msg)? {
-            Some(pat_raw) => {
-                if let Some(pat_entry) =
-                    fhir_core::mapping::patient_mapper::map(&pat_raw, &self.config)?
-                {
-                    vec![pat_entry]
-                } else {
-                    vec![]
-                }
-            }
-            _ => {
-                vec![]
-            }
-        };
+        let p = self.map_patient(v2_msg)?;
         let e = encounter::map(v2_msg, &self.config, &self.resources)?;
         let l = location::map(v2_msg, &self.config, &self.resources)?;
-        let obs: Vec<BundleEntry> = match &hl7_to_observation::map(v2_msg)? {
-            Some(obs_dto) => observation_mapper::map(obs_dto, &self.config)?,
-            None => vec![],
-        };
-
-        let org = organization::map(v2_msg, &self.config, &self.resources)?;
+        let obs = self.map_observations(&v2_msg)?;
+        let org = self.map_organizations(v2_msg)?;
         let res = p
             .into_iter()
             .chain(e)
@@ -108,7 +100,39 @@ impl FhirMapper {
 
         Ok(res)
     }
+
+    fn map_organizations(&self, v2_msg: &Message) -> Result<Vec<BundleEntry>> {
+        let (dep, ward) = hl7_to_organization::map(v2_msg)?;
+        let org: Vec<BundleEntry> =
+            organization_mapper::map(dep, ward, &self.config, &self.resources)?;
+        Ok(org)
+    }
+
+    fn map_observations(&self, v2_msg: &Message) -> Result<Vec<BundleEntry>> {
+        let obs: Vec<BundleEntry> = match &hl7_to_observation::map(v2_msg)? {
+            Some(obs_dto) => observation_mapper::map(obs_dto, &self.config)?,
+            None => vec![],
+        };
+        Ok(obs)
+    }
+
+    fn map_patient(&self, v2_msg: &Message) -> Result<Vec<BundleEntry>> {
+        let p: Vec<BundleEntry> = match hl7_to_patient_dto::map(v2_msg)? {
+            Some(pat_raw) => {
+                if let Some(pat_entry) = patient_mapper::map(&pat_raw, &self.config)? {
+                    vec![pat_entry]
+                } else {
+                    vec![]
+                }
+            }
+            _ => {
+                vec![]
+            }
+        };
+        Ok(p)
+    }
 }
+
 pub fn is_inpatient_location(msg: &Message) -> Result<bool, MappingError> {
     Ok(query(msg, PV1_2) == Some("I") && query(msg, PV1_3_5).map(|v| v == "KLINIKUM").is_some())
 }
@@ -814,15 +838,12 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
         let config = &get_test_config();
 
         let msg =
-                Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
+            Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20230912105234||ADT^A40^ADT_A39|12345678|P|2.5||123456789|NE|NE||8859/1
 EVN|A40|202309121052||00000_123456789|XXXXX|202309121052
 PID|1|1234567|1234567||Musterfrau^Maxi^^^^^L|||F|||^^^^^^L||^ ^ ^^^^^^^^^|||U||||||||||DE||||N
 MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
-                    .unwrap();
-        let result = fhir_core::mapping::patient_mapper::map(
-            &hl7_to_patient_dto::map(&msg).unwrap().unwrap(),
-            config,
-        );
+                .unwrap();
+        let result = patient_mapper::map(&hl7_to_patient_dto::map(&msg).unwrap().unwrap(), config);
         let entry = result.unwrap().unwrap();
         assert_json_snapshot!(entry);
     }
@@ -834,9 +855,9 @@ MRG|09876543|||09876543|||Musterfrau^Maxi^^^^^L"#, true)
         let msg = Message::parse_with_lenient_newlines(r#"MSH|^~\&|ORBIS|KH|WEBEPA|KH|20221121142711||ADT^A29^ADT_A21|71546182|P|2.5||684450133|NE|NE||8859/1
 EVN|A29|202211211427||12127_684450133|MEDCO-TOBL|202211211427
 PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Baldinger Strasse&Baldinger Strasse^^Marburg^^35037^DE^L|||||S||||||||||DE||||N"#, true)
-                .unwrap();
+            .unwrap();
 
-        let entry = fhir_core::mapping::patient_mapper::map(&map(&msg).unwrap().unwrap(), config)
+        let entry = patient_mapper::map(&map(&msg).unwrap().unwrap(), config)
             .unwrap()
             .unwrap();
 
@@ -856,5 +877,37 @@ PID|1|1234567|1234567||Test-UCH^Endoprothese^^^^^L~Test^^^^^^B||19450201|M|||Bal
         );
 
         assert_json_snapshot!(entry);
+    }
+
+    #[test]
+    fn test_map_org() {
+        let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111221030||ADT^A01|62293727|P|2.5||123456789|NE|NE||8859/1
+EVN|A01|202111221030|202111221029||EIDAMN
+PID|1|1499653|1499653||Test^Meinrad^^Graf^von^Dr.^L|Test|202301181003|M|||Test Str.  27^^Bad Test^^57334^D^L||02752/1672^^PH|||M|rk|||||||N||D||||N|
+PV1|1|I|POLPOLAMB^^^POL^POLPOL^945400^^^|R^^HL7~01^Normalfall^301||||||N||||||N|||00000000||K|||||||||||||||01||||9||||202211101359|202211101359||||||AIN1|1|102171012|KKH|KKH Allianz|^^Leipzig^^04017^D||||Ersatzkassen^13^^^1&gesetzlich|||||||Mustermann^Max||19470128|Mustergasse 10^^Musterort^^33333^D|||1|||||||201111090942||R||||||||||||M| |||||1234567890^^^^^^^20130331"#;
+
+        let msg = Message::parse_with_lenient_newlines(input, true).unwrap();
+        let fhir_mapper = FhirMapper::new(get_test_config()).unwrap();
+
+        let result_entries = fhir_mapper.map_organizations(&msg);
+        assert!(result_entries.is_ok());
+        if let Ok(result_entries) = result_entries {
+            let department = result_entries.get(0).unwrap();
+            if let Some(Resource::Organization(actual)) = department.resource.clone() {
+                assert!(!actual.identifier.is_empty());
+                assert!(!actual.r#type.is_empty());
+                assert_eq!(actual.name, Some("Pneumologie".to_string()));
+            } else {
+                panic!("department not found");
+            }
+
+            let ward = result_entries.get(1).unwrap();
+            if let Some(Resource::Organization(actual)) = ward.resource.clone() {
+                assert!(!actual.identifier.is_empty());
+                assert!(!actual.r#type.is_empty());
+            } else {
+                panic!("ward not found");
+            }
+        }
     }
 }
