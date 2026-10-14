@@ -1,5 +1,6 @@
 use chrono::ParseError;
 use derive_builder::UninitializedFieldError;
+use fhir_core::canonical_model::canonical_location::LocationCdmBuilderError;
 use fhir_core::canonical_model::canonical_meta::MappingOpEncounterBuilderError;
 use fhir_core::canonical_model::canonical_patient::{
     InsuranceBuilderError, PersonNameBuilderError,
@@ -70,6 +71,15 @@ impl From<InsuranceBuilderError> for Hl7MappingError {
     fn from(err: InsuranceBuilderError) -> Self {
         Hl7MappingError::BuilderError {
             builder_name: "InsuranceBuilderError".to_string(),
+            builder_error: err.to_string(),
+        }
+    }
+}
+
+impl From<LocationCdmBuilderError> for Hl7MappingError {
+    fn from(err: LocationCdmBuilderError) -> Self {
+        Hl7MappingError::BuilderError {
+            builder_name: "LocationCdmBuilderError".to_string(),
             builder_error: err.to_string(),
         }
     }

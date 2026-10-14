@@ -16,28 +16,20 @@ pub struct EncounterDiagnosisCdm {
 #[builder(setter(into))]
 pub struct EncounterCdm {
     pub meta: MappingOpEncounter,
-
     pub pid: String,
-
     pub visit_number: String,
-
     pub bed_status: String,
-
     pub admission_datetime: OffsetDateTime,
     #[builder(default)]
     pub admission_type: Option<String>,
-
     #[builder(default)]
     pub admission_reason_1_2: Option<String>,
     #[builder(default)]
     pub admission_reason_3_4: Option<String>,
-
     pub movement_id: String,
-
     pub movement_start: OffsetDateTime,
     #[builder(default)]
     pub movement_end: Option<OffsetDateTime>,
-
     #[builder(default)]
     pub discharge: Option<OffsetDateTime>,
     #[builder(default)]

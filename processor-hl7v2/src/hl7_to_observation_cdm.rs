@@ -4,7 +4,7 @@ use crate::hl7::parser::{
     parse_to_datetime, query,
 };
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
-use fhir_core::canonical_model::canconical_obervation::{ObservationCdm, ObservationCdmBuilder};
+use fhir_core::canonical_model::canonical_obervation::{ObservationCdm, ObservationCdmBuilder};
 use hl7_parser::Message;
 
 pub fn map(msg: &Message) -> Result<Option<ObservationCdm>, Hl7MappingError> {

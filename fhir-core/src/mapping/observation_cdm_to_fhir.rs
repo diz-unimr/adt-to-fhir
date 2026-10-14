@@ -1,4 +1,4 @@
-use crate::canonical_model::canconical_obervation::ObservationCdm;
+use crate::canonical_model::canonical_obervation::ObservationCdm;
 use crate::fhir_error::{ContentError, FhirMappingError};
 use crate::mapping::misc::{
     EntryRequestType, build_usual_identifier, bundle_entry, get_cc_with_one_code,
