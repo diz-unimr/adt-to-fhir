@@ -1,10 +1,12 @@
 use crate::canonical_model::canonical_location::{LocationCdm, LocationCdmType};
 use crate::fhir_error::FhirMappingError;
-use crate::mapping::misc::{EntryRequestType, bundle_entry, get_cc_with_one_code, get_meta};
+use crate::mapping::misc::{
+    EntryRequestType, bundle_entry, get_cc_with_one_code, get_meta, resource_ref,
+};
 use adt_config::config::Fhir;
 
 use fhir_model::r4b::codes::IdentifierUse;
-use fhir_model::r4b::resources::{BundleEntry, Location};
+use fhir_model::r4b::resources::{BundleEntry, Location, ResourceType};
 use fhir_model::r4b::types::Identifier;
 
 pub fn map(input: Vec<LocationCdm>, config: &Fhir) -> Result<Vec<BundleEntry>, FhirMappingError> {
@@ -44,6 +46,14 @@ fn map_to_fhir(input: LocationCdm, config: &Fhir) -> Result<Location, FhirMappin
                     "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
                 )?)]
             }
+            if let Some(dep_id) = input.manging_organization {
+                location.managing_organization = Some(resource_ref(
+                    &ResourceType::Organization,
+                    dep_id.as_str(),
+                    config.organization.ward.system.as_str(),
+                )?)
+            }
+
             Ok(location)
         }
         LocationCdmType::Room => Ok(Location::builder()

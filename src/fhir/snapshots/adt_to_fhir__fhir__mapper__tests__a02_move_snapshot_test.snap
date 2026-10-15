@@ -301,6 +301,65 @@ expression: b
       }
     },
     {
+      "fullUrl": "urn:uuid:df66a5de-748a-5ecb-b2ba-3b7405e0f991",
+      "resource": {
+        "resourceType": "Location",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/location-caresite-id",
+            "value": "IDIST041"
+          }
+        ],
+        "physicalType": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+              "code": "wa"
+            }
+          ]
+        },
+        "managingOrganization": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|KCH"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-caresite-id|IDIST041"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:cb559a52-f4b9-59a8-b7f9-7d5ca69a87e7",
+      "resource": {
+        "resourceType": "Location",
+        "meta": {
+          "source": "test"
+        },
+        "identifier": [
+          {
+            "use": "usual",
+            "system": "https://fhir.diz.uni-marburg.de/sid/location-room-id",
+            "value": "IDIST041_041-10"
+          }
+        ],
+        "physicalType": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+              "code": "ro"
+            }
+          ]
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-room-id|IDIST041_041-10"
+      }
+    },
+    {
       "fullUrl": "urn:uuid:c2f755d2-d71f-5309-9e8d-ac2fad502903",
       "resource": {
         "resourceType": "Observation",
