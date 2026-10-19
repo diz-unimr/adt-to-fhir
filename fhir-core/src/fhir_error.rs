@@ -10,6 +10,8 @@ pub enum FhirMappingError {
     MissingContentError(#[from] ContentError),
     #[error(transparent)]
     ProcessingFailed(#[from] anyhow::Error),
+    #[error("UnsupportedValueError occurred: {details}")]
+    UnsupportedValueError { details: String },
 }
 
 impl From<BuilderError> for FhirMappingError {

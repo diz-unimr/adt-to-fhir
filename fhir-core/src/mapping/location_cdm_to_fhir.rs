@@ -23,7 +23,7 @@ pub fn map(input: Vec<LocationCdm>, config: &Fhir) -> Result<Vec<BundleEntry>, F
     Ok(bundle_entries)
 }
 static LOCATION_TYPE_SYSTEM: &str = "http://terminology.hl7.org/CodeSystem/location-physical-type";
-fn map_to_fhir(input: LocationCdm, config: &Fhir) -> Result<Location, FhirMappingError> {
+pub fn map_to_fhir(input: LocationCdm, config: &Fhir) -> Result<Location, FhirMappingError> {
     match input.typ {
         LocationCdmType::Ward => {
             let mut location = Location::builder()

@@ -44,7 +44,6 @@ use processor_hl7v2::hl7::{
 
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
-
 #[derive(PartialEq, Debug)]
 enum EncounterType {
     Einrichtungskontakt,

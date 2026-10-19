@@ -42,6 +42,9 @@ pub struct EncounterCdm {
     pub mothers_enc_number: Option<String>,
     #[builder(default)]
     pub ward_short_name: Option<String>,
+    pub is_icu_location: bool,
+    /// necessary for detailed HL7 A04 stream data mapping
+    pub map_as_registration: bool,
 }
 impl EncounterCdm {
     pub fn id(&self) -> &String {
