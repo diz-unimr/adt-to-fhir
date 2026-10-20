@@ -5,13 +5,17 @@ use crate::hl7::parser::{
     parse_to_datetime, query,
 };
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
-use anyhow::anyhow;
+
+use crate::hl7_error::Hl7MappingError::InputValidationError;
 use fhir_core::canonical_model::canonical_encounter::{
-    EncounterCdm, EncounterCdmBuilder, EncounterDiagnosisCdm, EncounterDiagnosisCdmBuilder,
+    AdmissionType, EncounterCdm, EncounterCdmBuilder, EncounterDiagnosisCdm,
+    EncounterDiagnosisCdmBuilder,
 };
 use fhir_core::canonical_model::canonical_meta::{
     MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation,
 };
+use fhir_core::fhir_error::FhirMappingError;
+use fhir_core::fhir_error::FhirMappingError::UnsupportedValueError;
 use hl7_parser::Message;
 use log::{Level, log};
 use std::num::NonZeroU32;
@@ -149,7 +153,7 @@ fn extract_raw_data(
         fall.discharge_reason_3 = Some(entlassgrund_3.to_string())
     }
     if let Some(aufnahmeart) = aufnahmeart {
-        fall.admission_type = Some(aufnahmeart.to_string());
+        fall.admission_type = Some(try_code_to_admission_type(aufnahmeart)?);
     }
     if let Some(aufnahmegrund_1_u_2) = aufnahmegrund_1_u_2 {
         fall.admission_reason_1_2 = Some(aufnahmegrund_1_u_2.to_string());
@@ -191,18 +195,8 @@ fn extract_diagnosis(msg: &Message) -> Result<Vec<EncounterDiagnosisCdm>, Hl7Map
                 continue;
             }
 
-            let priority_u32 = priority
-                .raw_value()
-                .parse::<f32>()
-                .map_err(Hl7MessageParsingError::ParseFloatError)?
-                .floor() as u32;
-
-            let rank_nz = NonZeroU32::new(priority_u32).ok_or(Hl7MessageParsingError::Other(
-                anyhow!("could not parse diagnosis rank into non zero value!"),
-            ))?;
-
             let dg = EncounterDiagnosisCdmBuilder::default()
-                .priority(rank_nz)
+                .priority(priority.raw_value())
                 .condition_typ(condition_typ.raw_value())
                 .id(condition_id.raw_value())
                 .ordinal_number(
@@ -222,6 +216,21 @@ fn extract_diagnosis(msg: &Message) -> Result<Vec<EncounterDiagnosisCdm>, Hl7Map
     };
     Ok(res)
 }
+
+pub fn try_code_to_admission_type(code: &str) -> Result<AdmissionType, Hl7MappingError> {
+    match code {
+        "A" => Ok(AdmissionType::AccidentAmbulance),
+        "E" => Ok(AdmissionType::Emergency),
+        "R" => Ok(AdmissionType::Normal),
+        "U" => Ok(AdmissionType::UrgentAdmission),
+        "C" => Ok(AdmissionType::Chosen),
+        other => Err(InputValidationError {
+            resource: "PV1_4_1".to_string(),
+            details: format!("unsupported admission type: '{other}'"),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

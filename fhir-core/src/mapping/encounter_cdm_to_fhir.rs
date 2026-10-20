@@ -1,14 +1,28 @@
-use crate::canonical_model::canonical_encounter::EncounterCdm;
+use crate::canonical_model::canonical_encounter::{AdmissionType, EncounterCdm};
 use crate::fhir_error::FhirMappingError::UnsupportedValueError;
-use crate::fhir_error::{ContentError, FhirMappingError};
+use crate::fhir_error::{ContentError, FhirMappingError, ParsingError};
 use crate::mapping::encounter_cdm_to_fhir::EncounterLevel::Versorgungsstellenkontakt;
-use crate::mapping::misc::{parse_datetime_from_offset, resource_ref};
+use crate::mapping::misc::{
+    coding_data_absent_reason_unsupported, parse_datetime_from_offset, resource_ref,
+};
 use adt_config::config::Fhir;
+use anyhow::anyhow;
+use std::num::NonZeroU32;
 
+use crate::mapping::terminology::{
+    AufnahmeGrundStelle, diagnose_role_coding, entlassgrund_dritte_stelle,
+    entlassgrund_erste_und_zweite_stelle, kontakt_diagnose_procedures,
+};
+use adt_config::resources::ResourceMap;
 use fhir_model::BuilderError;
 use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
-use fhir_model::r4b::resources::{BundleEntry, Encounter, EncounterBuilder, ResourceType};
-use fhir_model::r4b::types::{CodeableConcept, Coding, Identifier, Meta, Period};
+use fhir_model::r4b::resources::{
+    BundleEntry, Encounter, EncounterBuilder, EncounterDiagnosis, EncounterHospitalization,
+    ResourceType,
+};
+use fhir_model::r4b::types::{
+    CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
+};
 use fhir_model::time::OffsetDateTime;
 
 #[derive(PartialEq, Debug)]
@@ -319,4 +333,387 @@ impl From<&EncounterLevel> for Coding {
                 .expect("Kontaktebene coding"),
         }
     }
+}
+
+fn map_einrichtungskontakt(
+    cdm: &EncounterCdm,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Encounter, FhirMappingError> {
+    // base encounter
+    let mut enc = base_encounter(cdm, config, &EncounterLevel::Einrichtungskontakt)?
+        // serviceProvider -> Hospital
+        .service_provider(
+            Reference::builder()
+                .reference(format!(
+                    "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|{}",
+                    config.facility_id
+                ))
+                .build()?,
+        )
+        .build()?;
+
+    // hospitalization admit source & discharge disposition (Entlassgrund)
+    enc.hospitalization = map_hospitalization(cdm)?;
+
+    // Aufnahmegrund
+    if let Some(aufnahmegrund) = map_aufnahmegrund(cdm)? {
+        enc.extension = vec![
+            Extension::builder()
+                .url("http://fhir.de/StructureDefinition/Aufnahmegrund".to_string())
+                .extension(aufnahmegrund)
+                .build()?,
+        ];
+    }
+
+    enc.diagnosis = map_conditions(cdm, config)?;
+
+    enc.part_of = map_mothers_encounter(cdm, config)?;
+
+    Ok(enc)
+}
+
+fn map_aufnahmegrund(cdm: &EncounterCdm) -> Result<Option<Vec<Extension>>, FhirMappingError> {
+    let mut result = vec![];
+
+    // 1. und 2. Stelle
+    if let Some(code) = &cdm.admission_reason_1_2
+        && let Some(coding) = Option::<Coding>::from(AufnahmeGrundStelle::ErsteUndZweite(code))
+    {
+        result.push(coding_extension("ErsteUndZweiteStelle", coding)?);
+    }
+
+    // 3. und 4. Stelle: genau zwei Zeichen erforderlich
+    if let Some(code) = &cdm.admission_reason_3_4 {
+        let mut chars = code.chars();
+
+        if let (Some(c3), Some(c4), None) = (chars.next(), chars.next(), chars.next()) {
+            let (s3, s4) = (c3.to_string(), c4.to_string());
+
+            if let Some(dritte) = Option::<Coding>::from(AufnahmeGrundStelle::Dritte(&s3))
+                && let Some(vierte) = Option::<Coding>::from(AufnahmeGrundStelle::Vierte(&s4))
+            {
+                result.push(coding_extension("DritteStelle", dritte)?);
+                result.push(coding_extension("VierteStelle", vierte)?);
+            }
+        } else {
+            return Err(UnsupportedValueError {
+                details: format!("admission reason has more than 2 digits -> '{}'", code),
+            });
+        }
+    }
+
+    Ok((!result.is_empty()).then_some(result))
+}
+
+fn coding_extension(url: &str, coding: Coding) -> Result<Extension, FhirMappingError> {
+    Ok(Extension::builder()
+        .url(url.to_string())
+        .value(ExtensionValue::Coding(coding))
+        .build()?)
+}
+
+fn map_hospitalization(
+    cdm: &EncounterCdm,
+) -> Result<Option<EncounterHospitalization>, FhirMappingError> {
+    if cdm.bed_status == "O" {
+        return Ok(None);
+    }
+
+    let discharge = map_entlassgrund(cdm)?;
+    let admit_source = map_admit_source(cdm)?;
+
+    match (discharge, admit_source) {
+        (None, None) => Ok(None),
+        (Some(discharge), Some(admit_source)) => Ok(Some(
+            EncounterHospitalization::builder()
+                .discharge_disposition(CodeableConcept::builder().extension(discharge).build()?)
+                .admit_source(
+                    CodeableConcept::builder()
+                        .coding(vec![Some(admit_source)])
+                        .build()?,
+                )
+                .build()?,
+        )),
+        (Some(discharge), None) => {
+            // if discharge is present - admission source is mandatory by profile -> fallback data absent reason
+            Ok(Some(
+                EncounterHospitalization::builder()
+                    .discharge_disposition(CodeableConcept::builder().extension(discharge).build()?)
+                    .admit_source(coding_data_absent_reason_unsupported()?)
+                    .build()?,
+            ))
+        }
+        (None, Some(admit_source)) => Ok(Some(
+            EncounterHospitalization::builder()
+                .admit_source(
+                    CodeableConcept::builder()
+                        .coding(vec![Some(admit_source)])
+                        .build()?,
+                )
+                .build()?,
+        )),
+    }
+}
+
+fn map_entlassgrund(cdm: &EncounterCdm) -> anyhow::Result<Option<Vec<Extension>>> {
+    let mut extension_components = vec![];
+
+    // 1. und 2. Stelle
+    if let Some(discharge_reason_12) = &cdm.discharge_reason_12 {
+        if let Some(c) = entlassgrund_erste_und_zweite_stelle(&*discharge_reason_12) {
+            let erste_und_zweite = Extension::builder()
+                .url("ErsteUndZweiteStelle".to_string())
+                .value(ExtensionValue::Coding(c))
+                .build();
+            extension_components.push(erste_und_zweite?);
+        }
+    }
+
+    // 3. Stelle
+    if let Some(discharge_reason_3) = &cdm.discharge_reason_3 {
+        if let Some(c) = entlassgrund_dritte_stelle(&*discharge_reason_3) {
+            let dritte = Extension::builder()
+                .url("DritteStelle".to_string())
+                .value(ExtensionValue::Coding(c))
+                .build();
+
+            extension_components.push(dritte?);
+        }
+    }
+    if !extension_components.is_empty() {
+        return Ok(Some(vec![
+            Extension::builder()
+                .extension(extension_components)
+                .url("http://fhir.de/StructureDefinition/Entlassungsgrund".to_string())
+                .build()?,
+        ]));
+    }
+    Ok(None)
+}
+
+/// currently we do not have full support of this dataitem in our hl7 messages
+/// only export __G__ for birth and __N__ for emergency
+fn map_admit_source(cdm: &EncounterCdm) -> anyhow::Result<Option<Coding>> {
+    let admission_type = cdm.admission_type;
+
+    if let Some(pv2_3_1) = &cdm.admission_reason_1_2
+        && (pv2_3_1.eq("06") | pv2_3_1.eq("05"))
+    {
+        Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                .code("G".to_string())
+                .display("Geburt".to_string())
+                .build()?,
+        ))
+    } else {
+        match admission_type {
+            // A->'Unfall/Notarztwagen', E-> 'Notfall ohne Einweisung'
+            Some(AdmissionType::AccidentAmbulance) | Some(AdmissionType::Emergency) => Ok(Some(
+                Coding::builder()
+                    .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
+                    .code("N".to_string())
+                    .display("Notfall".to_string())
+                    .build()?,
+            )),
+            _ => Ok(None),
+        }
+    }
+}
+fn map_mothers_encounter(
+    cdm: &EncounterCdm,
+    config: &Fhir,
+) -> Result<Option<Reference>, BuilderError> {
+    match &cdm.mothers_enc_number {
+        Some(mothers_enc_number) => Ok(Some(resource_ref(
+            &ResourceType::Encounter,
+            mothers_enc_number,
+            config.fall.einrichtungskontakt.system.as_str(),
+        )?)),
+        None => Ok(None),
+    }
+}
+
+fn map_conditions(
+    cdm: &EncounterCdm,
+    config: &Fhir,
+) -> Result<Vec<Option<EncounterDiagnosis>>, FhirMappingError> {
+    let mut res = vec![];
+    if let Some(conditions) = &cdm.diagnosis
+        && conditions.len() > 0
+    {
+        for condition in conditions {
+            let priority_u32 = condition
+                .priority
+                .parse::<f32>()
+                .map_err(|err| ContentError::ParsingError(err.into()))?
+                .floor() as u32;
+
+            let rank_nz = NonZeroU32::new(priority_u32)
+                .ok_or_else(|| {
+                    ParsingError::Other(anyhow!(format!(
+                        "DG1 entry row '{}': priority could not be parsed. value was '{}'",
+                        condition.ordinal_number, condition.priority,
+                    )))
+                })
+                .map_err(|err| ContentError::ParsingError(err.into()))?;
+
+            let condition_reference = resource_ref(
+                &ResourceType::Condition,
+                map_bar_identifier(condition.id.as_str(), condition.priority.as_str())?.as_str(),
+                &config.condition.system,
+            )?;
+
+            let codings = map_diagnose_local_codes(priority_u32, &condition.condition_typ)?;
+
+            // profile allows only one use from DiagnoseTyp and Diagnosesubtyp per entry.
+            // multiple entries for same condition are allowed.
+            // to ensure we do not violate constraint, we create only one single type use entries.
+            for coding in codings {
+                res.push(Some(
+                    EncounterDiagnosis::builder()
+                        .condition(condition_reference.clone())
+                        .r#use(CodeableConcept::builder().coding(vec![coding]).build()?)
+                        .rank(rank_nz)
+                        .build()?,
+                ));
+            }
+        }
+    };
+    Ok(res)
+}
+/// identifier value is build like 'condition-id-rank'
+///
+/// note:
+/// Some ADT messages have only an integer as diagnosis priority,
+/// but actually if we check BAR message it has '\<value\>.1'!
+/// It seems .1 is only added to ADT message if .2 priority is present, too.
+/// Since we build identifier from this value, we need to unify it
+/// to standard, which are set by HL7 BAR messages.
+fn map_bar_identifier(condition_id: &str, priority: &str) -> anyhow::Result<String> {
+    let split_by_point = priority.split(".").collect::<Vec<&str>>();
+
+    match split_by_point.len() > 1 {
+        false => Ok(format!("{}-{}.1", condition_id, priority)),
+        true => {
+            match (
+                split_by_point[1].parse::<u32>(),
+                split_by_point[0].parse::<u32>(),
+            ) {
+                (Ok(_), Ok(_)) => Ok(format!("{}-{}", condition_id, priority)),
+
+                (Err(e), _) => Err(e.into()),
+                (_, Err(e)) => Err(e.into()),
+            }
+        }
+    }
+}
+
+fn map_diagnose_local_codes(
+    priority: u32,
+    condition_type_local: &str,
+) -> anyhow::Result<Vec<Option<Coding>>> {
+    let mut result = vec![];
+
+    let is_main_condition = priority < 2;
+    // not supported by 2026 profile
+    if is_main_condition {
+        result.push(diagnose_role_coding("CC"));
+    } else {
+        result.push(diagnose_role_coding("CM"));
+    };
+
+    match condition_type_local {
+        // Aufnahmediagnose
+        "AD" | "Aufn." => {
+            result.push(diagnose_role_coding("AD"));
+        }
+
+        // Einweisungsdiagnose
+        "ED" | "Einw." => {
+            result.push(kontakt_diagnose_procedures("referral-diagnosis"));
+        }
+
+        // Behandlungsdiagnose
+        "BD" | "Beh." => {
+            result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
+
+            // not supported by 2026 profile
+            if is_main_condition {
+                result.push(kontakt_diagnose_procedures("hospital-main-diagnosis"));
+            }
+        }
+
+        // Entlassungsdiagnose
+        "EL" | "Entl." => {
+            result.push(diagnose_role_coding("DD"));
+        }
+
+        // Postoperative Diagnose
+        "PO" | "Post" => {
+            result.push(kontakt_diagnose_procedures("surgery-diagnosis"));
+            // not supported by 2026 profile
+            result.push(diagnose_role_coding("post-op"));
+        }
+
+        // DRG Diagnose
+        "DD" => {
+            // not supported by 2026 profile
+            if is_main_condition {
+                result.push(kontakt_diagnose_procedures("principle-DRG"));
+            } else {
+                // not supported by 2026 profile
+                result.push(kontakt_diagnose_procedures("secondary-DRG"));
+            }
+        }
+
+        // Abrechungsdiagnose
+        "AR" | "Abr" => {
+            // not supported by 2026 profile
+            result.push(diagnose_role_coding("billing"));
+        }
+
+        // Präoperative Diagnose
+        "PR" | "Präop" => {
+            result.push(kontakt_diagnose_procedures("surgery-diagnosis"));
+            // not supported by 2026 profile
+            result.push(diagnose_role_coding("pre-op"));
+        }
+
+        // Fachabteilungs-Aufnahmediagnose & Behandlungsdiagnose & Entlassungsdiagnose
+        "FB" | "FA" | "FE" | "FA En" | "FA Be" => {
+            if is_main_condition {
+                result.push(kontakt_diagnose_procedures("department-main-diagnosis"));
+            }
+            match condition_type_local {
+                "FA" | "FA Au" => {
+                    result.push(diagnose_role_coding("AD"));
+                }
+                "FB" | "FA Be" => {
+                    result.push(kontakt_diagnose_procedures("treatment-diagnosis"));
+                }
+                "FE" | "FA En" => {
+                    result.push(diagnose_role_coding("DD"));
+                }
+                _ => {
+                    // other ignore - since we are here in department context
+                }
+            }
+        }
+        _ => {
+            if !condition_type_local.is_empty() {
+                Err(UnsupportedValueError {
+                    details: format!("local condition type value '{}'", condition_type_local),
+                })?;
+            }
+            if condition_type_local.is_empty() {
+                Err(UnsupportedValueError {
+                    details: "local condition type is empty!".to_string(),
+                })?;
+            }
+        }
+    }
+
+    Ok(result)
 }

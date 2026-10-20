@@ -27,9 +27,9 @@ pub enum Hl7MappingError {
     /// some mandatory property is empty
     #[error("builder misses mandatory field value for {details}")]
     BuilderUninitializedFieldError { details: String },
-    #[error("builder validation failed at structure {resource} with message {details}")]
 
     /// hl7 content is unsupported or is missing expected structure
+    #[error("builder validation failed at structure {resource} with message {details}")]
     InputValidationError { resource: String, details: String },
 
     /// raw HL7 content could not be parsed into target structure

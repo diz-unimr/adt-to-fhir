@@ -1,7 +1,7 @@
 use crate::canonical_model::canonical_meta::MappingOpEncounter;
+use crate::fhir_error::FhirMappingError;
 use derive_builder::Builder;
 use fhir_model::time::OffsetDateTime;
-use std::num::NonZeroU32;
 
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
@@ -9,7 +9,7 @@ pub struct EncounterDiagnosisCdm {
     pub ordinal_number: u32,
     pub id: String,
     pub condition_typ: String,
-    pub priority: NonZeroU32,
+    pub priority: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Builder)]
@@ -21,9 +21,11 @@ pub struct EncounterCdm {
     pub bed_status: String,
     pub admission_datetime: OffsetDateTime,
     #[builder(default)]
-    pub admission_type: Option<String>,
+    pub admission_type: Option<AdmissionType>,
+    /// admission reason §301 first and second digit
     #[builder(default)]
     pub admission_reason_1_2: Option<String>,
+    /// admission reason §301 third and fourth digit
     #[builder(default)]
     pub admission_reason_3_4: Option<String>,
     pub movement_id: String,
@@ -50,4 +52,18 @@ impl EncounterCdm {
     pub fn id(&self) -> &String {
         &self.meta.id
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdmissionType {
+    /// 'A'
+    AccidentAmbulance,
+    /// without hospitalization briefing ('E')
+    Emergency,
+    /// 'R'
+    Normal,
+    /// 'U'
+    UrgentAdmission,
+    /// 'C'
+    Chosen,
 }

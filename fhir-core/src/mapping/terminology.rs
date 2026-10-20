@@ -33,7 +33,7 @@ impl From<EntlassgrundStelle<'_>> for Option<Coding> {
     }
 }
 
-fn aufnahmegrund_erste_und_zweite_stelle(code: &str) -> Option<Coding> {
+pub(crate) fn aufnahmegrund_erste_und_zweite_stelle(code: &str) -> Option<Coding> {
     let display = match code {
         "01" => "Krankenhausbehandlung, vollstationär",
         "02" => {
@@ -57,7 +57,7 @@ fn aufnahmegrund_erste_und_zweite_stelle(code: &str) -> Option<Coding> {
         .ok()
 }
 
-fn aufnahmegrund_dritte_stelle(code: &str) -> Option<Coding> {
+pub(crate) fn aufnahmegrund_dritte_stelle(code: &str) -> Option<Coding> {
     let display = match code {
         "0" => "Anderes",
         "2" => "Zuständigkeitswechsel des Kostenträgers",
@@ -73,7 +73,7 @@ fn aufnahmegrund_dritte_stelle(code: &str) -> Option<Coding> {
         .ok()
 }
 
-fn aufnahmegrund_vierte_stelle(code: &str) -> Option<Coding> {
+pub(crate) fn aufnahmegrund_vierte_stelle(code: &str) -> Option<Coding> {
     let display = match code {
         "1" => "Normalfall",
         "2" => "Arbeitsunfall/Berufskrankheit (§ 11 Abs. 5 SGB V)",
@@ -92,7 +92,7 @@ fn aufnahmegrund_vierte_stelle(code: &str) -> Option<Coding> {
         .ok()
 }
 
-fn entlassgrund_erste_und_zweite_stelle(code: &str) -> Option<Coding> {
+pub(crate) fn entlassgrund_erste_und_zweite_stelle(code: &str) -> Option<Coding> {
     let display = match code {
         "01" => "Behandlung regulär beendet",
         "02" => "Behandlung regulär beendet, nachstationäre Behandlung vorgesehen",
@@ -152,7 +152,7 @@ fn entlassgrund_erste_und_zweite_stelle(code: &str) -> Option<Coding> {
         .ok()
 }
 
-fn entlassgrund_dritte_stelle(code: &str) -> Option<Coding> {
+pub(crate) fn entlassgrund_dritte_stelle(code: &str) -> Option<Coding> {
     let display = match code {
         "1" => "arbeitsfähig entlassen",
         "2" => "arbeitsunfähig entlassen",
