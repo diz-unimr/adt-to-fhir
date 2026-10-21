@@ -9,7 +9,7 @@ use fhir_model::r4b::codes::IdentifierUse;
 use fhir_model::r4b::resources::{BundleEntry, Location, ResourceType};
 use fhir_model::r4b::types::Identifier;
 
-pub fn map(input: Vec<LocationCdm>, config: &Fhir) -> Result<Vec<BundleEntry>, FhirMappingError> {
+pub fn map(input: &Vec<LocationCdm>, config: &Fhir) -> Result<Vec<BundleEntry>, FhirMappingError> {
     let mapped_locations = input
         .into_iter()
         .map(|loc| map_to_fhir(loc, config))
@@ -23,7 +23,7 @@ pub fn map(input: Vec<LocationCdm>, config: &Fhir) -> Result<Vec<BundleEntry>, F
     Ok(bundle_entries)
 }
 static LOCATION_TYPE_SYSTEM: &str = "http://terminology.hl7.org/CodeSystem/location-physical-type";
-pub fn map_to_fhir(input: LocationCdm, config: &Fhir) -> Result<Location, FhirMappingError> {
+pub fn map_to_fhir(input: &LocationCdm, config: &Fhir) -> Result<Location, FhirMappingError> {
     match input.typ {
         LocationCdmType::Ward => {
             let mut location = Location::builder()
@@ -46,7 +46,7 @@ pub fn map_to_fhir(input: LocationCdm, config: &Fhir) -> Result<Location, FhirMa
                     "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
                 )?)]
             }
-            if let Some(dep_id) = input.manging_organization {
+            if let Some(dep_id) = &input.manging_organization {
                 location.managing_organization = Some(resource_ref(
                     &ResourceType::Organization,
                     dep_id.as_str(),

@@ -14,13 +14,11 @@ use fhir_core::canonical_model::canonical_encounter::{
 use fhir_core::canonical_model::canonical_meta::{
     MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation,
 };
-use fhir_core::fhir_error::FhirMappingError;
-use fhir_core::fhir_error::FhirMappingError::UnsupportedValueError;
+
 use hl7_parser::Message;
 use log::{Level, log};
-use std::num::NonZeroU32;
 
-fn map(msg: &Message) -> Result<Option<EncounterCdm>, Hl7MappingError> {
+pub fn map(msg: &Message) -> Result<Option<EncounterCdm>, Hl7MappingError> {
     let message_type = message_type(msg)?;
     let id = get_message_key(msg)?.to_string();
 
@@ -126,6 +124,11 @@ fn extract_raw_data(
     // map_mothers_encounter
     let mothers_encounter_number = query(msg, PID_21_1);
 
+    let ward_short_name = match current_ward_location {
+        Some(ward_name) => Some(ward_name.to_string()),
+        None => None,
+    };
+
     let mut fall = EncounterCdmBuilder::default()
         .meta(operation)
         .pid(pid)
@@ -134,6 +137,7 @@ fn extract_raw_data(
         .bed_status(bed_status)
         .movement_id(movement_id)
         .movement_start(movement_start)
+        .ward_short_name(ward_short_name)
         .build()
         .map_err(|err| Hl7MappingError::BuilderError {
             builder_name: "EncounterCdmBuilder".to_string(),
@@ -167,9 +171,7 @@ fn extract_raw_data(
     if let Some(mothers_encounter_number) = mothers_encounter_number {
         fall.mothers_enc_number = Some(mothers_encounter_number.to_string());
     }
-    if let Some(current_ward_location) = current_ward_location {
-        fall.ward_short_name = Some(current_ward_location.to_string());
-    }
+
     Ok(fall)
 }
 

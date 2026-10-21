@@ -1,29 +1,38 @@
 use crate::canonical_model::canonical_encounter::{AdmissionType, EncounterCdm};
+use crate::canonical_model::canonical_location::LocationCdm;
+use crate::canonical_model::canonical_meta::ProcessingOperation;
 use crate::fhir_error::FhirMappingError::UnsupportedValueError;
 use crate::fhir_error::{ContentError, FhirMappingError, ParsingError};
-use crate::mapping::encounter_cdm_to_fhir::EncounterLevel::Versorgungsstellenkontakt;
-use crate::mapping::misc::{
-    coding_data_absent_reason_unsupported, parse_datetime_from_offset, resource_ref,
+use crate::mapping::encounter_cdm_to_fhir::EncounterLevel::{
+    Fachabteilungskontakt, Versorgungsstellenkontakt,
 };
-use adt_config::config::Fhir;
-use anyhow::anyhow;
-use std::num::NonZeroU32;
-
+use crate::mapping::fab_mapping::map_fab_schluessel;
+use crate::mapping::location_cdm_to_fhir;
+use crate::mapping::location_cdm_to_fhir::map_to_fhir;
+use crate::mapping::misc::{
+    EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported, get_cc_with_one_code,
+    parse_datetime_from_offset, resource_ref,
+};
 use crate::mapping::terminology::{
     AufnahmeGrundStelle, diagnose_role_coding, entlassgrund_dritte_stelle,
     entlassgrund_erste_und_zweite_stelle, kontakt_diagnose_procedures,
 };
+use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
+use anyhow::anyhow;
 use fhir_model::BuilderError;
-use fhir_model::r4b::codes::{EncounterStatus, IdentifierUse};
+use fhir_model::r4b::codes::ActionPrecheckBehavior::No;
+use fhir_model::r4b::codes::{EncounterLocationStatus, EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterBuilder, EncounterDiagnosis, EncounterHospitalization,
-    ResourceType,
+    EncounterLocation, Location, ResourceType,
 };
 use fhir_model::r4b::types::{
     CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
 };
 use fhir_model::time::OffsetDateTime;
+use log::{Level, log};
+use std::num::NonZeroU32;
 
 #[derive(PartialEq, Debug)]
 enum EncounterLevel {
@@ -32,6 +41,42 @@ enum EncounterLevel {
     Versorgungsstellenkontakt,
 }
 
+pub fn map(
+    encounter_cdm: &EncounterCdm,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Vec<BundleEntry>, FhirMappingError> {
+    let mut result = vec![];
+
+    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv1) {
+        let res = map_einrichtungskontakt(encounter_cdm, config, resources)?;
+        result.push(bundle_entry(res, operation, config)?);
+    }
+
+    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv2) {
+        if let Some(res) = map_abteilungskontakt(encounter_cdm, config, resources)? {
+            result.push(bundle_entry(res, operation, config)?);
+        }
+    }
+
+    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv3) {
+        if let Some(res) = map_versorgungsstellenkontakt(encounter_cdm, config)? {
+            result.push(bundle_entry(res, operation, config)?);
+        }
+    }
+
+    Ok(result)
+}
+
+fn map_operation(input: &ProcessingOperation) -> Option<EntryRequestType> {
+    match input {
+        ProcessingOperation::UpdateAsCreate => Some(EntryRequestType::UpdateAsCreate),
+        ProcessingOperation::CreateIfNotExists => Some(EntryRequestType::ConditionalCreate),
+        ProcessingOperation::Delete => Some(EntryRequestType::Delete),
+        ProcessingOperation::Patch => None,
+        ProcessingOperation::Skip => None,
+    }
+}
 pub fn map_default_identifier_enc(
     system: String,
     value: String,
@@ -57,35 +102,6 @@ pub fn map_meta_encounter(config: &Fhir) -> Result<Meta, BuilderError> {
         .profile(vec![Some(config.fall.profile.clone())])
         .source(config.meta_source.to_string())
         .build()?)
-}
-
-pub fn map(input: EncounterCdm, config: &Fhir) -> Result<Vec<BundleEntry>, ContentError> {
-    let mut result: Vec<BundleEntry> = vec![];
-    let mut encounter: Vec<Encounter> = vec![];
-
-    if let Some(lvl_1_enc) = map_lvl1(&input, config)? {
-        encounter.push(lvl_1_enc);
-    }
-    if let Some(lvl_2_enc) = map_lvl2(&input, config)? {
-        encounter.push(lvl_2_enc);
-    }
-    if let Some(lvl_3_enc) = map_lvl3(&input, config)? {
-        encounter.push(lvl_3_enc);
-    }
-
-    panic!("not implemented")
-}
-
-fn map_lvl1(input: &EncounterCdm, adt_config: &Fhir) -> Result<Option<Encounter>, ContentError> {
-    todo!()
-}
-
-fn map_lvl2(input: &EncounterCdm, adt_config: &Fhir) -> Result<Option<Encounter>, ContentError> {
-    todo!()
-}
-
-fn map_lvl3(input: &EncounterCdm, adt_config: &Fhir) -> Result<Option<Encounter>, ContentError> {
-    todo!()
 }
 
 fn base_encounter(
@@ -541,7 +557,7 @@ fn map_conditions(
 ) -> Result<Vec<Option<EncounterDiagnosis>>, FhirMappingError> {
     let mut res = vec![];
     if let Some(conditions) = &cdm.diagnosis
-        && conditions.len() > 0
+        && !conditions.is_empty()
     {
         for condition in conditions {
             let priority_u32 = condition
@@ -716,4 +732,172 @@ fn map_diagnose_local_codes(
     }
 
     Ok(result)
+}
+
+fn map_abteilungskontakt(
+    cdm: &EncounterCdm,
+    config: &Fhir,
+    resources: &ResourceMap,
+) -> Result<Option<Encounter>, FhirMappingError> {
+    if let Some(service_type) = get_service_type(cdm, resources, config)? {
+        // base encounter
+        let mut enc = base_encounter(cdm, config, &Fachabteilungskontakt)?
+            .part_of(resource_ref(
+                &ResourceType::Encounter,
+                cdm.visit_number.as_str(),
+                &config.fall.einrichtungskontakt.system,
+            )?)
+            .build()?;
+
+        enc.service_type = Some(service_type);
+        if let Some(fab) = &cdm.department_name {
+            enc.service_provider = Some(resource_ref(
+                &ResourceType::Organization,
+                fab.as_str(),
+                config.organization.department.system.as_str(),
+            )?);
+        }
+
+        Ok(Some(enc))
+    } else {
+        log!(
+            Level::Debug,
+            "Missing service type at msg-id '{}' - cannot build valid encounter at department level!",
+            cdm.id()
+        );
+        Ok(None)
+    }
+}
+
+fn get_service_type(
+    cdm: &EncounterCdm,
+    resources: &ResourceMap,
+    config: &Fhir,
+) -> anyhow::Result<Option<CodeableConcept>> {
+    let system_fachabteilungs_schluessel: &str =
+        "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
+
+    if let Some(fab) = &cdm.department_name {
+        match map_fab_schluessel(fab.as_str(), cdm.id(), config, resources) {
+            Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
+            Ok(None) => {}
+            Err(e) => {
+                if let FhirMappingError::MissingResourceError { resource, value } = &e {
+                    return Err(anyhow!(
+                        "map servicetype failed due missing resource {} entry at {}",
+                        resource,
+                        value
+                    ));
+                } else {
+                    return Err(anyhow!("map servicetype failed unexpected".to_string()));
+                }
+            }
+        };
+    }
+
+    if let Some(fab_schluessel) = &cdm.clinical_department_code {
+        Ok(Some(get_cc_with_one_code(
+            fab_schluessel.to_string(),
+            system_fachabteilungs_schluessel.to_string(),
+        )?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn map_versorgungsstellenkontakt(
+    cdm: &EncounterCdm,
+    config: &Fhir,
+) -> Result<Option<Encounter>, FhirMappingError> {
+    if let Some(locations) = &cdm.locations {
+        let encounter_locations = locations
+            .iter()
+            .map(|loc_cdm| {
+                let location = location_cdm_to_fhir::map_to_fhir(loc_cdm, config)?;
+                let encounter_location = to_encounter_location(location).map(Some)?;
+
+                if let Some(mut el) = encounter_location {
+                    if loc_cdm.is_movement_finished {
+                        el.status = Some(EncounterLocationStatus::Completed)
+                    } else {
+                        el.status = Some(EncounterLocationStatus::Active)
+                    }
+                    Ok::<Option<EncounterLocation>, FhirMappingError>(Some(el))
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if encounter_locations.is_empty() {
+            return Ok(None);
+        }
+
+        let versorgungskontakt = base_encounter(cdm, config, &Versorgungsstellenkontakt)?
+            .part_of(resource_ref(
+                &ResourceType::Encounter,
+                cdm.movement_id.as_str(),
+                &config.fall.abteilungskontakt.system,
+            )?)
+            .location(encounter_locations)
+            .status(map_encounter_status(&map_period(
+                cdm,
+                &Versorgungsstellenkontakt,
+            )?));
+
+        let mut kontakt = versorgungskontakt.build()?;
+
+        if let Some(ward) = &cdm.ward_short_name {
+            kontakt.service_provider = Some(resource_ref(
+                &ResourceType::Organization,
+                ward,
+                config.organization.ward.system.as_str(),
+            )?);
+        }
+
+        Ok(Some(kontakt))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn to_encounter_location(location: Location) -> Result<EncounterLocation, ContentError> {
+    let identifier = location
+        .identifier
+        .first()
+        .and_then(|i| i.as_ref())
+        .ok_or_else(|| ContentError::MissingValueError {
+            property: "failed to access location.identifier".to_string(),
+        })?;
+
+    let identifier_value =
+        identifier
+            .value
+            .as_deref()
+            .ok_or_else(|| ContentError::MissingValueError {
+                property: "failed to access location.identifier.value".to_string(),
+            })?;
+
+    let system = identifier
+        .system
+        .as_deref()
+        .ok_or_else(|| ContentError::MissingValueError {
+            property: "failed to access location.identifier.system".to_string(),
+        })?;
+
+    let phys_type =
+        location
+            .physical_type
+            .clone()
+            .ok_or_else(|| ContentError::MissingValueError {
+                property: "failed to access location.pyhsical_type".to_string(),
+            })?;
+
+    Ok(EncounterLocation::builder()
+        .physical_type(phys_type)
+        .location(resource_ref(
+            &ResourceType::Location,
+            identifier_value,
+            system,
+        )?)
+        .build()?)
 }

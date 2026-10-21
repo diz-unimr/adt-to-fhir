@@ -1,5 +1,3 @@
-use crate::fhir::encounter;
-
 use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
 
@@ -21,7 +19,8 @@ use hl7_parser::Message;
 
 use processor_hl7v2::hl7::parser::{PID_2, PV1_2, PV1_3_5, get_message_key, query};
 use processor_hl7v2::{
-    hl7_to_location_cdm, hl7_to_observation_cdm, hl7_to_organization_cdm, hl7_to_patient_cdm,
+    hl7_to_encounter_cdm, hl7_to_location_cdm, hl7_to_observation_cdm, hl7_to_organization_cdm,
+    hl7_to_patient_cdm,
 };
 
 use crate::error::MappingError;
@@ -86,7 +85,7 @@ impl FhirMapper {
         }
 
         let p = self.map_patient(v2_msg)?;
-        let e = encounter::map(v2_msg, &self.config, &self.resources)?;
+        let e = self.map_encounter(v2_msg)?;
         let l = self.map_locations(v2_msg)?;
         let obs = self.map_observations(v2_msg)?;
         let org = self.map_organizations(v2_msg)?;
@@ -104,7 +103,7 @@ impl FhirMapper {
 
     fn map_locations(&self, v2_msg: &Message) -> Result<Vec<BundleEntry>> {
         let l = location_cdm_to_fhir::map(
-            hl7_to_location_cdm::map(v2_msg, &self.resources)?,
+            &hl7_to_location_cdm::map(v2_msg, &self.resources)?,
             &self.config,
         )?;
         Ok(l)
@@ -139,6 +138,18 @@ impl FhirMapper {
             }
         };
         Ok(p)
+    }
+
+    fn map_encounter(&self, msg: &Message) -> Result<Vec<BundleEntry>> {
+        if let Some(enc_cdm) = hl7_to_encounter_cdm::map(msg)? {
+            Ok(fhir_core::mapping::encounter_cdm_to_fhir::map(
+                &enc_cdm,
+                &self.config,
+                &self.resources,
+            )?)
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
