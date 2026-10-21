@@ -141,7 +141,7 @@ impl FhirMapper {
     }
 
     fn map_encounter(&self, msg: &Message) -> Result<Vec<BundleEntry>> {
-        if let Some(enc_cdm) = hl7_to_encounter_cdm::map(msg)? {
+        if let Some(enc_cdm) = hl7_to_encounter_cdm::map(msg, &self.resources)? {
             Ok(fhir_core::mapping::encounter_cdm_to_fhir::map(
                 &enc_cdm,
                 &self.config,

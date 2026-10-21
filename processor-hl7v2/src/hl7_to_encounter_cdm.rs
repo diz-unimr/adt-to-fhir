@@ -1,7 +1,7 @@
 use crate::hl7::parser::{
-    MessageType, PID_2, PID_21_1, PV1_19_1, PV1_2, PV1_36_1, PV1_3_1,
-    PV1_40_1, PV1_44, PV1_45, PV1_4_1, PV1_4__2_1, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key, message_type,
-    parse_to_datetime, query,
+    MessageType, PID_2, PID_21_1, PV1_2, PV1_3_1, PV1_4__2_1, PV1_4_1, PV1_19_1, PV1_36_1,
+    PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key,
+    message_type, parse_to_datetime, query,
 };
 use crate::hl7::{map_visit_number, parse_fab};
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
@@ -129,7 +129,27 @@ fn extract_raw_data(
     // map_mothers_encounter
     let mothers_encounter_number = query(msg, PID_21_1);
 
-    let ward_short_name = parse_fab(msg).map(|s| s.to_string());
+    let ward_short_name = query(msg, PV1_3_1).map(|a| a.to_string());
+
+    // local department name may differ from official medical department name
+    let department_name = match parse_fab(msg) {
+        Some(fab) => resources
+            .department_map
+            .get(fab)
+            .map(|b| b.abteilungs_bezeichnung.to_string()),
+        None => None,
+    };
+
+    let clinical_dep_code = match query(msg, PV1_39_1) {
+        Some(code_from_msg) => Some(code_from_msg.to_string()),
+        None => match parse_fab(msg) {
+            Some(fab) => resources
+                .department_map
+                .get(fab)
+                .map(|b| b.fachabteilungs_schluessel.to_string()),
+            None => None,
+        },
+    };
 
     let mut fall = EncounterCdmBuilder::default()
         .meta(operation)
@@ -140,6 +160,8 @@ fn extract_raw_data(
         .movement_id(movement_id)
         .movement_start(movement_start)
         .ward_short_name(ward_short_name)
+        .department_name(department_name)
+        .clinical_department_code(clinical_dep_code)
         .build()
         .map_err(|err| Hl7MappingError::BuilderError {
             builder_name: "EncounterCdmBuilder".to_string(),
