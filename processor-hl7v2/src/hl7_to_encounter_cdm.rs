@@ -1,9 +1,9 @@
-use crate::hl7::map_visit_number;
 use crate::hl7::parser::{
-    MessageType, PID_2, PID_21_1, PV1_2, PV1_3_1, PV1_4__2_1, PV1_4_1, PV1_19_1, PV1_36_1,
-    PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key, message_type,
+    MessageType, PID_2, PID_21_1, PV1_19_1, PV1_2, PV1_36_1, PV1_3_1,
+    PV1_40_1, PV1_44, PV1_45, PV1_4_1, PV1_4__2_1, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key, message_type,
     parse_to_datetime, query,
 };
+use crate::hl7::{map_visit_number, parse_fab};
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
 
 use crate::hl7_error::Hl7MappingError::InputValidationError;
@@ -15,10 +15,14 @@ use fhir_core::canonical_model::canonical_meta::{
     MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation,
 };
 
+use adt_config::resources::ResourceMap;
 use hl7_parser::Message;
 use log::{Level, log};
 
-pub fn map(msg: &Message) -> Result<Option<EncounterCdm>, Hl7MappingError> {
+pub fn map(
+    msg: &Message,
+    resource_map: &ResourceMap,
+) -> Result<Option<EncounterCdm>, Hl7MappingError> {
     let message_type = message_type(msg)?;
     let id = get_message_key(msg)?.to_string();
 
@@ -47,7 +51,7 @@ pub fn map(msg: &Message) -> Result<Option<EncounterCdm>, Hl7MappingError> {
                 .operation_lv3(ProcessingOperation::UpdateAsCreate)
                 .build()?;
 
-            Ok(Some(extract_raw_data(msg, operation)?))
+            Ok(Some(extract_raw_data(msg, operation, resource_map)?))
         }
 
         MessageType::A11 | MessageType::A27 | MessageType::A12 | MessageType::A38 => {
@@ -64,7 +68,7 @@ pub fn map(msg: &Message) -> Result<Option<EncounterCdm>, Hl7MappingError> {
                 .operation_lv3(ProcessingOperation::Delete)
                 .build()?;
 
-            Ok(Some(extract_raw_data(msg, operation)?))
+            Ok(Some(extract_raw_data(msg, operation, resource_map)?))
         }
         _ => {
             log!(Level::Info, "Unhandled message type {:?}", message_type);
@@ -76,6 +80,7 @@ pub fn map(msg: &Message) -> Result<Option<EncounterCdm>, Hl7MappingError> {
 fn extract_raw_data(
     msg: &Message,
     operation: MappingOpEncounter,
+    resources: &ResourceMap,
 ) -> Result<EncounterCdm, Hl7MappingError> {
     /*
      * mandatory properties
@@ -124,10 +129,7 @@ fn extract_raw_data(
     // map_mothers_encounter
     let mothers_encounter_number = query(msg, PID_21_1);
 
-    let ward_short_name = match current_ward_location {
-        Some(ward_name) => Some(ward_name.to_string()),
-        None => None,
-    };
+    let ward_short_name = parse_fab(msg).map(|s| s.to_string());
 
     let mut fall = EncounterCdmBuilder::default()
         .meta(operation)
@@ -236,7 +238,7 @@ pub fn try_code_to_admission_type(code: &str) -> Result<AdmissionType, Hl7Mappin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use adt_config::test_utils::tests::read_test_resource;
+    use adt_config::test_utils::tests::{get_dummy_resources, read_test_resource};
     use rstest::rstest;
 
     #[rstest]
@@ -255,7 +257,7 @@ mod tests {
     pub fn a_xx_test(#[case] test_file_name: String) {
         let binding = read_test_resource(test_file_name.as_str());
         let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
-        let result = map(&msg);
+        let result = map(&msg, &get_dummy_resources());
         match result {
             Ok(o) => {
                 assert!(!o.unwrap().meta.id.is_empty())
@@ -271,7 +273,7 @@ mod tests {
     pub fn a34_test() {
         let binding = read_test_resource("a34_test.hl7");
         let msg = Message::parse_with_lenient_newlines(binding.as_str(), true).unwrap();
-        let result = map(&msg);
+        let result = map(&msg, &get_dummy_resources());
         match result {
             Ok(a) => {
                 assert!(

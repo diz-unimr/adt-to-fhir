@@ -92,6 +92,43 @@ pub fn parse_department_name<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
         _ => None,
     }
 }
+
+pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
+    let ward = query(msg, PV1_3_1);
+    let department = query(msg, PV1_3_4);
+    let location = query(msg, PV1_3_5);
+
+    let bed_status = query(msg, PV1_2);
+    match bed_status {
+        None => None,
+        Some("O") | Some("E") => {
+            if department.is_some() {
+                department
+            } else {
+                if let Some(loc) = location {
+                    if loc != "KLINIKUM" {
+                        Some(loc)
+                    } else {
+                        if let Some(w) = ward {
+                            return Some(w);
+                        }
+                        // location unknown
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+        Some("I") | Some("VS") | Some("NS") | Some("TS") | Some("V") | Some("H") => department,
+        Some("P") => {
+            // todo: if planned encounter should be mapped - we need mapping here,
+            None
+        }
+
+        _ => None,
+    }
+}
 #[cfg(test)]
 mod test {
     use crate::hl7::parse_department_name;
