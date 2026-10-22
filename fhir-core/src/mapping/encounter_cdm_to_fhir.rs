@@ -1,5 +1,4 @@
 use crate::canonical_model::canonical_encounter::{AdmissionType, EncounterCdm};
-use crate::canonical_model::canonical_location::LocationCdm;
 use crate::canonical_model::canonical_meta::ProcessingOperation;
 use crate::fhir_error::FhirMappingError::UnsupportedValueError;
 use crate::fhir_error::{ContentError, FhirMappingError, ParsingError};
@@ -8,9 +7,8 @@ use crate::mapping::encounter_cdm_to_fhir::EncounterLevel::{
 };
 use crate::mapping::fab_mapping::map_fab_schluessel;
 use crate::mapping::location_cdm_to_fhir;
-use crate::mapping::location_cdm_to_fhir::map_to_fhir;
 use crate::mapping::misc::{
-    EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported, get_cc_with_one_code,
+    EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported,
     parse_datetime_from_offset, resource_ref,
 };
 use crate::mapping::terminology::{
@@ -21,7 +19,6 @@ use adt_config::config::Fhir;
 use adt_config::resources::ResourceMap;
 use anyhow::anyhow;
 use fhir_model::BuilderError;
-use fhir_model::r4b::codes::ActionPrecheckBehavior::No;
 use fhir_model::r4b::codes::{EncounterLocationStatus, EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterBuilder, EncounterDiagnosis, EncounterHospitalization,
@@ -48,21 +45,22 @@ pub fn map(
 ) -> Result<Vec<BundleEntry>, FhirMappingError> {
     let mut result = vec![];
 
-    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv1) {
-        let res = map_einrichtungskontakt(encounter_cdm, config, resources)?;
+    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv1)
+        && let res = map_einrichtungskontakt(encounter_cdm, config, resources)?
+    {
         result.push(bundle_entry(res, operation, config)?);
     }
 
-    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv2) {
-        if let Some(res) = map_abteilungskontakt(encounter_cdm, config, resources)? {
-            result.push(bundle_entry(res, operation, config)?);
-        }
+    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv2)
+        && let Some(res) = map_abteilungskontakt(encounter_cdm, config, resources)?
+    {
+        result.push(bundle_entry(res, operation, config)?);
     }
 
-    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv3) {
-        if let Some(res) = map_versorgungsstellenkontakt(encounter_cdm, config)? {
-            result.push(bundle_entry(res, operation, config)?);
-        }
+    if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv3)
+        && let Some(res) = map_versorgungsstellenkontakt(encounter_cdm, config)?
+    {
+        result.push(bundle_entry(res, operation, config)?);
     }
 
     Ok(result)
@@ -148,15 +146,15 @@ fn map_period(cdm: &EncounterCdm, lvl: &EncounterLevel) -> Result<Period, Conten
     match lvl {
         EncounterLevel::Einrichtungskontakt => {
             start = cdm.admission_datetime;
-            end = cdm.discharge
+            end = cdm.discharge_date
         }
-        EncounterLevel::Fachabteilungskontakt | Versorgungsstellenkontakt => {
+        Fachabteilungskontakt | Versorgungsstellenkontakt => {
             start = cdm.movement_start;
             end = match cdm.movement_end {
                 // if end of movement is available use it
                 Some(_) => cdm.movement_end,
                 None => {
-                    if cdm.bed_status == "NS" || cdm.map_as_registration {
+                    if cdm.bed_status == "NS" || cdm.is_registration {
                         // fixme: cleaner impl. set data absent reason
                         Some(cdm.movement_start)
                     } else {
@@ -234,7 +232,7 @@ fn map_encounter_class(cdm: &EncounterCdm) -> Result<Coding, FhirMappingError> {
 fn map_encounter_type(
     cdm: &EncounterCdm,
     enc_type: &EncounterLevel,
-) -> anyhow::Result<Vec<Option<CodeableConcept>>> {
+) -> Result<Vec<Option<CodeableConcept>>, FhirMappingError> {
     // Kontaktebene
     let kontaktebene = CodeableConcept::builder()
         .coding(vec![Some(enc_type.into())])
@@ -273,7 +271,7 @@ fn map_kontaktart(
 
     match cdm.bed_status.as_ref() {
         "I" | "O" => {
-            if cdm.map_as_registration {
+            if cdm.is_registration {
                 Ok(Some(
                     Coding::builder()
                         .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
@@ -431,7 +429,7 @@ fn coding_extension(url: &str, coding: Coding) -> Result<Extension, FhirMappingE
 
 fn map_hospitalization(
     cdm: &EncounterCdm,
-) -> Result<Option<EncounterHospitalization>, FhirMappingError> {
+) -> Result<Option<EncounterHospitalization>, BuilderError> {
     if cdm.bed_status == "O" {
         return Ok(None);
     }
@@ -472,7 +470,7 @@ fn map_hospitalization(
     }
 }
 
-fn map_entlassgrund(cdm: &EncounterCdm) -> anyhow::Result<Option<Vec<Extension>>> {
+fn map_entlassgrund(cdm: &EncounterCdm) -> Result<Option<Vec<Extension>>, BuilderError> {
     let mut extension_components = vec![];
 
     // 1. und 2. Stelle
@@ -510,7 +508,7 @@ fn map_entlassgrund(cdm: &EncounterCdm) -> anyhow::Result<Option<Vec<Extension>>
 
 /// currently we do not have full support of this dataitem in our hl7 messages
 /// only export __G__ for birth and __N__ for emergency
-fn map_admit_source(cdm: &EncounterCdm) -> anyhow::Result<Option<Coding>> {
+fn map_admit_source(cdm: &EncounterCdm) -> Result<Option<Coding>, BuilderError> {
     let admission_type = cdm.admission_type;
 
     if let Some(pv2_3_1) = &cdm.admission_reason_1_2
@@ -577,7 +575,9 @@ fn map_conditions(
 
             let condition_reference = resource_ref(
                 &ResourceType::Condition,
-                map_bar_identifier(condition.id.as_str(), condition.priority.as_str())?.as_str(),
+                map_bar_identifier(condition.id.as_str(), condition.priority.as_str())
+                    .map_err(ContentError::ParsingError)?
+                    .as_str(),
                 &config.condition.system,
             )?;
 
@@ -607,7 +607,7 @@ fn map_conditions(
 /// It seems .1 is only added to ADT message if .2 priority is present, too.
 /// Since we build identifier from this value, we need to unify it
 /// to standard, which are set by HL7 BAR messages.
-fn map_bar_identifier(condition_id: &str, priority: &str) -> anyhow::Result<String> {
+fn map_bar_identifier(condition_id: &str, priority: &str) -> Result<String, ParsingError> {
     let split_by_point = priority.split(".").collect::<Vec<&str>>();
 
     match split_by_point.len() > 1 {
@@ -629,7 +629,7 @@ fn map_bar_identifier(condition_id: &str, priority: &str) -> anyhow::Result<Stri
 fn map_diagnose_local_codes(
     priority: u32,
     condition_type_local: &str,
-) -> anyhow::Result<Vec<Option<Coding>>> {
+) -> Result<Vec<Option<Coding>>, FhirMappingError> {
     let mut result = vec![];
 
     let is_main_condition = priority < 2;
@@ -750,7 +750,7 @@ fn map_abteilungskontakt(
             .build()?;
 
         enc.service_type = Some(service_type);
-        if let Some(fab) = &cdm.department_name {
+        if let Some(fab) = &cdm.department_short_name {
             enc.service_provider = Some(resource_ref(
                 &ResourceType::Organization,
                 fab.as_str(),
@@ -773,33 +773,32 @@ fn get_service_type(
     cdm: &EncounterCdm,
     resources: &ResourceMap,
     config: &Fhir,
-) -> anyhow::Result<Option<CodeableConcept>> {
+) -> Result<Option<CodeableConcept>, FhirMappingError> {
     let system_fachabteilungs_schluessel: &str =
         "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
 
-    if let Some(fab) = &cdm.department_name {
-        match map_fab_schluessel(fab.as_str(), cdm.id(), config, resources) {
-            Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
-            Ok(None) => {}
-            Err(e) => {
-                if let FhirMappingError::MissingResourceError { resource, value } = &e {
-                    return Err(anyhow!(
-                        "map servicetype failed due missing resource {} entry at {}",
-                        resource,
-                        value
-                    ));
-                } else {
-                    return Err(anyhow!("map servicetype failed unexpected".to_string()));
-                }
-            }
-        };
-    }
+    if let Some(fab) = &cdm.ward_short_name
+        && let Some(fab_from_short_name) =
+            map_fab_schluessel(fab.as_str(), cdm.id(), config, resources)?
+    {
+        return Ok(Some(fab_from_short_name));
+    };
 
     if let Some(fab_schluessel) = &cdm.clinical_department_code {
-        Ok(Some(get_cc_with_one_code(
-            fab_schluessel.to_string(),
-            system_fachabteilungs_schluessel.to_string(),
-        )?))
+        let mut coding = Coding::builder()
+            .system(system_fachabteilungs_schluessel.to_string())
+            .code(fab_schluessel.to_string())
+            .build()?;
+
+        if let Some(dep_display) = &cdm.department_long_name {
+            coding.display = Some(dep_display.to_string());
+        }
+
+        Ok(Some(
+            CodeableConcept::builder()
+                .coding(vec![Some(coding)])
+                .build()?,
+        ))
     } else {
         Ok(None)
     }

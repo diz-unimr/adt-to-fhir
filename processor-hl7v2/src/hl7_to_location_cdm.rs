@@ -87,7 +87,7 @@ pub(crate) fn map_location(
     location.build().map(Some).map_err(|err| err.into())
 }
 
-fn create_locations_new(
+pub(crate) fn create_locations_new(
     msg: &Message,
     resources: &ResourceMap,
     targets: &[LocationCdmType],

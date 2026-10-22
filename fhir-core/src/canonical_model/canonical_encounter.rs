@@ -33,7 +33,7 @@ pub struct EncounterCdm {
     #[builder(default)]
     pub movement_end: Option<OffsetDateTime>,
     #[builder(default)]
-    pub discharge: Option<OffsetDateTime>,
+    pub discharge_date: Option<OffsetDateTime>,
     #[builder(default)]
     pub discharge_reason_12: Option<String>,
     #[builder(default)]
@@ -43,12 +43,13 @@ pub struct EncounterCdm {
     #[builder(default)]
     pub mothers_enc_number: Option<String>,
     pub ward_short_name: Option<String>,
-    pub department_name: Option<String>,
+    pub department_long_name: Option<String>,
+    pub department_short_name: Option<String>,
     pub clinical_department_code: Option<String>,
 
     pub is_icu_location: bool,
     /// necessary for detailed HL7 A04 stream data mapping
-    pub map_as_registration: bool,
+    pub is_registration: bool,
 
     pub locations: Option<Vec<LocationCdm>>,
 }

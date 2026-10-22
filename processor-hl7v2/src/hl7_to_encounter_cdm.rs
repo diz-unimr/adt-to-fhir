@@ -3,7 +3,7 @@ use crate::hl7::parser::{
     PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key,
     message_type, parse_to_datetime, query,
 };
-use crate::hl7::{map_visit_number, parse_fab};
+use crate::hl7::{is_ward_valid_icu, map_visit_number, parse_fab};
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
 
 use crate::hl7_error::Hl7MappingError::InputValidationError;
@@ -15,7 +15,10 @@ use fhir_core::canonical_model::canonical_meta::{
     MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation,
 };
 
+use crate::hl7::parser::MessageType::A04;
+use crate::hl7_to_location_cdm;
 use adt_config::resources::ResourceMap;
+use fhir_core::canonical_model::canonical_location::LocationCdmType;
 use hl7_parser::Message;
 use log::{Level, log};
 
@@ -85,7 +88,6 @@ fn extract_raw_data(
     /*
      * mandatory properties
      */
-
     let pid = query(msg, PID_2).ok_or(Hl7MessageAccessError::MissingMessageValue(
         "PID-2".to_string(),
     ))?;
@@ -109,8 +111,6 @@ fn extract_raw_data(
     let discharge_datetime = query(msg, PV1_45);
     let movement_end = query(msg, ZBE_3);
 
-    let current_ward_location = query(msg, PV1_3_1);
-
     // hospitalization
     let entlassgrund_1_u_2 = query(msg, PV1_36_1);
     let entlassgrund_3 = query(msg, PV1_40_1);
@@ -132,7 +132,8 @@ fn extract_raw_data(
     let ward_short_name = query(msg, PV1_3_1).map(|a| a.to_string());
 
     // local department name may differ from official medical department name
-    let department_name = match parse_fab(msg) {
+    let department_short_name = parse_fab(msg);
+    let department_long_name = match department_short_name {
         Some(fab) => resources
             .department_map
             .get(fab)
@@ -142,7 +143,7 @@ fn extract_raw_data(
 
     let clinical_dep_code = match query(msg, PV1_39_1) {
         Some(code_from_msg) => Some(code_from_msg.to_string()),
-        None => match parse_fab(msg) {
+        None => match department_short_name {
             Some(fab) => resources
                 .department_map
                 .get(fab)
@@ -150,6 +151,18 @@ fn extract_raw_data(
             None => None,
         },
     };
+
+    let hl7_msg_type = message_type(msg)?;
+
+    let locations = hl7_to_location_cdm::create_locations_new(
+        msg,
+        resources,
+        &[
+            LocationCdmType::Ward,
+            LocationCdmType::Room,
+            LocationCdmType::Bed,
+        ],
+    )?;
 
     let mut fall = EncounterCdmBuilder::default()
         .meta(operation)
@@ -160,8 +173,12 @@ fn extract_raw_data(
         .movement_id(movement_id)
         .movement_start(movement_start)
         .ward_short_name(ward_short_name)
-        .department_name(department_name)
+        .department_long_name(department_long_name)
+        .department_short_name(department_short_name.map(|s| s.to_string()))
+        .is_icu_location(is_ward_valid_icu(msg, resources))
+        .is_registration(hl7_msg_type == A04)
         .clinical_department_code(clinical_dep_code)
+        .locations(locations)
         .build()
         .map_err(|err| Hl7MappingError::BuilderError {
             builder_name: "EncounterCdmBuilder".to_string(),
@@ -169,7 +186,7 @@ fn extract_raw_data(
         })?;
 
     if let Some(date_time) = discharge_datetime {
-        fall.discharge = Some(parse_to_datetime(date_time)?)
+        fall.discharge_date = Some(parse_to_datetime(date_time)?)
     }
     if let Some(date_time) = movement_end {
         fall.movement_end = Some(parse_to_datetime(date_time)?);
