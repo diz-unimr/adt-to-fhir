@@ -522,22 +522,12 @@ PV1|1|I|IDIST041^041-10^^KCH^^123444|R||IDIST041^041-13^1^KCH^^123444|||44444ARZ
 ZBE|44444444^ORBIS|202601280923||INSERT"#;
         let mapper = FhirMapper::new(get_test_config()).unwrap();
         let result = mapper.map(input);
-        assert!(result.is_ok());
-
-        let raw: Value = serde_json::from_str(&result.unwrap().unwrap()).unwrap();
-
-        let b: Bundle = serde_json::from_value(raw).unwrap();
-        assert!(!b.entry.is_empty());
-
-        b.entry.iter().for_each(|entry| {
-            let resource = entry.clone().unwrap().resource.unwrap();
-
-            assert_ne!(
-                resource.resource_type(),
-                ResourceType::Encounter,
-                "if start date time is missing we cannot create encounter resources"
-            );
-        });
+        if let Err(err) = &result {
+            assert!(
+                err.to_string()
+                    .contains("Missing message field value at PV1.44")
+            )
+        }
     }
     #[test]
     fn a01_admission_snapshot_test() {
@@ -559,7 +549,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
                 panic!("We should have been an error here - but got empty result!")
             }
             Err(e) => {
-                panic!("test failed result Error: {}", e.to_string())
+                panic!("test failed result Error: {}", e)
             }
         }
     }

@@ -1,4 +1,4 @@
-use crate::canonical_model::canonical_encounter::{AdmissionType, EncounterCdm};
+use crate::canonical_model::canonical_encounter::EncounterCdm;
 use crate::canonical_model::canonical_meta::ProcessingOperation;
 use crate::fhir_error::FhirMappingError::UnsupportedValueError;
 use crate::fhir_error::{ContentError, FhirMappingError, ParsingError};
@@ -509,8 +509,6 @@ fn map_entlassgrund(cdm: &EncounterCdm) -> Result<Option<Vec<Extension>>, Builde
 /// currently we do not have full support of this dataitem in our hl7 messages
 /// only export __G__ for birth and __N__ for emergency
 fn map_admit_source(cdm: &EncounterCdm) -> Result<Option<Coding>, BuilderError> {
-    let admission_type = cdm.admission_type;
-
     if let Some(pv2_3_1) = &cdm.admission_reason_1_2
         && (pv2_3_1.eq("06") | pv2_3_1.eq("05"))
     {
@@ -522,16 +520,19 @@ fn map_admit_source(cdm: &EncounterCdm) -> Result<Option<Coding>, BuilderError> 
                 .build()?,
         ))
     } else {
-        match admission_type {
+        if let Some(admission_reason_3_4) = &cdm.admission_reason_3_4
+            && admission_reason_3_4 == "07"
+        {
             // A->'Unfall/Notarztwagen', E-> 'Notfall ohne Einweisung'
-            Some(AdmissionType::AccidentAmbulance) | Some(AdmissionType::Emergency) => Ok(Some(
+            Ok(Some(
                 Coding::builder()
                     .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
                     .code("N".to_string())
                     .display("Notfall".to_string())
                     .build()?,
-            )),
-            _ => Ok(None),
+            ))
+        } else {
+            Ok(None)
         }
     }
 }

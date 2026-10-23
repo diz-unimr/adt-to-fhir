@@ -1,15 +1,12 @@
 use crate::hl7::parser::{
-    MessageType, PID_2, PID_21_1, PV1_2, PV1_3_1, PV1_4__2_1, PV1_4_1, PV1_19_1, PV1_36_1,
+    MessageType, PID_2, PID_21_1, PV1_2, PV1_3_1, PV1_4__1_1, PV1_4__1_3, PV1_4__2_1, PV1_36_1,
     PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, get_message_key,
     message_type, parse_to_datetime, query,
 };
 use crate::hl7::{is_ward_valid_icu, map_visit_number, parse_fab};
 use crate::hl7_error::{Hl7MappingError, Hl7MessageAccessError, Hl7MessageParsingError};
-
-use crate::hl7_error::Hl7MappingError::InputValidationError;
 use fhir_core::canonical_model::canonical_encounter::{
-    AdmissionType, EncounterCdm, EncounterCdmBuilder, EncounterDiagnosisCdm,
-    EncounterDiagnosisCdmBuilder,
+    EncounterCdm, EncounterCdmBuilder, EncounterDiagnosisCdm, EncounterDiagnosisCdmBuilder,
 };
 use fhir_core::canonical_model::canonical_meta::{
     MappingOpEncounter, MappingOpEncounterBuilder, ProcessingOperation,
@@ -115,13 +112,26 @@ fn extract_raw_data(
     let entlassgrund_1_u_2 = query(msg, PV1_36_1);
     let entlassgrund_3 = query(msg, PV1_40_1);
 
-    // map_aufnahmegrund
-    // Buchstabe
-    let aufnahmeart = query(msg, PV1_4_1);
-
     // erste und zweite stelle (2 Ziffern)
     let aufnahmegrund_1_u_2 = query(msg, PV2_3_1);
-    let aufnahmegrund_3_u_4 = query(msg, PV1_4__2_1);
+    let aufnahmegrund_3_u_4 = match query(msg, PV1_4__2_1) {
+        Some(value) => Some(value),
+        None => {
+            // fallback: sometimes first repeat is missing, then we try to map first entry
+            // if value system is §301
+            if let (Some(admission_typ_value), Some(admission_typ_system)) =
+                (query(msg, PV1_4__1_1), query(msg, PV1_4__1_3))
+            {
+                if admission_typ_system == "301" {
+                    Some(admission_typ_value)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    };
 
     //map_conditions
     let diagnosis_list: Vec<EncounterDiagnosisCdm> = extract_diagnosis(msg)?;
@@ -197,9 +207,6 @@ fn extract_raw_data(
     if let Some(entlassgrund_3) = entlassgrund_3 {
         fall.discharge_reason_3 = Some(entlassgrund_3.to_string())
     }
-    if let Some(aufnahmeart) = aufnahmeart {
-        fall.admission_type = Some(try_code_to_admission_type(aufnahmeart)?);
-    }
     if let Some(aufnahmegrund_1_u_2) = aufnahmegrund_1_u_2 {
         fall.admission_reason_1_2 = Some(aufnahmegrund_1_u_2.to_string());
     }
@@ -258,20 +265,6 @@ fn extract_diagnosis(msg: &Message) -> Result<Vec<EncounterDiagnosisCdm>, Hl7Map
         }
     };
     Ok(res)
-}
-
-pub fn try_code_to_admission_type(code: &str) -> Result<AdmissionType, Hl7MappingError> {
-    match code {
-        "A" => Ok(AdmissionType::AccidentAmbulance),
-        "E" => Ok(AdmissionType::Emergency),
-        "R" => Ok(AdmissionType::Normal),
-        "U" => Ok(AdmissionType::UrgentAdmission),
-        "C" => Ok(AdmissionType::Chosen),
-        other => Err(InputValidationError {
-            resource: "PV1_4_1".to_string(),
-            details: format!("unsupported admission type: '{other}'"),
-        }),
-    }
 }
 
 #[cfg(test)]

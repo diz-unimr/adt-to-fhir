@@ -89,18 +89,19 @@ pub const PV1_3_4: &str = "PV1.3.4";
 /// __note:__ usually set
 pub const PV1_3_5: &str = "PV1.3.5";
 
-/// admission type
-pub const PV1_4_1: &str = "PV1.4.1";
-
 /// admission reason
 /// digit 3 & 4
 pub const PV1_4__2_1: &str = "PV1.4[2].1";
+/// admission typ customized values
+pub const PV1_4__1_1: &str = "PV1.4[1].1";
+/// admission typ value set type
+pub const PV1_4__1_3: &str = "PV1.4[1].3";
 
 /// encounter number (medical case id)
 /// __note:__ usually set, may be missing first messages at encounter planning
 pub const PV1_19_1: &str = "PV1.19.1";
-/// discharge reason
 
+/// discharge reason
 pub const PV1_36_1: &str = "PV1.36.1";
 
 /// clinical department code (german §301 Fachabteilungsschlüssel)

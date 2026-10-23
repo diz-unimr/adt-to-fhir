@@ -109,7 +109,7 @@ impl ResourceMap {
                         resource: "Fachabteilungsschluessel-erweitert.json".to_string(),
                         value: format!(
                             "department {} -> key {}",
-                            code, &dep.fachabteilungs_schluessel
+                            code, dep.fachabteilungs_schluessel
                         ),
                     });
                 }

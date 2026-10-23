@@ -23,6 +23,37 @@ expression: b
             "https://www.medizininformatik-initiative.de/fhir/core/modul-fall/StructureDefinition/KontaktGesundheitseinrichtung|2026.0.1"
           ]
         },
+        "extension": [
+          {
+            "extension": [
+              {
+                "url": "ErsteUndZweiteStelle",
+                "valueCoding": {
+                  "system": "http://fhir.de/CodeSystem/dkgev/AufnahmegrundErsteUndZweiteStelle",
+                  "code": "02",
+                  "display": "Krankenhausbehandlung, vollstationär mit vorausgegangener vorstationärer Behandlung"
+                }
+              },
+              {
+                "url": "DritteStelle",
+                "valueCoding": {
+                  "system": "http://fhir.de/CodeSystem/dkgev/AufnahmegrundDritteStelle",
+                  "code": "0",
+                  "display": "Anderes"
+                }
+              },
+              {
+                "url": "VierteStelle",
+                "valueCoding": {
+                  "system": "http://fhir.de/CodeSystem/dkgev/AufnahmegrundVierteStelle",
+                  "code": "1",
+                  "display": "Normalfall"
+                }
+              }
+            ],
+            "url": "http://fhir.de/StructureDefinition/Aufnahmegrund"
+          }
+        ],
         "identifier": [
           {
             "use": "usual",
@@ -66,6 +97,44 @@ expression: b
         "period": {
           "start": "2021-11-19T05:30:00Z",
           "end": "2021-11-23T08:04:00Z"
+        },
+        "hospitalization": {
+          "admitSource": {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                "code": "unsupported"
+              }
+            ]
+          },
+          "dischargeDisposition": {
+            "extension": [
+              {
+                "extension": [
+                  {
+                    "url": "ErsteUndZweiteStelle",
+                    "valueCoding": {
+                      "system": "http://fhir.de/CodeSystem/dkgev/EntlassungsgrundErsteUndZweiteStelle",
+                      "code": "01",
+                      "display": "Behandlung regulär beendet"
+                    }
+                  },
+                  {
+                    "url": "DritteStelle",
+                    "valueCoding": {
+                      "system": "http://fhir.de/CodeSystem/dkgev/EntlassungsgrundDritteStelle",
+                      "code": "9",
+                      "display": "keine Angabe"
+                    }
+                  }
+                ],
+                "url": "http://fhir.de/StructureDefinition/Entlassungsgrund"
+              }
+            ]
+          }
+        },
+        "serviceProvider": {
+          "reference": "Organization?identifier=http://fhir.de/sid/arge-ik/iknr|260620431"
         }
       },
       "request": {
@@ -120,11 +189,26 @@ expression: b
             ]
           }
         ],
+        "serviceType": {
+          "coding": [
+            {
+              "system": "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert",
+              "code": "2200",
+              "display": "Urologie"
+            }
+          ]
+        },
         "subject": {
           "reference": "Patient?identifier=https://fhir.diz.uni-marburg.de/sid/patient-id|1396227"
         },
         "period": {
           "start": "2021-11-23T08:04:00Z"
+        },
+        "serviceProvider": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/department|URO"
+        },
+        "partOf": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/encounter-admit-id|23232323"
         }
       },
       "request": {
@@ -184,6 +268,56 @@ expression: b
         },
         "period": {
           "start": "2021-11-23T08:04:00Z"
+        },
+        "location": [
+          {
+            "location": {
+              "reference": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-caresite-id|UROST133"
+            },
+            "status": "active",
+            "physicalType": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+                  "code": "wa"
+                }
+              ]
+            }
+          },
+          {
+            "location": {
+              "reference": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-room-id|UROST133_133-03"
+            },
+            "status": "active",
+            "physicalType": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+                  "code": "ro"
+                }
+              ]
+            }
+          },
+          {
+            "location": {
+              "reference": "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-bed-id|UROST133_133-03_1"
+            },
+            "status": "active",
+            "physicalType": {
+              "coding": [
+                {
+                  "system": "http://terminology.hl7.org/CodeSystem/location-physical-type",
+                  "code": "bd"
+                }
+              ]
+            }
+          }
+        ],
+        "serviceProvider": {
+          "reference": "Organization?identifier=https://fhir.diz.uni-marburg.de/sid/ward-id|UROST133"
+        },
+        "partOf": {
+          "reference": "Encounter?identifier=https://fhir.diz.uni-marburg.de/sid/departement-id|30674176"
         }
       },
       "request": {

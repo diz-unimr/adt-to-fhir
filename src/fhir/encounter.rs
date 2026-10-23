@@ -34,8 +34,8 @@ use hl7_parser::Message;
 use hl7_parser::message::Field;
 use log::{Level, log};
 use processor_hl7v2::hl7::parser::{
-    MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_4_1, PV1_36_1,
-    PV1_39_1, PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
+    MessageType, PID_21_1, PV1_2, PV1_3_1, PV1_3_2, PV1_3_3, PV1_4__2_1, PV1_36_1, PV1_39_1,
+    PV1_40_1, PV1_44, PV1_45, PV2_3_1, ZBE_1_1, ZBE_2, ZBE_3, check_is_numeric_ascii,
     get_message_key, message_type, query,
 };
 use processor_hl7v2::hl7::{
@@ -535,7 +535,7 @@ fn map_hospitalization(msg: &Message) -> Result<Option<EncounterHospitalization>
 /// currently we do not have full support of this dataitem in our hl7 messages
 /// only export __G__ for birth and __N__ for emergency
 fn map_admit_source(msg: &Message) -> Result<Option<Coding>> {
-    let code = query(msg, PV1_4_1);
+    let code = query(msg, PV1_4__2_1);
 
     if let Some(pv2_3_1) = query(msg, PV2_3_1)
         && check_is_numeric_ascii(pv2_3_1, PV2_3_1)?
@@ -550,9 +550,7 @@ fn map_admit_source(msg: &Message) -> Result<Option<Coding>> {
         ))
     } else {
         match (code, query(msg, PV1_36_1)) {
-            // fixme : sollte PV1-4.1 sein z.b. 'E^^HL7~01^Notfall^301'
-            // A->'Unfall/Notarztwagen', E-> 'Notfall ohne Einweisung'
-            (Some("A"), _) | (Some("E"), _) => Ok(Some(
+            (Some("07"), _) => Ok(Some(
                 Coding::builder()
                     .system("http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass".to_string())
                     .code("N".to_string())

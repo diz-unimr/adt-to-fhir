@@ -20,8 +20,6 @@ pub struct EncounterCdm {
     pub visit_number: String,
     pub bed_status: String,
     pub admission_datetime: OffsetDateTime,
-    #[builder(default)]
-    pub admission_type: Option<AdmissionType>,
     /// admission reason §301 first and second digit
     #[builder(default)]
     pub admission_reason_1_2: Option<String>,
@@ -57,18 +55,4 @@ impl EncounterCdm {
     pub fn id(&self) -> &String {
         &self.meta.id
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AdmissionType {
-    /// 'A'
-    AccidentAmbulance,
-    /// without hospitalization briefing ('E')
-    Emergency,
-    /// 'R'
-    Normal,
-    /// 'U'
-    UrgentAdmission,
-    /// 'C'
-    Chosen,
 }
