@@ -5,7 +5,7 @@ use crate::fhir_error::{ContentError, FhirMappingError, ParsingError};
 use crate::mapping::encounter_cdm_to_fhir::EncounterLevel::{
     Fachabteilungskontakt, Versorgungsstellenkontakt,
 };
-use crate::mapping::fab_mapping::map_fab_schluessel;
+use crate::mapping::fab_mapping::{get_departement_clinical_coding, map_fab_schluessel};
 use crate::mapping::location_cdm_to_fhir;
 use crate::mapping::misc::{
     EntryRequestType, bundle_entry, coding_data_absent_reason_unsupported,
@@ -774,34 +774,24 @@ fn get_service_type(
     resources: &ResourceMap,
     config: &Fhir,
 ) -> Result<Option<CodeableConcept>, FhirMappingError> {
-    let system_fachabteilungs_schluessel: &str =
-        "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
-
-    if let Some(fab) = &cdm.ward_short_name
-        && let Some(fab_from_short_name) =
-            map_fab_schluessel(fab.as_str(), cdm.id(), config, resources)?
-    {
-        return Ok(Some(fab_from_short_name));
-    };
-
-    if let Some(fab_schluessel) = &cdm.clinical_department_code {
-        let mut coding = Coding::builder()
-            .system(system_fachabteilungs_schluessel.to_string())
-            .code(fab_schluessel.to_string())
-            .build()?;
-
-        if let Some(dep_display) = &cdm.department_long_name {
-            coding.display = Some(dep_display.to_string());
+    if let Some(clinical_department_code) = &cdm.clinical_department_code {
+        if let Some(long_name_from_cfg) = resources.department_id_map.get(clinical_department_code)
+        {
+            return Ok(Some(get_departement_clinical_coding(
+                clinical_department_code,
+                long_name_from_cfg,
+            )?));
         }
-
-        Ok(Some(
-            CodeableConcept::builder()
-                .coding(vec![Some(coding)])
-                .build()?,
-        ))
     } else {
-        Ok(None)
+        if let Some(fab) = &cdm.department_short_name
+            && let Some(fab_from_short_name) =
+                map_fab_schluessel(fab.as_str(), cdm.id(), config, resources)?
+        {
+            return Ok(Some(fab_from_short_name));
+        }
     }
+
+    Ok(None)
 }
 
 fn map_versorgungsstellenkontakt(

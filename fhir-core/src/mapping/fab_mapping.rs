@@ -9,7 +9,7 @@ use log::{Level, log};
 use std::collections::HashMap;
 
 /// Maps a given Fachabteilungsschlüssel to a Department
-/// by doing a lookup on the department data map.
+/// by lookup on the department data map.
 ///
 /// If the lookup is successful a single [`Coding`] from
 /// [FachabteilungsschluesselErweitert ValueSet](https://simplifier.net/resolve?scope=de.basisprofil.r4@1.5.4&canonical=http://fhir.de/ValueSet/dkgev/Fachabteilungsschluessel-erweitert)
@@ -49,31 +49,39 @@ pub fn map_fab_schluessel(
                     resource: "Fachabteilungsschluessel-erweitert.json".to_string(),
                     value: format!(
                         "department {} -> key {}",
-                        code, &dep.fachabteilungs_schluessel
+                        code, dep.fachabteilungs_schluessel
                     ),
                 });
             }
             Some(d) => d,
         };
 
-        Ok(Some(
-            CodeableConcept::builder()
-                .coding(vec![Some(
-                    Coding::builder()
-                        .system(
-                            "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
-                                .to_string(),
-                        )
-                        .code(dep.fachabteilungs_schluessel.to_string())
-                        .display(department_id_display.to_string())
-                        .build()?,
-                )])
-                .build()?,
-        ))
+        Ok(Some(get_departement_clinical_coding(
+            &dep.fachabteilungs_schluessel,
+            department_id_display,
+        )?))
     } else {
         let res = error_if_strict(config, code, msg_id)?;
         Ok(res)
     }
+}
+
+pub fn get_departement_clinical_coding(
+    clinical_code: &str,
+    department_id_display: &String,
+) -> Result<CodeableConcept, FhirMappingError> {
+    Ok(CodeableConcept::builder()
+        .coding(vec![Some(
+            Coding::builder()
+                .system(
+                    "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert"
+                        .to_string(),
+                )
+                .code(clinical_code.to_string())
+                .display(department_id_display.to_string())
+                .build()?,
+        )])
+        .build()?)
 }
 
 fn find_key(department_map: &HashMap<String, Department>, code: &str) -> Option<String> {
