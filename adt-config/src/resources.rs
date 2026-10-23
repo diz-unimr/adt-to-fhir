@@ -50,11 +50,14 @@ pub struct ValidPeriod {
 
 /// Mappings for Fachabteilung (encounter department and location)
 pub struct ResourceMap {
-    /// Map with key: Fachabteilungsschlüssel
+    /// Map with key: Department short name -> department clinical code §301 and **local department long name**
+    /// * this primary is used for mapping organization resources
     pub department_map: HashMap<String, Department>,
-    /// Map with key: Stationskürzel
+    /// Map with key: ward short name to validity period and icu flag
+    /// * primary used to map locations and determine if a lvl encounter is a ICU stay
     pub ward_map: HashMap<String, Ward>,
-    /// Map medical department id (Fachabteilungschluessel) as key to its official name
+    /// Map medical department clinical code §301  (Fachabteilungschluessel) as key to its official long name
+    /// * this is primary used map service type in encounter resources
     pub department_id_map: HashMap<String, String>,
 }
 
