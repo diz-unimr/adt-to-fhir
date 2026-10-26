@@ -102,18 +102,12 @@ fn extract_raw_data(
         Hl7MessageAccessError::MissingMessageValue("ZBE-2".to_string()),
     )?)?;
 
-    /*
-     * extended and optional properties
-     */
-    let discharge_datetime = query(msg, PV1_45);
-    let movement_end = query(msg, ZBE_3);
+    let movement_end = match query(msg, ZBE_3) {
+        Some(movement_end) => Some(parse_to_datetime(movement_end)?),
+        None => None,
+    };
 
     // hospitalization
-    let entlassgrund_1_u_2 = query(msg, PV1_36_1);
-    let entlassgrund_3 = query(msg, PV1_40_1);
-
-    // erste und zweite stelle (2 Ziffern)
-    let aufnahmegrund_1_u_2 = query(msg, PV2_3_1);
     let aufnahmegrund_3_u_4 = match query(msg, PV1_4__2_1) {
         Some(value) => Some(value),
         None => {
@@ -134,12 +128,8 @@ fn extract_raw_data(
     };
 
     //map_conditions
-    let diagnosis_list: Vec<EncounterDiagnosisCdm> = extract_diagnosis(msg)?;
-
-    // map_mothers_encounter
-    let mothers_encounter_number = query(msg, PID_21_1);
-
-    let ward_short_name = query(msg, PV1_3_1).map(|a| a.to_string());
+    let diagnosis_list = extract_diagnosis(msg)?;
+    let diagnosis = (!diagnosis_list.is_empty()).then_some(diagnosis_list);
 
     // local department name may differ from official medical department name
     let department_short_name = parse_fab(msg);
@@ -174,7 +164,12 @@ fn extract_raw_data(
         ],
     )?;
 
-    let mut fall = EncounterCdmBuilder::default()
+    let discharge_date = match query(msg, PV1_45) {
+        Some(discharge_date) => Some(parse_to_datetime(discharge_date)?),
+        None => None,
+    };
+
+    let fall = EncounterCdmBuilder::default()
         .meta(operation)
         .pid(pid)
         .visit_number(encounter_number)
@@ -182,43 +177,26 @@ fn extract_raw_data(
         .bed_status(bed_status)
         .movement_id(movement_id)
         .movement_start(movement_start)
-        .ward_short_name(ward_short_name)
+        .movement_end(movement_end)
+        .ward_short_name(query(msg, PV1_3_1).map(|a| a.to_string()))
         .department_long_name(department_long_name)
+        .admission_reason_1_2(query(msg, PV2_3_1).map(|a| a.to_string()))
+        .admission_reason_3_4(aufnahmegrund_3_u_4.map(|a| a.to_string()))
         .department_short_name(department_short_name.map(|s| s.to_string()))
+        .discharge_reason_12(query(msg, PV1_36_1).map(|a| a.to_string()))
+        .discharge_reason_3(query(msg, PV1_40_1).map(|a| a.to_string()))
+        .discharge_date(discharge_date)
         .is_icu_location(is_ward_valid_icu(msg, resources))
         .is_registration(hl7_msg_type == A04)
         .clinical_department_code(clinical_dep_code)
+        .mothers_enc_number(query(msg, PID_21_1).map(|a| a.to_string()))
         .locations(locations)
+        .diagnosis(diagnosis)
         .build()
         .map_err(|err| Hl7MappingError::BuilderError {
             builder_name: "EncounterCdmBuilder".to_string(),
             builder_error: err.to_string(),
         })?;
-
-    if let Some(date_time) = discharge_datetime {
-        fall.discharge_date = Some(parse_to_datetime(date_time)?)
-    }
-    if let Some(date_time) = movement_end {
-        fall.movement_end = Some(parse_to_datetime(date_time)?);
-    }
-    if let Some(entlassgrund_1_u_2) = entlassgrund_1_u_2 {
-        fall.discharge_reason_12 = Some(entlassgrund_1_u_2.to_string())
-    }
-    if let Some(entlassgrund_3) = entlassgrund_3 {
-        fall.discharge_reason_3 = Some(entlassgrund_3.to_string())
-    }
-    if let Some(aufnahmegrund_1_u_2) = aufnahmegrund_1_u_2 {
-        fall.admission_reason_1_2 = Some(aufnahmegrund_1_u_2.to_string());
-    }
-    if let Some(aufnahmegrund_3_u_4) = aufnahmegrund_3_u_4 {
-        fall.admission_reason_3_4 = Some(aufnahmegrund_3_u_4.to_string());
-    }
-    if !diagnosis_list.is_empty() {
-        fall.diagnosis = Some(diagnosis_list);
-    }
-    if let Some(mothers_encounter_number) = mothers_encounter_number {
-        fall.mothers_enc_number = Some(mothers_encounter_number.to_string());
-    }
 
     Ok(fall)
 }

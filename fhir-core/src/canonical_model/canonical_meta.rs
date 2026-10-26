@@ -15,6 +15,8 @@ pub enum ProcessingOperation {
     Patch,
     Skip,
 }
+
+/// input data id and creation operation for each encounter level
 #[derive(Debug, Clone, PartialEq, Builder)]
 #[builder(setter(into))]
 pub struct MappingOpEncounter {

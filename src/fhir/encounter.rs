@@ -1202,40 +1202,6 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
         );
     }
 
-    #[rstest]
-    #[case("asdf")]
-    #[case("a.1")]
-    #[case("1.b")]
-    #[case("0")]
-    #[case("-1")]
-    fn invalid_condition_ref_nan(#[case] prio_value: String) {
-        let input = format!(
-            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
-EVN|A03|202111230904|202111230904||Muster
-PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
-DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||20230101131500|Aufn.|||||||||{}|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345677|U
-"#,
-            prio_value
-        );
-        let msg = Message::parse_with_lenient_newlines(input.as_str(), true).unwrap();
-        let x = &map_conditions(&msg, &get_test_config());
-        match (x, prio_value.as_str()) {
-            (Ok(_), _) => panic!("ParseFloatError was expected but result was OK!"),
-            // fixme:
-            //  (Err(MappingError::Other(_)), "0") => {
-            //      println!("got MappingError for zero rank as expected");
-            // }
-            // (Err(MappingError::Other(_)), "-1") => {
-            //     println!("got MappingError for negativ rank as expected");
-            // }
-            // (Err(MappingError::FormattingError(ParsingError::ParseFloatError(_))), _) => {
-            //     println!("got ParseFloatError as expected");
-            // }
-            // (Err(c), _) => panic!("ParseFloatError was expected but found => '{}'", c),
-            _ => {}
-        }
-    }
-
     #[test]
     fn unsupported_condition_type() {
         let input = r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE

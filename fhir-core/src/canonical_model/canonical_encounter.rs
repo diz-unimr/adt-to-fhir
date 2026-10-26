@@ -18,27 +18,28 @@ pub struct EncounterCdm {
     pub meta: MappingOpEncounter,
     pub pid: String,
     pub visit_number: String,
+    /// 'O', 'I', 'TS'..
     pub bed_status: String,
     pub admission_datetime: OffsetDateTime,
     /// admission reason §301 first and second digit
-    #[builder(default)]
     pub admission_reason_1_2: Option<String>,
     /// admission reason §301 third and fourth digit
-    #[builder(default)]
     pub admission_reason_3_4: Option<String>,
+    /// unique identifier of patient movement
     pub movement_id: String,
+    /// start date and time of movement
     pub movement_start: OffsetDateTime,
-    #[builder(default)]
+    /// start date and time of movement
     pub movement_end: Option<OffsetDateTime>,
-    #[builder(default)]
+
     pub discharge_date: Option<OffsetDateTime>,
-    #[builder(default)]
+
     pub discharge_reason_12: Option<String>,
-    #[builder(default)]
+
     pub discharge_reason_3: Option<String>,
-    #[builder(default)]
+
     pub diagnosis: Option<Vec<EncounterDiagnosisCdm>>,
-    #[builder(default)]
+
     pub mothers_enc_number: Option<String>,
     pub ward_short_name: Option<String>,
     pub department_long_name: Option<String>,

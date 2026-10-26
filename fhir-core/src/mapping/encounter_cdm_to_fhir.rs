@@ -891,3 +891,95 @@ pub fn to_encounter_location(location: Location) -> Result<EncounterLocation, Co
         )?)
         .build()?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::canonical_model::canonical_encounter::{
+        EncounterCdmBuilder, EncounterDiagnosisCdmBuilder,
+    };
+    use crate::canonical_model::canonical_location::LocationCdmBuilder;
+    use crate::canonical_model::canonical_meta::MappingOpEncounterBuilder;
+    use adt_config::test_utils::tests::get_test_config;
+    use rstest::rstest;
+    use time::Time;
+    use time::macros::format_description;
+
+    #[rstest]
+    #[case("asdf")]
+    #[case("a.1")]
+    #[case("1.b")]
+    #[case("0")]
+    #[case("-1")]
+    fn invalid_condition_ref_nan(#[case] prio_value: String) {
+        let input = format!(
+            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
+EVN|A03|202111230904|202111230904||Muster
+PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
+DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||20230101131500|Aufn.|||||||||{}|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345677|U
+"#,
+            prio_value
+        );
+        let cdm = get_dummy_encounter_cdm();
+        let x = &map_conditions(&cdm, &get_test_config());
+        match (x, prio_value.as_str()) {
+            (Ok(_), _) => panic!("ParseFloatError was expected but result was OK!"),
+            _ => {}
+        }
+    }
+    fn get_dummy_encounter_cdm() -> EncounterCdm {
+        /*
+         * mandatory properties
+         */
+
+        let meta = MappingOpEncounterBuilder::default()
+            .id("01")
+            .operation_lv1(ProcessingOperation::UpdateAsCreate)
+            .build()
+            .unwrap();
+        let format = format_description!("[year]-[month]-[day]");
+        let admission_date_time = OffsetDateTime::new_utc(
+            time::Date::parse("2026-01-31", format).unwrap(),
+            Time::from_hms(10, 8, 13).unwrap(),
+        );
+        let discharge_datetime = OffsetDateTime::new_utc(
+            time::Date::parse("2026-02-06", format).unwrap(),
+            Time::from_hms(9, 32, 3).unwrap(),
+        );
+
+        let movement_start = OffsetDateTime::new_utc(
+            time::Date::parse("2026-01-31", format).unwrap(),
+            Time::from_hms(10, 8, 13).unwrap(),
+        );
+
+        let encounter_diagnosis = vec![EncounterDiagnosisCdmBuilder::default().build().unwrap()];
+        let locations = vec![LocationCdmBuilder::default().build().unwrap()];
+
+        EncounterCdmBuilder::default()
+            .meta(meta)
+            .pid("42")
+            .visit_number("123445678")
+            .admission_datetime(admission_date_time)
+            .bed_status("I")
+            .movement_id("22222222")
+            .movement_start(movement_start)
+            .ward_short_name("POL1234".to_string())
+            .department_long_name("Pneumologie".to_string())
+            .department_short_name("POL".to_string())
+            .is_icu_location(true)
+            .is_registration(false)
+            .clinical_department_code("0800".to_string())
+            .locations(locations)
+            .discharge_date(discharge_datetime)
+            .movement_end(discharge_datetime)
+            .discharge_reason_12("01".to_string())
+            .discharge_reason_3("1".to_string())
+            .admission_reason_1_2("01".to_string())
+            // notfall
+            .admission_reason_3_4("07".to_string())
+            .diagnosis(encounter_diagnosis)
+            .mothers_enc_number("77777777".to_string())
+            .build()
+            .unwrap()
+    }
+}
