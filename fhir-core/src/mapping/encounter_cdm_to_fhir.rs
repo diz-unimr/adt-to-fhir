@@ -897,6 +897,7 @@ mod tests {
     use crate::canonical_model::canonical_location::{LocationCdmBuilder, LocationCdmType};
     use crate::canonical_model::canonical_meta::MappingOpEncounterBuilder;
     use adt_config::test_utils::tests::{get_dummy_resources, get_test_config};
+    use fhir_model::r4b::codes::HTTPVerb;
     use fhir_model::{DateTime, Instant};
     use rstest::rstest;
     use time::Time;
@@ -1143,12 +1144,30 @@ mod tests {
         assert!(extensions.last().unwrap().value.as_ref().is_some());
     }
 
-    #[test]
-    fn map_test() {
-        let cdm = get_dummy_encounter_cdm();
+    #[rstest]
+    #[case(ProcessingOperation::Delete, HTTPVerb::Delete)]
+    #[case(ProcessingOperation::UpdateAsCreate, HTTPVerb::Put)]
+    #[case(ProcessingOperation::CreateIfNotExists, HTTPVerb::Post)]
+    fn map_test(#[case] processingOperation: ProcessingOperation, #[case] expected: HTTPVerb) {
+        let mut cdm = get_dummy_encounter_cdm();
 
         let result = map(&cdm, &get_test_config(), &get_dummy_resources());
         assert!(result.is_ok());
+
+        cdm.meta.operation_lv1 = processingOperation;
+        cdm.meta.operation_lv2 = processingOperation;
+        cdm.meta.operation_lv3 = processingOperation;
+
+        let entries = map(&cdm, &get_test_config(), &get_dummy_resources())
+            .expect("map sollte bei Delete erfolgreich sein");
+
+        for (i, entry) in entries.iter().take(3).enumerate() {
+            let request = entry
+                .request
+                .as_ref()
+                .unwrap_or_else(|| panic!("Entry {i} hat keinen request"));
+            assert_eq!(request.method, expected, "Entry {i}");
+        }
     }
 
     #[test]
