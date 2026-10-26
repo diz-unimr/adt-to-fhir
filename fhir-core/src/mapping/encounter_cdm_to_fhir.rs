@@ -898,7 +898,7 @@ mod tests {
     use crate::canonical_model::canonical_encounter::{
         EncounterCdmBuilder, EncounterDiagnosisCdmBuilder,
     };
-    use crate::canonical_model::canonical_location::LocationCdmBuilder;
+    use crate::canonical_model::canonical_location::{LocationCdmBuilder, LocationCdmType};
     use crate::canonical_model::canonical_meta::MappingOpEncounterBuilder;
     use adt_config::test_utils::tests::get_test_config;
     use rstest::rstest;
@@ -912,21 +912,25 @@ mod tests {
     #[case("0")]
     #[case("-1")]
     fn invalid_condition_ref_nan(#[case] prio_value: String) {
-        let input = format!(
-            r#"MSH|^~\&|ORBIS|KH|RECAPP|ORBIS|202111230904||ADT^A03|62325574|P|2.5|||||D||DE
-EVN|A03|202111230904|202111230904||Muster
-PID|1|1396227|1396227||Test^Anton||19510704|M|||Teststr. 26^^Wetzlar^^35578^D^L||0151/123123123^^CP|||M|or|||||||N||SYR
-DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||20230101131500|Aufn.|||||||||{}|ABCDEFGH^^^^^^^^^^^^^^^^^^^^^^KCH||||12345677|U
-"#,
-            prio_value
-        );
-        let cdm = get_dummy_encounter_cdm();
-        let x = &map_conditions(&cdm, &get_test_config());
-        match (x, prio_value.as_str()) {
-            (Ok(_), _) => panic!("ParseFloatError was expected but result was OK!"),
-            _ => {}
+        let mut cdm = get_dummy_encounter_cdm();
+        let encounter_diagnosis = vec![
+            EncounterDiagnosisCdmBuilder::default()
+                .ordinal_number(1u32)
+                .priority(prio_value.to_string())
+                .id("3333")
+                .condition_typ("Aufn.")
+                .build()
+                .unwrap(),
+        ];
+        cdm.diagnosis = Some(encounter_diagnosis);
+
+        let x: &Result<Vec<Option<EncounterDiagnosis>>, FhirMappingError> =
+            &map_conditions(&cdm, &get_test_config());
+        if let (Ok(_), _) = (x, prio_value.as_str()) {
+            panic!("ParseFloatError was expected but result was OK!")
         }
     }
+
     fn get_dummy_encounter_cdm() -> EncounterCdm {
         /*
          * mandatory properties
@@ -935,6 +939,8 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
         let meta = MappingOpEncounterBuilder::default()
             .id("01")
             .operation_lv1(ProcessingOperation::UpdateAsCreate)
+            .operation_lv2(ProcessingOperation::UpdateAsCreate)
+            .operation_lv3(ProcessingOperation::UpdateAsCreate)
             .build()
             .unwrap();
         let format = format_description!("[year]-[month]-[day]");
@@ -952,8 +958,25 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
             Time::from_hms(10, 8, 13).unwrap(),
         );
 
-        let encounter_diagnosis = vec![EncounterDiagnosisCdmBuilder::default().build().unwrap()];
-        let locations = vec![LocationCdmBuilder::default().build().unwrap()];
+        let encounter_diagnosis = vec![
+            EncounterDiagnosisCdmBuilder::default()
+                .ordinal_number(1u32)
+                .priority("1")
+                .id("3333")
+                .condition_typ("Aufn.")
+                .build()
+                .unwrap(),
+        ];
+        let locations = vec![
+            LocationCdmBuilder::default()
+                .is_movement_finished(true)
+                .is_icu(true)
+                .name("POL1234")
+                .manging_organization("POL".to_string())
+                .typ(LocationCdmType::Ward)
+                .build()
+                .unwrap(),
+        ];
 
         EncounterCdmBuilder::default()
             .meta(meta)
@@ -981,5 +1004,33 @@ DG1|1||K42.9^Hernia umbilicalis ohne Einklemmung und ohne Gangrän^icd10gm2022||
             .mothers_enc_number("77777777".to_string())
             .build()
             .unwrap()
+    }
+
+    #[rstest]
+    #[case("01", "01", None)]
+    #[case("01", "01", None)]
+    #[case("01", "01", None)]
+    #[case("01", "01", None)]
+    #[case("05", "01", Some("G"))]
+    #[case("06", "01", Some("G"))]
+    #[case("01", "07", Some("N"))]
+    #[case("01", "01", None)]
+    fn admissions_source_test(
+        #[case] admission_reason_1_2: String,
+        #[case] admission_reason_3_4: String,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut input = get_dummy_encounter_cdm();
+        input.admission_reason_1_2 = Some(admission_reason_1_2);
+        input.admission_reason_3_4 = Some(admission_reason_3_4);
+
+        let result_ok = map_admit_source(&input).unwrap();
+        if expected.is_some() {
+            let result = result_ok.unwrap();
+            let option = result.code.as_ref();
+            assert_eq!(option.unwrap(), expected.unwrap());
+        } else {
+            assert_eq!(result_ok, None)
+        }
     }
 }

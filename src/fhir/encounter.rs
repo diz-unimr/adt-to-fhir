@@ -2029,49 +2029,4 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             HTTPVerb::Put
         );
     }
-    #[test]
-    fn map_admit_source_empty_test() {
-        let hl7 = read_test_resource("a03_test.hl7");
-        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
-        let res = map_admit_source(&msg);
-        if let Ok(None) = res {
-            assert!(true)
-        } else {
-            panic!("unexpected result: {:?}", res)
-        }
-    }
-
-    #[test]
-    fn map_admit_source_birth_test() {
-        let hl7 = read_test_resource("a08_test.hl7");
-        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
-        let res = map_admit_source(&msg);
-        if let Ok(Some(coding)) = res {
-            assert_eq!(coding.code.as_ref().unwrap(), "G");
-            assert_eq!(
-                coding.system.as_ref().unwrap(),
-                "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass"
-            );
-        } else {
-            panic!("unexpected result: {:?}", res)
-        }
-    }
-
-    #[test]
-    fn map_admit_source_emergency_test() {
-        let hl7 = read_test_resource("a04_amb_notfall.hl7");
-        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
-        let res = map_admit_source(&msg);
-        if let Ok(Some(coding)) = res {
-            assert_eq!(coding.code.as_ref().unwrap(), "N");
-            assert_eq!(
-                coding.system.as_ref().unwrap(),
-                "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass"
-            );
-        } else {
-            panic!("unexpected result: {:?}", res)
-        }
-    }
-    #[test]
-    fn map_hospitalization_emergency_test() {}
 }
