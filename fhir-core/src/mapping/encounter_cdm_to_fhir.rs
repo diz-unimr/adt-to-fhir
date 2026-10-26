@@ -896,10 +896,9 @@ mod tests {
     };
     use crate::canonical_model::canonical_location::{LocationCdmBuilder, LocationCdmType};
     use crate::canonical_model::canonical_meta::MappingOpEncounterBuilder;
-    use adt_config::test_utils::tests::get_test_config;
+    use adt_config::test_utils::tests::{get_dummy_resources, get_test_config};
     use fhir_model::{DateTime, Instant};
     use rstest::rstest;
-    use std::str::FromStr;
     use time::Time;
     use time::macros::format_description;
 
@@ -1142,5 +1141,116 @@ mod tests {
 
         assert!(!extensions.last().unwrap().url.is_empty());
         assert!(extensions.last().unwrap().value.as_ref().is_some());
+    }
+
+    #[test]
+    fn map_test() {
+        let cdm = get_dummy_encounter_cdm();
+
+        let result = map(&cdm, &get_test_config(), &get_dummy_resources());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn map_versorgungsstellenkontakt_location_map_test() {
+        let mut cdm = get_dummy_encounter_cdm();
+
+        let ward = LocationCdmBuilder::default()
+            .is_movement_finished(true)
+            .is_icu(true)
+            .name("POL1234")
+            .manging_organization("POL".to_string())
+            .typ(LocationCdmType::Ward)
+            .build()
+            .unwrap();
+
+        let room = LocationCdmBuilder::default()
+            .is_movement_finished(true)
+            .is_icu(true)
+            .name("BSP-2-2")
+            .manging_organization("POL".to_string())
+            .typ(LocationCdmType::Room)
+            .build()
+            .unwrap();
+
+        let bed = LocationCdmBuilder::default()
+            .is_movement_finished(true)
+            .is_icu(true)
+            .name("1")
+            .manging_organization("POL".to_string())
+            .typ(LocationCdmType::Bed)
+            .build()
+            .unwrap();
+
+        let locations = vec![ward, room, bed];
+        cdm.locations = Some(locations);
+
+        let result = crate::mapping::encounter_cdm_to_fhir::map_versorgungsstellenkontakt(
+            &cdm,
+            &get_test_config(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(result.location.len(), 3);
+        let loc = result.location.first().unwrap().as_ref().unwrap();
+        assert_eq!(
+            loc.location.reference.as_ref().unwrap(),
+            "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-caresite-id|POL1234"
+        );
+        assert_eq!(
+            loc.physical_type
+                .as_ref()
+                .unwrap()
+                .coding
+                .first()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "wa"
+        );
+
+        let loc = result.location.get(1).unwrap().as_ref().unwrap();
+        assert_eq!(
+            loc.location.reference.as_ref().unwrap(),
+            "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-room-id|BSP-2-2"
+        );
+        assert_eq!(
+            loc.physical_type
+                .as_ref()
+                .unwrap()
+                .coding
+                .first()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "ro"
+        );
+
+        let loc = result.location.get(2).unwrap().as_ref().unwrap();
+        assert_eq!(
+            loc.location.reference.as_ref().unwrap(),
+            "Location?identifier=https://fhir.diz.uni-marburg.de/sid/location-bed-id|1"
+        );
+        assert_eq!(
+            loc.physical_type
+                .as_ref()
+                .unwrap()
+                .coding
+                .first()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .code
+                .as_ref()
+                .unwrap(),
+            "bd"
+        );
     }
 }
