@@ -97,10 +97,10 @@ pub fn map_default_identifier_enc(
 }
 
 pub fn map_meta_encounter(config: &Fhir) -> Result<Meta, BuilderError> {
-    Ok(Meta::builder()
+    Meta::builder()
         .profile(vec![Some(config.fall.profile.clone())])
         .source(config.meta_source.to_string())
-        .build()?)
+        .build()
 }
 
 fn base_encounter(
@@ -192,11 +192,11 @@ fn map_level_identifier(
         ),
     };
 
-    Ok(Identifier::builder()
+    Identifier::builder()
         .system(system.clone())
         .value(value.to_string())
         .r#use(IdentifierUse::Usual)
-        .build()?)
+        .build()
 }
 
 fn map_encounter_class(cdm: &EncounterCdm) -> Result<Coding, FhirMappingError> {
@@ -222,7 +222,7 @@ fn map_encounter_class(cdm: &EncounterCdm) -> Result<Coding, FhirMappingError> {
             .code("SS".to_string())
             .display("short stay".to_string())
             .build()?),
-        _ => Err(FhirMappingError::UnsupportedValueError {
+        _ => Err(UnsupportedValueError {
             details: format!("Invalid encounter_class code (PV1.2): {}", code),
         }),
     }
