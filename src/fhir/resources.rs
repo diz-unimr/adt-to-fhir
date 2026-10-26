@@ -201,11 +201,6 @@ fn error_if_strict(
     }
 }
 
-pub(crate) fn is_valid_date(period: &ValidPeriod, date: &NaiveDate) -> bool {
-    date.ge(&period.valid_from)
-        && (period.valid_to.is_none() || date.le(&period.valid_to.unwrap_or(NaiveDate::MAX)))
-}
-
 fn init_department_map() -> Result<HashMap<String, Department>, anyhow::Error> {
     let resource_data = read_mapping_resource("InfoByAbteilungskuerzel.json")?;
 

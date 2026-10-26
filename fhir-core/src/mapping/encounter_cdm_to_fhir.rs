@@ -46,7 +46,7 @@ pub fn map(
     let mut result = vec![];
 
     if let Some(operation) = map_operation(&encounter_cdm.meta.operation_lv1)
-        && let res = map_einrichtungskontakt(encounter_cdm, config, resources)?
+        && let res = map_einrichtungskontakt(encounter_cdm, config)?
     {
         result.push(bundle_entry(res, operation, config)?);
     }
@@ -95,6 +95,7 @@ pub fn map_default_identifier_enc(
         )
         .build()
 }
+
 pub fn map_meta_encounter(config: &Fhir) -> Result<Meta, BuilderError> {
     Ok(Meta::builder()
         .profile(vec![Some(config.fall.profile.clone())])
@@ -129,11 +130,11 @@ fn base_encounter(
         )?)
         .period(period.clone())
         // set status depends on period.start / period.end
-        .status(map_encounter_status(&period));
+        .status(map_enc_status(&period));
 
     Ok(admit)
 }
-fn map_encounter_status(period: &Period) -> EncounterStatus {
+fn map_enc_status(period: &Period) -> EncounterStatus {
     match (period.start.as_ref(), period.end.as_ref()) {
         (None, None) => EncounterStatus::Unknown,
         (_, Some(_)) => EncounterStatus::Finished,
@@ -184,10 +185,8 @@ fn map_level_identifier(
         EncounterLevel::Einrichtungskontakt => {
             (&config.fall.einrichtungskontakt.system, &cdm.visit_number)
         }
-        EncounterLevel::Fachabteilungskontakt => {
-            (&config.fall.abteilungskontakt.system, &cdm.movement_id)
-        }
-        EncounterLevel::Versorgungsstellenkontakt => (
+        Fachabteilungskontakt => (&config.fall.abteilungskontakt.system, &cdm.movement_id),
+        Versorgungsstellenkontakt => (
             &config.fall.versorgungsstellenkontakt.system,
             &cdm.movement_id,
         ),
@@ -257,16 +256,14 @@ fn map_kontaktart(
     cdm: &EncounterCdm,
     enc_type: &EncounterLevel,
 ) -> Result<Option<Coding>, FhirMappingError> {
-    if &Versorgungsstellenkontakt == enc_type {
-        if cdm.is_icu_location {
-            return Ok(Some(
-                Coding::builder()
-                    .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
-                    .code("intensivstationaer".to_string())
-                    .display("Intensivstationär".to_string())
-                    .build()?,
-            ));
-        }
+    if &Versorgungsstellenkontakt == enc_type && cdm.is_icu_location {
+        return Ok(Some(
+            Coding::builder()
+                .system("http://fhir.de/CodeSystem/kontaktart-de".to_string())
+                .code("intensivstationaer".to_string())
+                .display("Intensivstationär".to_string())
+                .build()?,
+        ));
     }
 
     match cdm.bed_status.as_ref() {
@@ -352,7 +349,6 @@ impl From<&EncounterLevel> for Coding {
 fn map_einrichtungskontakt(
     cdm: &EncounterCdm,
     config: &Fhir,
-    resources: &ResourceMap,
 ) -> Result<Encounter, FhirMappingError> {
     // base encounter
     let mut enc = base_encounter(cdm, config, &EncounterLevel::Einrichtungskontakt)?
@@ -829,7 +825,7 @@ fn map_versorgungsstellenkontakt(
                 &config.fall.abteilungskontakt.system,
             )?)
             .location(encounter_locations)
-            .status(map_encounter_status(&map_period(
+            .status(map_enc_status(&map_period(
                 cdm,
                 &Versorgungsstellenkontakt,
             )?));
@@ -901,7 +897,9 @@ mod tests {
     use crate::canonical_model::canonical_location::{LocationCdmBuilder, LocationCdmType};
     use crate::canonical_model::canonical_meta::MappingOpEncounterBuilder;
     use adt_config::test_utils::tests::get_test_config;
+    use fhir_model::{DateTime, Instant};
     use rstest::rstest;
+    use std::str::FromStr;
     use time::Time;
     use time::macros::format_description;
 
@@ -931,11 +929,16 @@ mod tests {
         }
     }
 
+    /// * bed status: I
+    /// * admit date: 2026-01-31
+    /// * discharge date: 2026-02-06
+    /// * movement_start: 2026-01-31
+    /// * movement_enb: None
+    ///
     fn get_dummy_encounter_cdm() -> EncounterCdm {
         /*
          * mandatory properties
          */
-
         let meta = MappingOpEncounterBuilder::default()
             .id("01")
             .operation_lv1(ProcessingOperation::UpdateAsCreate)
@@ -943,11 +946,13 @@ mod tests {
             .operation_lv3(ProcessingOperation::UpdateAsCreate)
             .build()
             .unwrap();
+
         let format = format_description!("[year]-[month]-[day]");
         let admission_date_time = OffsetDateTime::new_utc(
             time::Date::parse("2026-01-31", format).unwrap(),
             Time::from_hms(10, 8, 13).unwrap(),
         );
+
         let discharge_datetime = OffsetDateTime::new_utc(
             time::Date::parse("2026-02-06", format).unwrap(),
             Time::from_hms(9, 32, 3).unwrap(),
@@ -967,6 +972,7 @@ mod tests {
                 .build()
                 .unwrap(),
         ];
+
         let locations = vec![
             LocationCdmBuilder::default()
                 .is_movement_finished(true)
@@ -1032,5 +1038,109 @@ mod tests {
         } else {
             assert_eq!(result_ok, None)
         }
+    }
+    #[test]
+    fn map_enc_status_test() {
+        let period_input_finished = Period::builder()
+            .start(DateTime::DateTime(Instant::from(OffsetDateTime::now_utc())))
+            .end(DateTime::DateTime(Instant::from(OffsetDateTime::now_utc())))
+            .build()
+            .unwrap();
+        assert_eq!(
+            map_enc_status(&period_input_finished),
+            EncounterStatus::Finished
+        );
+
+        let period_input_progress = Period::builder()
+            .start(DateTime::DateTime(Instant::from(OffsetDateTime::now_utc())))
+            .build()
+            .unwrap();
+        assert_eq!(
+            map_enc_status(&period_input_progress),
+            EncounterStatus::InProgress
+        );
+
+        let period_input_unknown = Period::builder().build().unwrap();
+        assert_eq!(
+            map_enc_status(&period_input_unknown),
+            EncounterStatus::Unknown
+        )
+    }
+
+    #[test]
+    fn map_period_test() {
+        let input_cdm = get_dummy_encounter_cdm();
+        let lvl = EncounterLevel::Einrichtungskontakt;
+
+        let res = map_period(&input_cdm, &lvl).unwrap();
+
+        assert!(res.start.is_some());
+        assert!(res.end.is_some());
+    }
+
+    #[rstest]
+    #[case("I", "IMP")]
+    #[case("P", "PRENC")]
+    #[case("O", "AMB")]
+    #[case("TS", "SS")]
+    #[case("NS", "AMB")]
+    #[case("VS", "AMB")]
+    #[case("V", "AMB")]
+    fn map_encounter_class_test(#[case] bed_status: &str, #[case] expected: &str) {
+        let mut input = get_dummy_encounter_cdm();
+        input.bed_status = bed_status.to_string();
+
+        let res = map_encounter_class(&input).unwrap();
+
+        let code = res.code.as_ref().unwrap();
+        assert_eq!(code, expected);
+    }
+
+    #[rstest]
+    #[case("I", None)]
+    #[case("O", None)]
+    #[case("TS", Some("teilstationaer"))]
+    #[case("NS", Some("nachstationaer"))]
+    #[case("VS", Some("vorstationaer"))]
+    #[case("V", Some("vorstationaer"))]
+    //#[case("P", "PRENC")]
+    fn map_kontaktart_test(#[case] bed_status: &str, #[case] expected: Option<&str>) {
+        let mut input = get_dummy_encounter_cdm();
+        input.bed_status = bed_status.to_string();
+
+        let kontakt_art = map_kontaktart(&input, &EncounterLevel::Einrichtungskontakt).unwrap();
+        if let Some(expected) = expected {
+            let code = kontakt_art.unwrap().code.as_ref().unwrap().to_string();
+            assert_eq!(code, expected);
+        } else {
+            assert!(kontakt_art.is_none());
+        }
+    }
+
+    #[test]
+    fn map_kontaktart_test_invalid() {
+        let mut input = get_dummy_encounter_cdm();
+        input.bed_status = "PPP".to_string();
+        if let Err(E) = map_kontaktart(&input, &EncounterLevel::Einrichtungskontakt) {
+        } else {
+            panic!("Failed map kontaktart should produce an error!");
+        }
+    }
+
+    #[test]
+    fn map_entlassgrund_test() {
+        let cdm = get_dummy_encounter_cdm();
+        let res = map_entlassgrund(&cdm);
+        assert!(res.is_ok());
+        let extension_prop = &res.ok().unwrap().unwrap();
+        let extensions = &extension_prop.first().unwrap().extension;
+
+        assert_eq!(extensions.len(), 2);
+
+        assert!(extensions.first().unwrap().value.as_ref().is_some());
+        assert!(!extensions.first().unwrap().url.is_empty());
+
+        assert!(!extensions.last().unwrap().url.is_empty());
+        assert!(extensions.last().unwrap().value.as_ref().is_some());
     }
 }

@@ -1025,7 +1025,6 @@ mod tests {
     use adt_config::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use adt_config::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use fhir_model::r4b::codes::EncounterStatus::Finished;
-    use fhir_model::r4b::codes::HTTPVerb;
     use hl7_parser::Message;
     use rstest::rstest;
     use std::default::Default;
@@ -1724,8 +1723,6 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
 
             index += 1;
         });
-
-        //                    .eq("http://fhir.de/ValueSet/Diagnosesubtyp")
     }
     #[test]
     fn test_map_encounter_class() {
@@ -1738,6 +1735,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
         let res = map_encounter_class(&msg).unwrap();
         assert_eq!(res.code.as_ref().unwrap(), "AMB");
     }
+
     #[test]
     fn test_location_status() {
         let raw_msg = read_test_resource("a03_test.hl7");
@@ -1985,48 +1983,6 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
                 abteilung_ident_value
             )
             .as_str(),
-        );
-    }
-
-    #[test]
-    fn map_enc_for_a04() {
-        let hl7 = read_test_resource("a04_test.hl7");
-        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
-        let result = map(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
-
-        assert_eq!(
-            result
-                .first()
-                .as_ref()
-                .unwrap()
-                .request
-                .as_ref()
-                .unwrap()
-                .method,
-            HTTPVerb::Post
-        );
-
-        assert_eq!(
-            result
-                .get(1)
-                .as_ref()
-                .unwrap()
-                .request
-                .as_ref()
-                .unwrap()
-                .method,
-            HTTPVerb::Put
-        );
-        assert_eq!(
-            result
-                .get(2)
-                .as_ref()
-                .unwrap()
-                .request
-                .as_ref()
-                .unwrap()
-                .method,
-            HTTPVerb::Put
         );
     }
 }

@@ -22,5 +22,5 @@ uuid = { version = "1.26.0", features = ["v5"] }
 #mock-collector = "0.2.14"
 #reqwest = { version = "0.13", features = ["json", "blocking"] }
 adt-config = { path = "../adt-config", features = ["test-utils"] }
-rstest = "0.27.0"
+rstest = "0.28.0"
 time = "0.3.55"

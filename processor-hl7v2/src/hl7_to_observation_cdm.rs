@@ -27,7 +27,7 @@ pub fn map(msg: &Message) -> Result<Option<ObservationCdm>, Hl7MappingError> {
             | MessageType::A05
     );
 
-    if (!do_create_is_alive && !is_zng_present) {
+    if !do_create_is_alive && !is_zng_present {
         // if  no ZNG and skipping via msg typ are in place, no observation to map
         return Ok(None);
     }
@@ -45,7 +45,7 @@ pub fn map(msg: &Message) -> Result<Option<ObservationCdm>, Hl7MappingError> {
     builder.effective_date(parse_to_datetime(query(msg, ZBE_2).ok_or_else(|| {
         Hl7MessageAccessError::MissingMessageValue("ZBE_2".to_string())
     })?)?);
-    if (do_create_is_alive) {
+    if do_create_is_alive {
         builder.is_alive(!is_dead);
     }
 

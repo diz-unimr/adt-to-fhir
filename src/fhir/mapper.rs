@@ -163,18 +163,6 @@ pub(crate) fn subject_ref(msg: &Message, sid: &str) -> Result<Reference, Mapping
     resource_ref(&ResourceType::Patient, pid, sid).map_err(MappingError::BuilderError)
 }
 
-/// FieldExtension with unsupported data absent reason entry
-pub(crate) fn coding_data_absent_reason_unsupported() -> Result<CodeableConcept, MappingError> {
-    Ok(CodeableConcept::builder()
-        .coding(vec![Some(
-            Coding::builder()
-                .code("unsupported".to_string())
-                .system("http://terminology.hl7.org/CodeSystem/data-absent-reason".to_string())
-                .build()?,
-        )])
-        .build()?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1074,5 +1062,48 @@ ZBE|30674176^ORBIS|202208221309||INSERT
 
         // check if identifier value is correct
         assert_eq!(x, query(&msg, PV1_3_1).unwrap());
+    }
+
+    #[test]
+    fn map_enc_for_a04() {
+        let hl7 = read_test_resource("a04_test.hl7");
+        let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
+        let result =
+            crate::fhir::encounter::map(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
+
+        assert_eq!(
+            result
+                .first()
+                .as_ref()
+                .unwrap()
+                .request
+                .as_ref()
+                .unwrap()
+                .method,
+            HTTPVerb::Post
+        );
+
+        assert_eq!(
+            result
+                .get(1)
+                .as_ref()
+                .unwrap()
+                .request
+                .as_ref()
+                .unwrap()
+                .method,
+            HTTPVerb::Put
+        );
+        assert_eq!(
+            result
+                .get(2)
+                .as_ref()
+                .unwrap()
+                .request
+                .as_ref()
+                .unwrap()
+                .method,
+            HTTPVerb::Put
+        );
     }
 }

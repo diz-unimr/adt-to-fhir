@@ -1,7 +1,7 @@
 use crate::hl7::parser::{
     ENV_1, MRG_1, MessageType, PID_2, PID_5, PID_7, PID_8, PID_16_1, PID_24, PID_25, PID_29,
-    PID_30, ZNG_7, ZNG_11, get_message_key, message_type, parse_datetime, parse_to_datetime,
-    parse_to_naive_date, query, segment_value,
+    PID_30, get_message_key, message_type, parse_to_datetime, parse_to_naive_date, query,
+    segment_value,
 };
 pub use crate::hl7::parser::{field_repeats, repeat_component, repeat_subcomponents};
 use crate::hl7_error::Hl7MappingError;
