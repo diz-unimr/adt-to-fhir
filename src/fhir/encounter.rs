@@ -32,7 +32,7 @@ use fhir_model::r4b::types::{
 };
 use hl7_parser::Message;
 use hl7_parser::message::Field;
-use log::{Level, log};
+use log::{Level, log, warn};
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -565,16 +565,19 @@ fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
 fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError> {
     let start: DateTime;
     let end: Option<DateTime>;
+
+    let discharge_date = match query(msg, PV1_45) {
+        Some(end) => Some(parse_datetime(end)?),
+        None => None,
+    };
+
     match lvl {
         Einrichtungskontakt => {
             start = parse_datetime(
                 query(msg, PV1_44).ok_or(MissingMessageValue("PV1.44".to_string()))?,
             )?;
 
-            end = match query(msg, PV1_45) {
-                Some(end) => Some(parse_datetime(end)?),
-                None => None,
-            };
+            end = discharge_date.clone();
         }
         Fachabteilungskontakt | Versorgungsstellenkontakt => {
             start =
@@ -597,9 +600,26 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
         }
     }
 
-    let mut period: Period = Period::builder().start(start).build()?;
+    let mut period: Period = Period::builder().start(start.clone()).build()?;
     if end.is_some() {
         period.end = end;
+    } else {
+        if let Some(dis) = discharge_date.as_ref() {
+            if dis >= &start {
+                warn!(
+                    "Falling back to discharge date for msg id '{}' ",
+                    get_message_key(msg)?
+                );
+                period.end = Some(dis.clone());
+            } else {
+                return Err(MappingError::Other(anyhow!(
+                    "map_period: cannot fall back to discharge date since it is before start date. \
+                    Please investigate msg id '{}' and case id '{}'",
+                    get_message_key(msg)?,
+                    map_visit_number(msg)?
+                )));
+            }
+        }
     }
 
     Ok(period)
@@ -609,7 +629,7 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
     match (period.start.as_ref(), period.end.as_ref()) {
         (None, None) => EncounterStatus::Unknown,
         (_, Some(_)) => EncounterStatus::Finished,
-        (Some(_), _) => EncounterStatus::InProgress,
+        (Some(_), None) => EncounterStatus::InProgress,
     }
 }
 
@@ -1038,11 +1058,13 @@ mod tests {
     use crate::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
+    use fhir_model::Date::Date;
     use fhir_model::r4b::codes::EncounterStatus::Finished;
     use fhir_model::r4b::codes::HTTPVerb;
     use hl7_parser::Message;
     use rstest::rstest;
     use std::default::Default;
+    use time::macros::datetime;
 
     #[rstest]
     #[case(Einrichtungskontakt, ("einrichtungskontakt","admit_id"))]
@@ -2157,5 +2179,41 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             coding.system.as_ref().unwrap(),
             "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass"
         );
+    }
+    #[test]
+    fn map_encounter_status_test() {
+        let input = Period::builder().build().unwrap();
+        let res = map_encounter_status(&input);
+        assert_eq!(res, EncounterStatus::Unknown);
+
+        let input = Period::builder()
+            .start(DateTime::Date(Date(
+                datetime!(1985-04-12 23:20:50.52 +00:00).date(),
+            )))
+            .build()
+            .unwrap();
+        let res = map_encounter_status(&input);
+        assert_eq!(res, EncounterStatus::InProgress);
+
+        let input = Period::builder()
+            .start(DateTime::Date(Date(
+                datetime!(1985-04-12 23:20:50.52 +00:00).date(),
+            )))
+            .end(DateTime::Date(Date(
+                datetime!(1985-04-13 23:20:50.52 +00:00).date(),
+            )))
+            .build()
+            .unwrap();
+        let res = map_encounter_status(&input);
+        assert_eq!(res, Finished);
+
+        let input = Period::builder()
+            .end(DateTime::Date(Date(
+                datetime!(1985-04-13 23:20:50.52 +00:00).date(),
+            )))
+            .build()
+            .unwrap();
+        let res = map_encounter_status(&input);
+        assert_eq!(res, Finished);
     }
 }
