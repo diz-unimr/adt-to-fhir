@@ -1976,7 +1976,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
     }
 
     #[test]
-    fn map_part_of_test() {
+    fn map_part_of_and_period_end_test() {
         let hl7 = read_test_resource("a03_test.hl7");
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
 
@@ -1985,6 +1985,15 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
         let einrichtung = map_einrichtungskontakt(&msg, config, resources).unwrap();
         let einrichtung_identifier = einrichtung.identifier.first().unwrap().clone().unwrap();
         let ident_value = einrichtung_identifier.value.as_ref().unwrap();
+
+        assert!(
+            einrichtung.period.as_ref().unwrap().start.is_some(),
+            "inpatient encounter lvl1 has period.start value"
+        );
+        assert!(
+            einrichtung.period.as_ref().unwrap().end.is_some(),
+            "discharged encounter lvl1 has period.end value"
+        );
 
         let abteilung = map_abteilungskontakt(&msg, config, resources).unwrap();
 
@@ -1999,6 +2008,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             .unwrap();
         abteilung_part_of.ends_with(ident_value);
         let abteilung_identifier = abteilung
+            .as_ref()
             .unwrap()
             .identifier
             .first()
@@ -2006,6 +2016,29 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             .clone()
             .unwrap();
         let abteilung_ident_value = abteilung_identifier.value.as_ref().unwrap();
+
+        assert!(
+            abteilung
+                .as_ref()
+                .unwrap()
+                .period
+                .as_ref()
+                .unwrap()
+                .start
+                .is_some(),
+            "inpatient encounter lvl2 has period.start value"
+        );
+        assert!(
+            abteilung
+                .as_ref()
+                .unwrap()
+                .period
+                .as_ref()
+                .unwrap()
+                .end
+                .is_some(),
+            "discharged encounter lvl2 has period.end value"
+        );
 
         let versorgung = map_versorgungsstellenkontakt(&msg, config, resources).unwrap();
 
@@ -2026,6 +2059,29 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
                 abteilung_ident_value
             )
             .as_str(),
+        );
+
+        assert!(
+            versorgung
+                .as_ref()
+                .unwrap()
+                .period
+                .as_ref()
+                .unwrap()
+                .start
+                .is_some(),
+            "inpatient encounter lvl3 has period.start value"
+        );
+        assert!(
+            versorgung
+                .as_ref()
+                .unwrap()
+                .period
+                .as_ref()
+                .unwrap()
+                .end
+                .is_some(),
+            "discharged encounter lvl3 has period.end value"
         );
     }
 
