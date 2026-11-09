@@ -32,7 +32,7 @@ use fhir_model::r4b::types::{
 };
 use hl7_parser::Message;
 use hl7_parser::message::Field;
-use log::{Level, log, warn};
+use log::{Level, error, log, warn};
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -332,25 +332,23 @@ fn map_abteilungskontakt(
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Option<Encounter>, MappingError> {
-    if let Some(service_type) = get_service_type(msg, resources, config)? {
-        // base encounter
-        let mut enc = base_encounter(msg, config, resources, &Fachabteilungskontakt)?
-            .part_of(resource_ref(
-                &ResourceType::Encounter,
-                map_visit_number(msg)?,
-                &config.fall.einrichtungskontakt.system,
-            )?)
-            .build()?;
+    // base encounter
+    let mut enc = base_encounter(msg, config, resources, &Fachabteilungskontakt)?
+        .part_of(resource_ref(
+            &ResourceType::Encounter,
+            map_visit_number(msg)?,
+            &config.fall.einrichtungskontakt.system,
+        )?)
+        .build()?;
 
+    if let Some(service_type) = get_service_type(msg, resources, config)? {
         enc.service_type = Some(service_type);
         if let Some(fab) = parse_fab(msg) {
             enc.service_provider = Some(fab_ref(fab, config)?);
         }
-
         Ok(Some(enc))
     } else {
-        log!(
-            Level::Debug,
+        error!(
             "Missing service type at msg-id '{}' - cannot build valid encounter at department level!",
             get_message_key(msg)?
         );
@@ -366,19 +364,15 @@ fn get_service_type(
     let system_fachabteilungs_schluessel: &str =
         "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
 
-    if let Some(fab) = parse_fab(msg) {
-        match resources.map_fab_schluessel(fab, get_message_key(msg)?, config, resources) {
-            Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
-            Err(e) => return Err(e),
-            Ok(None) => {}
-        };
-    }
-
     if let Some(fab_schluessel) = query(msg, PV1_39_1) {
-        Ok(Some(get_cc_with_one_code(
+        return Ok(Some(get_cc_with_one_code(
             fab_schluessel.to_string(),
             system_fachabteilungs_schluessel.to_string(),
-        )?))
+        )?));
+    }
+
+    if let Some(fab) = parse_fab(msg) {
+        resources.map_fab_schluessel(fab, get_message_key(msg)?, config, resources)
     } else {
         Ok(None)
     }
