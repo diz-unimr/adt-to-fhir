@@ -296,7 +296,8 @@ pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
     let bed_status = query(msg, PV1_2);
     match bed_status {
         None => None,
-        Some("O") | Some("E") => {
+        Some("O") | Some("E") | Some("I") | Some("VS") | Some("NS") | Some("TS") | Some("V")
+        | Some("H") => {
             if department.is_some() {
                 department
             } else {
@@ -315,7 +316,7 @@ pub fn parse_fab<'a>(msg: &'a Message<'a>) -> Option<&'a str> {
                 }
             }
         }
-        Some("I") | Some("VS") | Some("NS") | Some("TS") | Some("V") | Some("H") => department,
+
         Some("P") => {
             // todo: if planned encounter should be mapped - we need mapping here,
             None
