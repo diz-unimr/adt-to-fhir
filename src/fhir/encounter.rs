@@ -32,7 +32,7 @@ use fhir_model::r4b::types::{
 };
 use hl7_parser::Message;
 use hl7_parser::message::Field;
-use log::{Level, error, log, warn};
+use log::{Level, debug, error, log, warn};
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -586,8 +586,19 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                     ) {
                         // A04 get never an end date form source system - therefore we use start date here as well
                         // 'NS' fallback post-inpatient is day patient status thus has no end of movement like A04
-                        (Some("NS"), _) | (_, MessageType::A04) => Some(start.clone()),
-                        (_, _) => None,
+                        (Some("NS"), _) | (_, MessageType::A04) => {
+                            debug!(
+                                "apply workaround set encounter.priod.end with value from ZBE.2 in case of A04 or bed status 'NS'."
+                            );
+                            Some(start.clone())
+                        }
+                        (_, _) => {
+                            warn!(
+                                "Message with discharged status is missing end date at ZBE.3! msg id {}",
+                                get_message_key(msg)?
+                            );
+                            None
+                        }
                     }
                 }
             };
@@ -597,23 +608,6 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     let mut period: Period = Period::builder().start(start.clone()).build()?;
     if end.is_some() {
         period.end = end;
-    } else {
-        if let Some(dis) = discharge_date.as_ref() {
-            if dis >= &start {
-                warn!(
-                    "Falling back to discharge date for msg id '{}' ",
-                    get_message_key(msg)?
-                );
-                period.end = Some(dis.clone());
-            } else {
-                return Err(MappingError::Other(anyhow!(
-                    "map_period: cannot fall back to discharge date since it is before start date. \
-                    Please investigate msg id '{}' and case id '{}'",
-                    get_message_key(msg)?,
-                    map_visit_number(msg)?
-                )));
-            }
-        }
     }
 
     Ok(period)
@@ -2101,9 +2095,11 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
         );
     }
 
-    #[test]
-    fn map_enc_for_a04() {
-        let hl7 = read_test_resource("a04_test.hl7");
+    #[rstest]
+    #[case("a04_test_imp.hl7")]
+    #[case("a04_test.hl7")]
+    fn map_enc_for_a04(#[case] filename: &str) {
+        let hl7 = read_test_resource(filename);
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
         let result = map(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
 
@@ -2142,6 +2138,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             HTTPVerb::Put
         );
     }
+
     #[test]
     fn map_admit_source_empty_test() {
         let hl7 = read_test_resource("a03_test.hl7");
