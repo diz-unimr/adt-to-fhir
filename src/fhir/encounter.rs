@@ -21,20 +21,18 @@ use crate::hl7::parser::{
 };
 use EncounterType::Einrichtungskontakt;
 use anyhow::anyhow;
+use fhir_model::DateTime;
 use fhir_model::r4b::codes::{EncounterLocationStatus, EncounterStatus, IdentifierUse};
 use fhir_model::r4b::resources::{
     BundleEntry, Encounter, EncounterBuilder, EncounterDiagnosis, EncounterHospitalization,
     EncounterLocation, ResourceType,
 };
-use fhir_model::r4b::types::ExtensionValue::Code;
 use fhir_model::r4b::types::{
-    CodeableConcept, Coding, Extension, ExtensionValue, FieldExtension, Identifier, Meta, Period,
-    Reference,
+    CodeableConcept, Coding, Extension, ExtensionValue, Identifier, Meta, Period, Reference,
 };
-use fhir_model::{BuilderError, DateTime};
 use hl7_parser::Message;
 use hl7_parser::message::Field;
-use log::{Level, error, log};
+use log::{Level, debug, error, log, warn};
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -562,15 +560,11 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     let start: DateTime;
     let end: Option<DateTime>;
 
-    let is_ambulatory = matches!(
-        query(msg, PV1_2),
-        Some("O") | Some("VS") | Some("V") | Some("NS")
-    );
     let discharge_date = match query(msg, PV1_45) {
         Some(end) => Some(parse_datetime(end)?),
         None => None,
     };
-    let mut is_end_absent = false;
+
     match lvl {
         Einrichtungskontakt => {
             start = parse_datetime(
@@ -578,9 +572,6 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
             )?;
 
             end = discharge_date.clone();
-            if is_ambulatory && end.is_none() {
-                is_end_absent = true;
-            }
         }
         Fachabteilungskontakt | Versorgungsstellenkontakt => {
             start =
@@ -590,16 +581,24 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                 Some(end) => Some(parse_datetime(end)?),
                 None => {
                     match (
-                        is_ambulatory,
+                        query(msg, PV1_2),
                         message_type(msg).map_err(MessageAccessError::from)?,
                     ) {
-                        // ambulatory bed status has usually no end date at source system
-                        // also registration messages have never an end date (see later data absent)
-                        (true, _) | (_, MessageType::A04) => {
-                            is_end_absent = true;
+                        // A04 get never an end date form source system - therefore we use start date here as well
+                        // 'NS' fallback post-inpatient is day patient status thus has no end of movement like A04
+                        (Some("NS"), _) | (_, MessageType::A04) => {
+                            debug!(
+                                "apply workaround set encounter.priod.end with value from ZBE.2 in case of A04 or bed status 'NS'."
+                            );
+                            Some(start.clone())
+                        }
+                        (_, _) => {
+                            warn!(
+                                "Message with discharged status is missing end date at ZBE.3! msg id {}",
+                                get_message_key(msg)?
+                            );
                             None
                         }
-                        (_, _) => None,
                     }
                 }
             };
@@ -610,36 +609,15 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
     if end.is_some() {
         period.end = end;
     }
-    if is_end_absent {
-        // in case an end date cannot be provided we add an absent reason.
-        period.end_ext = Some(get_unsupported_field_ext()?);
-    }
 
     Ok(period)
 }
 
-fn get_unsupported_field_ext() -> Result<FieldExtension, BuilderError> {
-    FieldExtension::builder()
-        .extension(vec![
-            Extension::builder()
-                .url("http://hl7.org/fhir/StructureDefinition/data-absent-reason".to_string())
-                .value(Code("unsupported".to_string()))
-                .build()?,
-        ])
-        .build()
-}
-
 fn map_encounter_status(period: &Period) -> EncounterStatus {
-    match (
-        period.start.as_ref(),
-        period.end.as_ref(),
-        period.end_ext.as_ref(),
-    ) {
-        (Some(_), Some(_), None) | (Some(_), None, Some(_)) | (Some(_), Some(_), Some(_)) => {
-            EncounterStatus::Finished
-        }
-        (Some(_), None, None) => EncounterStatus::InProgress,
-        (_, _, _) => EncounterStatus::Unknown,
+    match (period.start.as_ref(), period.end.as_ref()) {
+        (None, None) => EncounterStatus::Unknown,
+        (_, Some(_)) => EncounterStatus::Finished,
+        (Some(_), None) => EncounterStatus::InProgress,
     }
 }
 
@@ -1069,7 +1047,7 @@ mod tests {
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
     use fhir_model::Date::Date;
-    use fhir_model::r4b::codes::EncounterStatus::{Finished, Unknown};
+    use fhir_model::r4b::codes::EncounterStatus::Finished;
     use fhir_model::r4b::codes::HTTPVerb;
     use hl7_parser::Message;
     use rstest::rstest;
@@ -1678,10 +1656,10 @@ ZBE|55555555^ORBIS|202511022120|202511022120|UPDATE
             "nachstationär kontakt must be closed"
         );
 
-        assert!(abteilung_result.period.as_ref().unwrap().start.is_some());
         assert_eq!(
-            abteilung_result.period.as_ref().unwrap().end_ext,
-            Some(get_unsupported_field_ext().unwrap())
+            abteilung_result.period.as_ref().unwrap().start,
+            abteilung_result.period.as_ref().unwrap().end,
+            "post-inpatient is day-patient care - no end date provided - need to be closed period"
         );
 
         assert!(
@@ -1862,13 +1840,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             .unwrap();
 
         assert!(abteilung.period.as_ref().is_some_and(|s| s.start.is_some()));
-        assert!(abteilung.period.as_ref().is_some_and(|s| s.end.is_none()));
-        assert!(
-            abteilung
-                .period
-                .as_ref()
-                .is_some_and(|s| s.end_ext.is_some())
-        );
+        assert!(abteilung.period.as_ref().is_some_and(|s| s.end.is_some()));
         assert_eq!(abteilung.status, Finished);
 
         let versorgungsstelle =
@@ -1887,13 +1859,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             versorgungsstelle
                 .period
                 .as_ref()
-                .is_some_and(|s| s.end.is_none())
-        );
-        assert!(
-            versorgungsstelle
-                .period
-                .as_ref()
-                .is_some_and(|s| s.end_ext.is_some())
+                .is_some_and(|s| s.end.is_some())
         );
 
         let einrichtungskontakt =
@@ -1911,13 +1877,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
                 .as_ref()
                 .is_some_and(|s| s.end.is_none())
         );
-        assert!(
-            einrichtungskontakt
-                .period
-                .as_ref()
-                .is_some_and(|s| s.end_ext.is_some())
-        );
-        assert_eq!(einrichtungskontakt.status, Finished);
+        assert_eq!(einrichtungskontakt.status, EncounterStatus::InProgress);
     }
     #[test]
     fn test_admit_extension_empty_ambulatory() {
@@ -1980,10 +1940,9 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
                     result.as_ref().unwrap().start,
                     Some(parse_datetime(query(&msg, ZBE_2).unwrap()).unwrap())
                 );
-                assert_eq!(result.as_ref().unwrap().end, None);
                 assert_eq!(
-                    result.as_ref().unwrap().end_ext,
-                    Some(get_unsupported_field_ext().unwrap())
+                    result.as_ref().unwrap().end,
+                    Some(parse_datetime(query(&msg, ZBE_2).unwrap()).unwrap())
                 );
             }
         });
@@ -2246,16 +2205,6 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             .build()
             .unwrap();
         let res = map_encounter_status(&input);
-        assert_eq!(res, Unknown);
-
-        let input = Period::builder()
-            .start(DateTime::Date(Date(
-                datetime!(1985-04-13 23:20:50.52 +00:00).date(),
-            )))
-            .end_ext(get_unsupported_field_ext().unwrap())
-            .build()
-            .unwrap();
-        let res = map_encounter_status(&input);
-        assert_eq!(res, Finished)
+        assert_eq!(res, Finished);
     }
 }
