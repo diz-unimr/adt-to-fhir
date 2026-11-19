@@ -32,7 +32,7 @@ use fhir_model::r4b::types::{
 };
 use hl7_parser::Message;
 use hl7_parser::message::Field;
-use log::{Level, log};
+use log::{Level, debug, error, log, warn};
 use std::cmp::PartialEq;
 use std::num::NonZeroU32;
 
@@ -332,25 +332,23 @@ fn map_abteilungskontakt(
     config: &Fhir,
     resources: &ResourceMap,
 ) -> Result<Option<Encounter>, MappingError> {
-    if let Some(service_type) = get_service_type(msg, resources, config)? {
-        // base encounter
-        let mut enc = base_encounter(msg, config, resources, &Fachabteilungskontakt)?
-            .part_of(resource_ref(
-                &ResourceType::Encounter,
-                map_visit_number(msg)?,
-                &config.fall.einrichtungskontakt.system,
-            )?)
-            .build()?;
+    // base encounter
+    let mut enc = base_encounter(msg, config, resources, &Fachabteilungskontakt)?
+        .part_of(resource_ref(
+            &ResourceType::Encounter,
+            map_visit_number(msg)?,
+            &config.fall.einrichtungskontakt.system,
+        )?)
+        .build()?;
 
+    if let Some(service_type) = get_service_type(msg, resources, config)? {
         enc.service_type = Some(service_type);
         if let Some(fab) = parse_fab(msg) {
             enc.service_provider = Some(fab_ref(fab, config)?);
         }
-
         Ok(Some(enc))
     } else {
-        log!(
-            Level::Debug,
+        error!(
             "Missing service type at msg-id '{}' - cannot build valid encounter at department level!",
             get_message_key(msg)?
         );
@@ -366,19 +364,17 @@ fn get_service_type(
     let system_fachabteilungs_schluessel: &str =
         "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
 
-    if let Some(fab) = parse_fab(msg) {
-        match resources.map_fab_schluessel(fab, get_message_key(msg)?, config, resources) {
-            Ok(Some(fab_from_short_name)) => return Ok(Some(fab_from_short_name)),
-            Err(e) => return Err(e),
-            Ok(None) => {}
-        };
-    }
-
+    // first try getting code strait from hl7 field
     if let Some(fab_schluessel) = query(msg, PV1_39_1) {
-        Ok(Some(get_cc_with_one_code(
+        return Ok(Some(get_cc_with_one_code(
             fab_schluessel.to_string(),
             system_fachabteilungs_schluessel.to_string(),
-        )?))
+        )?));
+    }
+
+    // try via ward name and mapping file
+    if let Some(fab) = parse_fab(msg) {
+        resources.map_fab_schluessel(fab, get_message_key(msg)?, config, resources)
     } else {
         Ok(None)
     }
@@ -565,16 +561,19 @@ fn map_admit_source(msg: &Message) -> Result<Option<Coding>, MappingError> {
 fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError> {
     let start: DateTime;
     let end: Option<DateTime>;
+
+    let discharge_date = match query(msg, PV1_45) {
+        Some(end) => Some(parse_datetime(end)?),
+        None => None,
+    };
+
     match lvl {
         Einrichtungskontakt => {
             start = parse_datetime(
                 query(msg, PV1_44).ok_or(MissingMessageValue("PV1.44".to_string()))?,
             )?;
 
-            end = match query(msg, PV1_45) {
-                Some(end) => Some(parse_datetime(end)?),
-                None => None,
-            };
+            end = discharge_date.clone();
         }
         Fachabteilungskontakt | Versorgungsstellenkontakt => {
             start =
@@ -589,15 +588,26 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                     ) {
                         // A04 get never an end date form source system - therefore we use start date here as well
                         // 'NS' fallback post-inpatient is day patient status thus has no end of movement like A04
-                        (Some("NS"), _) | (_, MessageType::A04) => Some(start.clone()),
-                        (_, _) => None,
+                        (Some("NS"), _) | (_, MessageType::A04) => {
+                            debug!(
+                                "apply workaround set encounter.priod.end with value from ZBE.2 in case of A04 or bed status 'NS'."
+                            );
+                            Some(start.clone())
+                        }
+                        (_, _) => {
+                            warn!(
+                                "Message with discharged status is missing end date at ZBE.3! msg id {}",
+                                get_message_key(msg)?
+                            );
+                            None
+                        }
                     }
                 }
             };
         }
     }
 
-    let mut period: Period = Period::builder().start(start).build()?;
+    let mut period: Period = Period::builder().start(start.clone()).build()?;
     if end.is_some() {
         period.end = end;
     }
@@ -609,7 +619,7 @@ fn map_encounter_status(period: &Period) -> EncounterStatus {
     match (period.start.as_ref(), period.end.as_ref()) {
         (None, None) => EncounterStatus::Unknown,
         (_, Some(_)) => EncounterStatus::Finished,
-        (Some(_), _) => EncounterStatus::InProgress,
+        (Some(_), None) => EncounterStatus::InProgress,
     }
 }
 
@@ -771,9 +781,12 @@ fn map_lvl_3_locations(
     if let (Some(_department), Some(loc)) =
         (parse_fab(msg), map_ward_location(msg, config, resources)?)
     {
+        let period = map_period(msg, &Versorgungsstellenkontakt)?;
+
         // department location should be always available
         let mut department_location = to_encounter_location(loc)?;
         department_location.status = Some(get_location_status(msg)?);
+        department_location.period = Some(period.clone());
 
         locations.push(Some(department_location));
 
@@ -786,6 +799,7 @@ fn map_lvl_3_locations(
             {
                 let mut room_location = to_encounter_location(l)?;
                 room_location.status = Some(get_location_status(msg)?);
+                room_location.period = Some(period.clone());
                 locations.push(Some(room_location));
             }
 
@@ -793,6 +807,7 @@ fn map_lvl_3_locations(
                 let mut bed_location =
                     to_encounter_location(map_bed_location(config, ward, room, bed)?)?;
                 bed_location.status = Some(get_location_status(msg)?);
+                bed_location.period = Some(period);
                 locations.push(Some(bed_location));
             }
         }
@@ -808,9 +823,18 @@ fn map_lvl_3_locations(
 }
 
 fn get_location_status(msg: &Message) -> Result<EncounterLocationStatus, MessageAccessError> {
-    match message_type(msg) {
-        Ok(MessageType::A04) | Ok(MessageType::A03) => Ok(EncounterLocationStatus::Completed),
-        Ok(_) => {
+    let is_bed_status_amb = matches!(
+        query(msg, PV1_2),
+        Some("O") | Some("NS") | Some("VS") | Some("V")
+    );
+
+    match (message_type(msg), is_bed_status_amb) {
+        // discharge is per definition completed
+        (Ok(MessageType::A03), _) |
+        // ambulatory or post-inpatient should be treated as completed
+        (Ok(MessageType::A04), _) | (_, true)
+        => Ok(EncounterLocationStatus::Completed),
+        (Ok(_), _) => {
             let movement_end = query(msg, ZBE_3);
             if movement_end.is_some() {
                 Ok(EncounterLocationStatus::Completed)
@@ -818,7 +842,7 @@ fn get_location_status(msg: &Message) -> Result<EncounterLocationStatus, Message
                 Ok(EncounterLocationStatus::Active)
             }
         }
-        Err(e) => Err(e.into()),
+        (Err(e), _) => Err(e.into()),
     }
 }
 
@@ -1038,11 +1062,13 @@ mod tests {
     use crate::config::{CheckMode, FallConfig, LocationConfig, PatientConfig, SystemConfig};
     use crate::error::MessageAccessError::UnsupportedContentError;
     use crate::test_utils::tests::{get_dummy_resources, get_test_config, read_test_resource};
+    use fhir_model::Date::Date;
     use fhir_model::r4b::codes::EncounterStatus::Finished;
     use fhir_model::r4b::codes::HTTPVerb;
     use hl7_parser::Message;
     use rstest::rstest;
     use std::default::Default;
+    use time::macros::datetime;
 
     #[rstest]
     #[case(Einrichtungskontakt, ("einrichtungskontakt","admit_id"))]
@@ -1976,7 +2002,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
     }
 
     #[test]
-    fn map_part_of_test() {
+    fn map_part_of_and_period_end_test() {
         let hl7 = read_test_resource("a03_test.hl7");
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
 
@@ -1985,6 +2011,15 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
         let einrichtung = map_einrichtungskontakt(&msg, config, resources).unwrap();
         let einrichtung_identifier = einrichtung.identifier.first().unwrap().clone().unwrap();
         let ident_value = einrichtung_identifier.value.as_ref().unwrap();
+
+        assert!(
+            einrichtung.period.as_ref().unwrap().start.is_some(),
+            "inpatient encounter lvl1 has period.start value"
+        );
+        assert!(
+            einrichtung.period.as_ref().unwrap().end.is_some(),
+            "discharged encounter lvl1 has period.end value"
+        );
 
         let abteilung = map_abteilungskontakt(&msg, config, resources).unwrap();
 
@@ -1999,6 +2034,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             .unwrap();
         abteilung_part_of.ends_with(ident_value);
         let abteilung_identifier = abteilung
+            .as_ref()
             .unwrap()
             .identifier
             .first()
@@ -2006,6 +2042,29 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             .clone()
             .unwrap();
         let abteilung_ident_value = abteilung_identifier.value.as_ref().unwrap();
+
+        assert!(
+            abteilung
+                .as_ref()
+                .unwrap()
+                .period
+                .as_ref()
+                .unwrap()
+                .start
+                .is_some(),
+            "inpatient encounter lvl2 has period.start value"
+        );
+        assert!(
+            abteilung
+                .as_ref()
+                .unwrap()
+                .period
+                .as_ref()
+                .unwrap()
+                .end
+                .is_some(),
+            "discharged encounter lvl2 has period.end value"
+        );
 
         let versorgung = map_versorgungsstellenkontakt(&msg, config, resources).unwrap();
 
@@ -2027,11 +2086,36 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             )
             .as_str(),
         );
+
+        assert!(
+            versorgung
+                .as_ref()
+                .unwrap()
+                .period
+                .as_ref()
+                .unwrap()
+                .start
+                .is_some(),
+            "inpatient encounter lvl3 has period.start value"
+        );
+        assert!(
+            versorgung
+                .as_ref()
+                .unwrap()
+                .period
+                .as_ref()
+                .unwrap()
+                .end
+                .is_some(),
+            "discharged encounter lvl3 has period.end value"
+        );
     }
 
-    #[test]
-    fn map_enc_for_a04() {
-        let hl7 = read_test_resource("a04_test.hl7");
+    #[rstest]
+    #[case("a04_test_imp.hl7")]
+    #[case("a04_test.hl7")]
+    fn map_enc_for_a04(#[case] filename: &str) {
+        let hl7 = read_test_resource(filename);
         let msg = Message::parse_with_lenient_newlines(&hl7, true).expect("parse hl7 failed");
         let result = map(&msg, &get_test_config(), &get_dummy_resources()).unwrap();
 
@@ -2070,6 +2154,7 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             HTTPVerb::Put
         );
     }
+
     #[test]
     fn map_admit_source_empty_test() {
         let hl7 = read_test_resource("a03_test.hl7");
@@ -2101,5 +2186,41 @@ PV2|||06^Geburt^11||||||202511022120|||Versicherten Nr. der Mutter 0000000000|||
             coding.system.as_ref().unwrap(),
             "http://fhir.de/CodeSystem/dgkev/Aufnahmeanlass"
         );
+    }
+    #[test]
+    fn map_encounter_status_test() {
+        let input = Period::builder().build().unwrap();
+        let res = map_encounter_status(&input);
+        assert_eq!(res, EncounterStatus::Unknown);
+
+        let input = Period::builder()
+            .start(DateTime::Date(Date(
+                datetime!(1985-04-12 23:20:50.52 +00:00).date(),
+            )))
+            .build()
+            .unwrap();
+        let res = map_encounter_status(&input);
+        assert_eq!(res, EncounterStatus::InProgress);
+
+        let input = Period::builder()
+            .start(DateTime::Date(Date(
+                datetime!(1985-04-12 23:20:50.52 +00:00).date(),
+            )))
+            .end(DateTime::Date(Date(
+                datetime!(1985-04-13 23:20:50.52 +00:00).date(),
+            )))
+            .build()
+            .unwrap();
+        let res = map_encounter_status(&input);
+        assert_eq!(res, Finished);
+
+        let input = Period::builder()
+            .end(DateTime::Date(Date(
+                datetime!(1985-04-13 23:20:50.52 +00:00).date(),
+            )))
+            .build()
+            .unwrap();
+        let res = map_encounter_status(&input);
+        assert_eq!(res, Finished);
     }
 }
