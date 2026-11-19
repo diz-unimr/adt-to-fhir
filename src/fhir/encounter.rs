@@ -595,10 +595,12 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                             Some(start.clone())
                         }
                         (_, _) => {
-                            warn!(
-                                "Message with discharged status is missing end date at ZBE.3! msg id {}",
-                                get_message_key(msg)?
-                            );
+                            if discharge_date.is_some() {
+                                warn!(
+                                    "Msg ID '{}': Message with discharged status is missing end date at ZBE.3!",
+                                    get_message_key(msg)?
+                                );
+                            }
                             None
                         }
                     }
