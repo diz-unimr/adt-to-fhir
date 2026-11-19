@@ -105,6 +105,8 @@ pub(crate) fn map_ward_location(
     resources: &ResourceMap,
 ) -> Result<Option<Location>, MappingError> {
     if let (department, Some(ward_id)) = (parse_fab(msg), query(msg, PV1_3_1)) {
+        let is_icu = is_ward_valid_icu(msg, resources);
+
         let mut location = Location::builder()
             .meta(get_meta(config)?)
             .physical_type(get_cc_with_one_code(
@@ -112,13 +114,13 @@ pub(crate) fn map_ward_location(
                 LOCATION_TYPE_SYSTEM.to_string(),
             )?)
             .identifier(vec![Some(build_usual_identifier(
-                vec![ward_id],
+                get_location_identifier(ward_id, is_icu),
                 config.location.system_ward.to_string(),
             )?)])
             .build()
             .map_err(MappingError::BuilderError)?;
 
-        if is_ward_valid_icu(msg, resources) {
+        if is_icu {
             location.r#type = vec![Some(get_cc_with_one_code(
                 "ICU".to_string(),
                 "http://terminology.hl7.org/CodeSystem/v3-RoleCode".to_string(),
@@ -134,6 +136,17 @@ pub(crate) fn map_ward_location(
         Ok(Some(location))
     } else {
         Ok(None)
+    }
+}
+// location may be used by an ICU facility
+// this status may change over time, but it will not change while a patient is assigned to it.
+// therefore it will suffice to add ICU status to every location identifier, if needed.
+fn get_location_identifier(location_id: &str, is_icu: bool) -> Vec<&str> {
+    // location may be assigned to a ICU to be able to reference both states, we add status here.
+    if is_icu {
+        vec![location_id, "ICU"]
+    } else {
+        vec![location_id]
     }
 }
 
@@ -371,6 +384,11 @@ ZBE|30674176^ORBIS|202208221309||INSERT
             .clone();
 
         // check if identifier value is correct
-        assert_eq!(x, query(&msg, PV1_3_1).unwrap());
+        let expected_identifier = if expect_icu_type {
+            [query(&msg, PV1_3_1).unwrap(), "_ICU"].concat()
+        } else {
+            query(&msg, PV1_3_1).unwrap().to_string()
+        };
+        assert_eq!(x, expected_identifier);
     }
 }
