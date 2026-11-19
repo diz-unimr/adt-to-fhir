@@ -123,6 +123,9 @@ This entries will be used to map encounter of second level (_Abteilungskontakt_)
 
 Override configuration properties by providing environment variables with their respective property names.
 
+## Known Issues
+* Reopening of Registration Events A04. In case of an update message targeting a registration A04, we get empty value at encounter.period.end! Since we never know which event is targeted by a A08 message, we cannot prevent this from happening. Post processing is need here or we add capabilities to check at a persistence layer while processing A08 (this however could be very slow).
+
 ## Deployment
 
 Example files for deployment can be found in dictionary _deploy_.
