@@ -567,6 +567,8 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
         None => None,
     };
 
+    let msg_type = message_type(msg).map_err(MessageAccessError::from)?;
+
     match lvl {
         Einrichtungskontakt => {
             start = parse_datetime(
@@ -582,10 +584,7 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                 // if end of movement is available use it
                 Some(end) => Some(parse_datetime(end)?),
                 None => {
-                    match (
-                        query(msg, PV1_2),
-                        message_type(msg).map_err(MessageAccessError::from)?,
-                    ) {
+                    match (query(msg, PV1_2), &msg_type) {
                         // A04 get never an end date form source system - therefore we use start date here as well
                         // 'NS' fallback post-inpatient is day patient status thus has no end of movement like A04
                         (Some("NS"), _) | (_, MessageType::A04) => {
@@ -595,13 +594,24 @@ fn map_period(msg: &Message, lvl: &EncounterType) -> Result<Period, MappingError
                             Some(start.clone())
                         }
                         (_, _) => {
-                            if discharge_date.is_some() {
-                                warn!(
-                                    "Msg ID '{}': Message with discharged status is missing end date at ZBE.3!",
-                                    get_message_key(msg)?
-                                );
+                            if let Some(dis_date) = discharge_date {
+                                if start <= dis_date && msg_type.eq(&MessageType::A08) {
+                                    warn!(
+                                        "Msg ID '{}': updating discharged encounter without end data to movement. start is before discharge, assuming update of A04 registration message. use end=start",
+                                        get_message_key(msg)?
+                                    );
+                                    // workaround
+                                    Some(start.clone())
+                                } else {
+                                    warn!(
+                                        "Msg ID '{}': Start date AFTER discharge without post-inpatient status! Also message is missing end date at ZBE.3! ",
+                                        get_message_key(msg)?
+                                    );
+                                    None
+                                }
+                            } else {
+                                None
                             }
-                            None
                         }
                     }
                 }
