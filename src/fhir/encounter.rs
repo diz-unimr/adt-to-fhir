@@ -781,9 +781,12 @@ fn map_lvl_3_locations(
     if let (Some(_department), Some(loc)) =
         (parse_fab(msg), map_ward_location(msg, config, resources)?)
     {
+        let period = map_period(msg, &Versorgungsstellenkontakt)?;
+
         // department location should be always available
         let mut department_location = to_encounter_location(loc)?;
         department_location.status = Some(get_location_status(msg)?);
+        department_location.period = Some(period.clone());
 
         locations.push(Some(department_location));
 
@@ -796,6 +799,7 @@ fn map_lvl_3_locations(
             {
                 let mut room_location = to_encounter_location(l)?;
                 room_location.status = Some(get_location_status(msg)?);
+                room_location.period = Some(period.clone());
                 locations.push(Some(room_location));
             }
 
@@ -803,6 +807,7 @@ fn map_lvl_3_locations(
                 let mut bed_location =
                     to_encounter_location(map_bed_location(config, ward, room, bed)?)?;
                 bed_location.status = Some(get_location_status(msg)?);
+                bed_location.period = Some(period);
                 locations.push(Some(bed_location));
             }
         }
@@ -818,9 +823,18 @@ fn map_lvl_3_locations(
 }
 
 fn get_location_status(msg: &Message) -> Result<EncounterLocationStatus, MessageAccessError> {
-    match message_type(msg) {
-        Ok(MessageType::A04) | Ok(MessageType::A03) => Ok(EncounterLocationStatus::Completed),
-        Ok(_) => {
+    let is_bed_status_amb = matches!(
+        query(msg, PV1_2),
+        Some("O") | Some("NS") | Some("VS") | Some("V")
+    );
+
+    match (message_type(msg), is_bed_status_amb) {
+        // discharge is per definition completed
+        (Ok(MessageType::A03), _) |
+        // ambulatory or post-inpatient should be treated as completed
+        (Ok(MessageType::A04), _) | (_, true)
+        => Ok(EncounterLocationStatus::Completed),
+        (Ok(_), _) => {
             let movement_end = query(msg, ZBE_3);
             if movement_end.is_some() {
                 Ok(EncounterLocationStatus::Completed)
@@ -828,7 +842,7 @@ fn get_location_status(msg: &Message) -> Result<EncounterLocationStatus, Message
                 Ok(EncounterLocationStatus::Active)
             }
         }
-        Err(e) => Err(e.into()),
+        (Err(e), _) => Err(e.into()),
     }
 }
 

@@ -800,6 +800,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             "a04_test2.hl7",
             "a04_amb_notfall.hl7",
             "a05_ns_test.hl7",
+            "a05_ns_with_lvl3_test.hl7",
             "a08_test.hl7",
             "a06_teilsstationaer_test.hl7",
             "a07_nachstationaer_test.hl7",
@@ -813,8 +814,7 @@ ZBE|44444444^ORBIS|202601280923||INSERT"#;
             let mapper = FhirMapper::new(get_test_config()).unwrap();
             match mapper.map(binding.as_str()) {
                 Ok(Some(bundle)) => {
-                    println!("file {} ", test_file);
-
+                    println!("File: {:?} with: {:?}", test_file, bundle);
                     let raw: Value = serde_json::from_str(&bundle).unwrap();
 
                     // for local testing uncomment
