@@ -31,7 +31,8 @@ pub(super) fn map(
                     }
                 }
             }
-
+            // ambulatory contact starts often with A05
+            MessageType::A05|
             // department stays the same - we have only a short contact at another location
             MessageType::A04 => {
                 if let Some(loc) = map_ward_location(msg, config, resources)? {
