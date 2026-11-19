@@ -364,6 +364,7 @@ fn get_service_type(
     let system_fachabteilungs_schluessel: &str =
         "http://fhir.de/CodeSystem/dkgev/Fachabteilungsschluessel-erweitert";
 
+    // first try getting code strait from hl7 field
     if let Some(fab_schluessel) = query(msg, PV1_39_1) {
         return Ok(Some(get_cc_with_one_code(
             fab_schluessel.to_string(),
@@ -371,6 +372,7 @@ fn get_service_type(
         )?));
     }
 
+    // try via ward name and mapping file
     if let Some(fab) = parse_fab(msg) {
         resources.map_fab_schluessel(fab, get_message_key(msg)?, config, resources)
     } else {
